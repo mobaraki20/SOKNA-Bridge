@@ -1,12 +1,12 @@
-package main
+﻿package main
 
 import "time"
 
 type JobStatus string
 
 const (
-	RobQueued    JobStatus = "queued"
-	RobRunning   JobStatus = "running"
+	JobQueued    JobStatus = "queued"
+	JobRunning   JobStatus = "running"
 	JobBlocked   JobStatus = "blocked"
 	JobCompleted JobStatus = "completed"
 	JobFailed    JobStatus = "failed"
@@ -57,3 +57,4 @@ type Event struct {
 	Data      map[string]any `json:"data,omitempty"`
 	CreatedAt time.Time     `json:"created_at"`
 }
+
