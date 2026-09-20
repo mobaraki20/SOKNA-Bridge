@@ -4,7 +4,7 @@ import "testing"
 
 func TestCanDeliverToChat(t *testing.T) {
 	if CanDeliverToChat(ChatGenerating, PriorityBlocking) {
-		.tFatal("must not interrupt active assistant turn")
+		t.Fatal("must not interrupt active assistant turn")
 	}
 	if CanDeliverToChat(ChatIdle, PriorityTelemetry) {
 		t.Fatal("telemetry must stay out of chat")
