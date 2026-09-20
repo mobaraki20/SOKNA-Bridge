@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"encoding/json"
@@ -27,7 +27,7 @@ type Config struct {
 func defaultConfigPath() (string, error) {
 	local := os.Getenv("LOCALAPPDATA")
 	if strings.TrimSpace(local) == "" {
-		return "", fmt.Error("LOCALAPPDATA is not available")
+		return "", fmt.Errorf("LOCALAPPDATA is not available")
 	}
 	return filepath.Join(local, "SOKNA-Bridge-V2", "config.json"), nil
 }
@@ -46,10 +46,10 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	var cfg Config
 	if err := json.Unmarshal(b, &cfg); err != nil {
-		return nil, fmt.Errorf("parse config: %w", err
+		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	if cfg.Port <= 0 {
-		return nil, fmt.Error("invalid port")
+		return nil, fmt.Errorf("invalid port")
 	}
 	if strings.TrimSpace(cfg.Token) == "" {
 		return nil, fmt.Errorf("token missing")
@@ -85,3 +85,5 @@ func (c *Config) ResolveWorkspace(name string) (string, WorkspaceConfig, error) 
 	w.Path = p
 	return name, w, nil
 }
+
+
