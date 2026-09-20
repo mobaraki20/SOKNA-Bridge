@@ -73,7 +73,7 @@ function b64Commands(text){
         b64ParseErrors++;
         chrome.runtime.sendMessage({
           type:"TRANSPORT_DIAG",
-          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:"3.9.2",error:String(e)}
+          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:"3.9.3",error:String(e)}
         }).catch(()=>{});
       }
     }
@@ -90,7 +90,7 @@ function emit(c,source){
   lastCommandDetectedAt=Date.now();
   chrome.runtime.sendMessage({
     type:"COMMAND",command:c,frameHref:location.href,
-    detector:"v3.9.2-core-wire",source:lastLegacySource
+    detector:"v3.9.3-core-wire",source:lastLegacySource
   }).catch(()=>{});
 }
 
@@ -129,7 +129,7 @@ function schedulePartialDiagnostic(){
       type:"TRANSPORT_DIAG",
       diagnostic:{
         kind:"partial-command-stalled",
-        version:"3.9.2",
+        version:"3.9.3",
         activeCandidates:activeCandidates.size,
         candidateStartsSeen,
         candidateCompleted,
@@ -543,7 +543,8 @@ async function post(payload){
   if(window.top!==window)return {ok:false,error:"POST_RESULT must target top frame"};
   const existing=composer(),draft=textOf(existing).trim();
   if(draft&&!draft.includes(payload))return {ok:false,waiting:true,reason:"user_draft",error:"Composer contains user text; delivery queued."};
-  const initialGate=deliveryBlockReason(existing);
+  let initialGate=deliveryBlockReason(existing);
+  if(initialGate==="assistant_generating"){for(let i=0;i<480&&initialGate==="assistant_generating";i++){await wait(250);initialGate=deliveryBlockReason(composer())}}
   if(initialGate)return {ok:false,waiting:true,reason:initialGate,error:"Automatic delivery is waiting for the page to become safe."};
 
   for(let i=0;i<30;i++){
@@ -611,7 +612,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m?.type==="BASELINE"){
     start();
     reply({ok:true,commands:[],diagnostics:{
-      detector:"v3.9.2-core-wire",baselineSeen:seen.size,observerRootCount:observers.size
+      detector:"v3.9.3-core-wire",baselineSeen:seen.size,observerRootCount:observers.size
     },frameHref:location.href});
     return;
   }
@@ -628,8 +629,8 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
     try{fallback=Core.scanAll().diagnostics||{}}catch{}
     lastScanAt=Date.now();
     reply({
-      ok:true,version:"3.9.2",armed,frameHref:location.href,topFrame:window.top===window,
-      detector:"v3.9.2-core-wire",commandCount:0,commandIds:[],
+      ok:true,version:"3.9.3",armed,frameHref:location.href,topFrame:window.top===window,
+      detector:"v3.9.3-core-wire",commandCount:0,commandIds:[],
       diagnostics:{
         ...fallback,observerRootCount:observers.size,mutationCallbacks,
         addedNodesSeen,characterMutationsSeen,legacyMarkerCaptures,
@@ -648,9 +649,9 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
 });
 
 function dispose(){if(disposed)return;disposed=true;stop()}
-globalThis[G]={version:"3.9.2",dispose};
+globalThis[G]={version:"3.9.3",dispose};
 chrome.runtime.sendMessage({
   type:"CONTENT_READY",url:location.href,topFrame:window.top===window,
-  detector:"v3.9.2-core-wire"
+  detector:"v3.9.3-core-wire"
 }).catch(()=>{});
 })();

@@ -272,7 +272,7 @@
   }
 
   globalThis[G]={
-    version:"3.9.2",LINK_PREFIX,
+    version:"3.9.3",LINK_PREFIX,
     b64urlToUtf8,parseEncoded,parseTextCarriers,parseLinkCarriers,
     shadowOf,collectRoots,scanAll,composer,textOf,sendButton,submitEnvelope
   };
