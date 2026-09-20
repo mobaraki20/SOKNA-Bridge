@@ -12,8 +12,7 @@ type WorkspaceConfig struct {
 	Path         string `json:"path"`
 	ExpectedRepo string `json:"expected_repo"`
 	WriteEnabled bool   `json:"write_enabled"`
-]
-n
+}
 type Config struct {
 	Port                int                        `json:"port"`
 	Token               string                      `json:"token"`
@@ -22,7 +21,7 @@ type Config struct {
 	DefaultGitHubOwner  string                     `json:"default_github_owner"`
 	AllowedGitHubOwners []string                   `json:"allowed_github_owners"`
 	Workspaces          map[string]WorkspaceConfig `json:"workspaces"`
-]
+}
 
 func defaultConfigPath() (string, error) {
 	local := os.Getenv("LOCALAPPDATA")
