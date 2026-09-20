@@ -73,7 +73,7 @@ function b64Commands(text){
         b64ParseErrors++;
         chrome.runtime.sendMessage({
           type:"TRANSPORT_DIAG",
-          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:"3.9.1",error:String(e)}
+          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:"3.9.2",error:String(e)}
         }).catch(()=>{});
       }
     }
@@ -90,7 +90,7 @@ function emit(c,source){
   lastCommandDetectedAt=Date.now();
   chrome.runtime.sendMessage({
     type:"COMMAND",command:c,frameHref:location.href,
-    detector:"v2.5.1-immediate",source:lastLegacySource
+    detector:"v3.9.2-core-wire",source:lastLegacySource
   }).catch(()=>{});
 }
 
@@ -129,7 +129,7 @@ function schedulePartialDiagnostic(){
       type:"TRANSPORT_DIAG",
       diagnostic:{
         kind:"partial-command-stalled",
-        version:"3.9.1",
+        version:"3.9.2",
         activeCandidates:activeCandidates.size,
         candidateStartsSeen,
         candidateCompleted,
@@ -349,7 +349,7 @@ function immediateMutation(ms){
       }catch{}
     }
   }
-  inspectActiveCandidates("mutationFlush");
+  inspectActiveCandidates("mutationFlush");try{for(const c of Core.scanAll().commands)emit(c,"core")}catch{}
   scheduleDeliveryStateCheck();
   observeRoots();
 }
@@ -382,7 +382,7 @@ function baseline(){
     for(const c of commands(t))seen.add(c.id);
     for(const c of b64Commands(t))seen.add(c.id);
   }
-  try{Core.scanAll();lastScanAt=Date.now()}catch{}
+  try{const r=Core.scanAll();for(const c of(r.commands||[]))seen.add(c.id);lastScanAt=Date.now()}catch{}
 }
 function start(){
   if(armed)return;
@@ -611,7 +611,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m?.type==="BASELINE"){
     start();
     reply({ok:true,commands:[],diagnostics:{
-      detector:"v2.5.1-immediate",baselineSeen:seen.size,observerRootCount:observers.size
+      detector:"v3.9.2-core-wire",baselineSeen:seen.size,observerRootCount:observers.size
     },frameHref:location.href});
     return;
   }
@@ -628,8 +628,8 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
     try{fallback=Core.scanAll().diagnostics||{}}catch{}
     lastScanAt=Date.now();
     reply({
-      ok:true,version:"3.9.1",armed,frameHref:location.href,topFrame:window.top===window,
-      detector:"v2.5.1-immediate",commandCount:0,commandIds:[],
+      ok:true,version:"3.9.2",armed,frameHref:location.href,topFrame:window.top===window,
+      detector:"v3.9.2-core-wire",commandCount:0,commandIds:[],
       diagnostics:{
         ...fallback,observerRootCount:observers.size,mutationCallbacks,
         addedNodesSeen,characterMutationsSeen,legacyMarkerCaptures,
@@ -648,9 +648,9 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
 });
 
 function dispose(){if(disposed)return;disposed=true;stop()}
-globalThis[G]={version:"3.9.1",dispose};
+globalThis[G]={version:"3.9.2",dispose};
 chrome.runtime.sendMessage({
   type:"CONTENT_READY",url:location.href,topFrame:window.top===window,
-  detector:"v2.5.1-immediate"
+  detector:"v3.9.2-core-wire"
 }).catch(()=>{});
 })();
