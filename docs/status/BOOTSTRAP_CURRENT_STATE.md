@@ -52,3 +52,24 @@ Before any bootstrap/extension fix, read this file and current git diff/status f
 - Remaining OPEN issue: very large assistant carriers may fail before a complete envelope reaches the DOM; use short commands/indirection until this upstream delivery path is resolved.
 - Live cafe Agent remains 2.5.3; packaged Agent remains 2.5.4.
 - Home PC must catch up from GitHub + latest Bootstrap artifact; do not repeat the resolved DOM reassembly diagnosis; keep very-long assistant-carrier delivery OPEN.
+
+### V3.9.5 Bootstrap artifact
+- Bootstrap workflow: `35641811226` â€” SUCCESS
+- Workflow head SHA: `c4d5236e38c3618a919f188efbfd12b63395e0c1`
+- Artifact: `SOKNA-Bridge-Setup`
+- Artifact ID: `10657943197`
+- Artifact SHA256: `81fed5fc456b3110d6888acc1583fdea327b3cc48079c039259ed2a42b26426e`
+- Artifact created: `2026-09-21T18:59:29Z`
+- Artifact expires: `2026-12-20T18:58:06Z`
+- Home PC catch-up: sync/reconcile `dev/bootstrap-v2.5`, then install artifact `10657943197`; do not repeat resolved DOM reassembly diagnosis.
+- OPEN: very-large assistant carrier delivery before complete DOM render is not guaranteed. Use short commands/indirection for large jobs until that upstream path is is resolved.
+
+### V3.9.5 artifact final
+- Bootstrap workflow: 35641811226 SUCCESS
+- Head SHA: c4d5236e38c3618a919f188efbfd12b63395e0c1
+- Artifact: SOKNA-Bridge-Setup
+- Artifact ID: 10657943197
+- SHA256: 81fed5fc456b3110d6888acc1583fdea327b3cc48079c039259ed2a42b26426e
+- Expires: 2026-12-20T18:58:06Z
+- Home PC: sync dev/bootstrap-v2.5, then install artifact 10657943197.
+- OPEN: very-large assistant carriers can fail before full DOM render; use short commands/indirection.
