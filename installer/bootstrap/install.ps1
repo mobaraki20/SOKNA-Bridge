@@ -105,7 +105,7 @@ if(-not $SkipStart){
 $report=[ordered]@{
   version='1.0.0'
   installed_at=(Get-Date).ToString('o')
-  agent_version='2.5.3'
+  agent_version='2.5.4'
   extension_version='3.9.4'
   agent_dir=$AgentDir
   extension_dir=$ExtDir
