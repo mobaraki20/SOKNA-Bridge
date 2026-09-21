@@ -4,7 +4,7 @@ Canonical source of truth for bootstrap work.
 
 ## Remote baseline
 - Branch: `dev/bootstrap-v2.5`
-- Current remote HEAD: c01399da1ba465628aa75930c4e5ca339704c5ab
+- Current HEAD: resolve with `git rev-parse HEAD` (not hardcoded)
 - Bootstrap workflow run `35609296174`: SUCCESS
 - Artifact: `SOKNA-Bridge-Setup`
 
@@ -21,7 +21,7 @@ Canonical source of truth for bootstrap work.
    - Local fix applied in `installer/bootstrap/install.ps1`
    - Status: PUSHED @ c01399da1ba465628aa75930c4e5ca339704c5ab
 2. Installer currently registers both workspaces even if folders do not exist; Agent validates all configured workspaces at startup and exits.
-   - Status: PENDING FIX
+   - Status: FIXED AND PUSHED (see git history)
 3. On cafe PC, long assistant carrier messages are less reliable than on home PC.
    - Short carrier commands work.
    - Status: PENDING EXTENSION RELIABILITY INVESTIGATION

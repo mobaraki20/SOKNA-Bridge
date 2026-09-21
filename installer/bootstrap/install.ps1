@@ -48,17 +48,19 @@ if([string]::IsNullOrWhiteSpace($token)){$token=New-Token}
 
 $bridgePath=Join-Path $WorkspaceRoot 'SOKNA-Bridge'
 $cafePath=Join-Path $WorkspaceRoot 'SoknaCafe'
+$workspaces=[ordered]@{}
+if(Test-Path $bridgePath -PathType Container){$workspaces['SOKNA-Bridge']=[ordered]@{path=$bridgePath;expected_repo='mobaraki20/SOKNA-Bridge';write_enabled=$true}}
+if(Test-Path $cafePath -PathType Container){$workspaces['SoknaCafe']=[ordered]@{path=$cafePath;expected_repo='mobaraki20/SoknaCafe';write_enabled=$false}}
+$default=''
+if($workspaces.Contains('SOKNA-Bridge')){$default='SOKNA-Bridge'}elseif($workspaces.Contains('SoknaCafe')){$default='SoknaCafe'}
 $config=[ordered]@{
   port=$Port
   token=$token
   workspace_root=$WorkspaceRoot
-  default_workspace='SOKNA-Bridge'
+  default_workspace=$default
   default_github_owner='mobaraki20'
   allowed_github_owners=@('mobaraki20')
-  workspaces=[ordered]@{
-    'SOKNA-Bridge'=[ordered]@{path=$bridgePath;expected_repo='mobaraki20/SOKNA-Bridge';write_enabled=$true}
-    'SoknaCafe'=[ordered]@{path=$cafePath;expected_repo='mobaraki20/SoknaCafe';write_enabled=$false}
-  }
+  workspaces=$workspaces
 }
 Write-Utf8NoBom $configPath ($config|ConvertTo-Json -Depth 8)
 
