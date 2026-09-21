@@ -1,0 +1,33 @@
+name: Bootstrap Package
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev/bootstrap-v2.5]
+    paths:
+      - 'installer/bootstrap/**'
+      - 'extension/chrome/**'
+      - 'native/host/**'
+      - 'native/runtime/v2.5.3/**'
+      - '.github/workflows/bootstrap-package.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - name: Build bootstrap ZIP
+        shell: powershell
+        run: ./installer/bootstrap/build-package.ps1
+      - name: Verify package
+        shell: powershell
+        run: |
+          if (!(Test-Path dist/SOKNA-Bridge-Setup.zip)) { throw 'ZIP missing' }
+          Get-FileHash dist/SOKNA-Bridge-Setup.zip -Algorithm SHA256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SOKNA-Bridge-Setup
+          path: dist/SOKNA-Bridge-Setup.zip
+          if-no-files-found: error
