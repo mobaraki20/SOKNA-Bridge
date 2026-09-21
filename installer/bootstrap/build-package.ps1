@@ -15,7 +15,7 @@ Copy-Item (Join-Path $Repo "extension/chrome") (Join-Path $Payload "extension") 
 $hostOut=Join-Path $Payload "sokna-bridge-native-host.exe"
 Push-Location (Join-Path $Repo "native/host")
 try {
-  & go build -trimpath -o $hostOut .
+  & go build -trimpath -o $hostOut main.go
   if($LASTEXITCODE -ne 0){throw "Native host build failed"}
 } finally { Pop-Location }
 $zip=Join-Path $Repo "$OutDir/SOKNA-Bridge-Setup.zip"
