@@ -14,6 +14,7 @@ $ExtId='gnclegfheoegfdnhndkpemnlheilnick'
 $Port=8766
 
 function Ensure-Dir([string]$p){if(-not(Test-Path $p)){New-Item -ItemType Directory -Path $p -Force|Out-Null}}
+function Write-Utf8NoBom([string]$p,[string]$text){[IO.File]::WriteAllText($p,$text,[Text.UTF8Encoding]::new($false))}
 function New-Token {
   $b=New-Object byte[] 32
   [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
@@ -59,7 +60,7 @@ $config=[ordered]@{
     'SoknaCafe'=[ordered]@{path=$cafePath;expected_repo='mobaraki20/SoknaCafe';write_enabled=$false}
   }
 }
-$config|ConvertTo-Json -Depth 8|Set-Content $configPath -Encoding UTF8
+Write-Utf8NoBom $configPath ($config|ConvertTo-Json -Depth 8)
 
 Copy-Item $agentSrc (Join-Path $AgentDir 'agent.ps1') -Force
 Copy-Item (Join-Path $extSrc '*') $ExtDir -Recurse -Force
@@ -73,7 +74,7 @@ $hm=[ordered]@{
   type='stdio'
   allowed_origins=@("chrome-extension://$ExtId/")
 }
-$hm|ConvertTo-Json -Depth 5|Set-Content $hostManifest -Encoding UTF8
+Write-Utf8NoBom $hostManifest ($hm|ConvertTo-Json -Depth 5)
 
 foreach($k in @(
  ('HKCU:\Software\Google\Chrome\NativeMessagingHosts\'+$HostName),
@@ -110,7 +111,7 @@ $report=[ordered]@{
   startup='HKCU Run'
   health=($(if($SkipStart){'skipped'}else{'ok'}))
 }
-$report|ConvertTo-Json -Depth 5|Set-Content (Join-Path $Root 'install-report.json') -Encoding UTF8
+Write-Utf8NoBom (Join-Path $Root 'install-report.json') ($report|ConvertTo-Json -Depth 5)
 
 Write-Host ''
 Write-Host 'SOKNA Bridge bootstrap installed successfully.' -ForegroundColor Green
