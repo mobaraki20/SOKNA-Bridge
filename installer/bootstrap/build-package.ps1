@@ -22,4 +22,4 @@ $zip=Join-Path $Repo "$OutDir/SOKNA-Bridge-Setup.zip"
 Remove-Item $zip -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath $zip -CompressionLevel Optimal
 $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-[ordered]@{ok=$true;zip=$zip;sha256=$sha;agent="2.5.4";extension="3.9.4"}|ConvertTo-Json
+[ordered]@{ok=$true;zip=$zip;sha256=$sha;agent="2.5.4";extension="3.9.5"}|ConvertTo-Json

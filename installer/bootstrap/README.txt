@@ -15,7 +15,7 @@ For a new Windows PC:
 
 Installed components:
 - Agent 2.5.4: %LOCALAPPDATA%\SOKNA-Bridge-V2
-- Extension 3.9.4 + Native Host: %LOCALAPPDATA%\SOKNA-Bridge-V3
+- Extension 3.9.5 + Native Host: %LOCALAPPDATA%\SOKNA-Bridge-V3
 - Native Messaging host: com.sokna.bridge.v3
 - Startup: HKCU Run / SOKNA Bridge Agent
 

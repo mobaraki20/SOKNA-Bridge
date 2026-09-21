@@ -20,10 +20,11 @@ let immediateTextChars=0,b64ParseErrors=0;
 let deliveryStateTimer=0,lastDeliveryGate="",periodicScanTimer=0;
 
 // V3.8: secondary streaming reassembly path for long commands.
-const STREAM_START="[SOKNA-V2-CMD]";
-const STREAM_END="[/SOKNA-V2-CMD]";
+const STREAM_START="SOKNA3CMD:";
+const STREAM_END=":SOKNA3END";
 const laneBuffers=new Map();
 const laneTouched=new Map();
+const streamPartialLanes=new Set();
 const MAX_STREAM_LANES=64,STREAM_LANE_TTL=30000;
 const laneIds=new WeakMap();
 let nextLaneId=1;
@@ -73,7 +74,7 @@ function b64Commands(text){
         b64ParseErrors++;
         chrome.runtime.sendMessage({
           type:"TRANSPORT_DIAG",
-          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:"3.9.4",error:String(e)}
+          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:"3.9.5",error:String(e)}
         }).catch(()=>{});
       }
     }
@@ -81,6 +82,24 @@ function b64Commands(text){
   return out;
 }
 
+function v3Commands(text){
+  const out=[];
+  text=String(text||"");
+  let from=0;
+  while(true){
+    const a=text.indexOf(STREAM_START,from);
+    if(a<0)break;
+    const b=text.indexOf(STREAM_END,a+STREAM_START.length);
+    if(b<0)break;
+    const body=text.slice(a+STREAM_START.length,b).trim();
+    try{
+      const c=JSON.parse(b64urlDecodeUtf8(body));
+      if(c?.id&&c?.action)out.push(c);
+    }catch{}
+    from=b+STREAM_END.length;
+  }
+  return out;
+}
 function emit(c,source){
   if(!armed||!c?.id||seen.has(c.id))return;
   seen.add(c.id);
@@ -90,7 +109,7 @@ function emit(c,source){
   lastCommandDetectedAt=Date.now();
   chrome.runtime.sendMessage({
     type:"COMMAND",command:c,frameHref:location.href,
-    detector:"v3.9.4-core-wire",source:lastLegacySource
+    detector:"v3.9.5-core-wire",source:lastLegacySource
   }).catch(()=>{});
 }
 
@@ -129,7 +148,7 @@ function schedulePartialDiagnostic(){
       type:"TRANSPORT_DIAG",
       diagnostic:{
         kind:"partial-command-stalled",
-        version:"3.9.4",
+        version:"3.9.5",
         activeCandidates:activeCandidates.size,
         candidateStartsSeen,
         candidateCompleted,
@@ -147,6 +166,8 @@ function schedulePartialDiagnostic(){
   },5000);
 }
 
+const candidateErrorText=new WeakMap();
+
 function inspectCandidate(el,source,isNew=false){
   if(!armed||!el)return;
   let text="";
@@ -154,25 +175,32 @@ function inspectCandidate(el,source,isNew=false){
 
   if(!(text.includes(STREAM_START)||text.includes(B64_START))){
     activeCandidates.delete(el);
+    candidateErrorText.delete(el);
     return;
   }
 
-  if(isNew)candidateStartsSeen++;
-  lastCandidateAt=Date.now();
-  lastCandidateSource=source||"";
-
-  const parsed=[...commands(text),...b64Commands(text)];
-  for(const cmd of parsed){
-    candidateCompleted++;
-    emit(cmd,"candidate:"+source);
-  }
+  const parsed=[...v3Commands(text),...commands(text),...b64Commands(text)];
+  const fresh=parsed.filter(cmd=>cmd?.id&&!seen.has(cmd.id));
 
   const legacyPartial=candidateStillPartial(text);
   const b64A=text.lastIndexOf(B64_START);
   const b64B=b64A>=0?text.indexOf(B64_END,b64A+B64_START.length):-1;
   const b64Partial=b64A>=0&&b64B<0;
+  const partial=legacyPartial||b64Partial;
 
-  if(legacyPartial||b64Partial){
+  if(isNew&&(partial||fresh.length>0))candidateStartsSeen++;
+
+  if(partial||fresh.length>0){
+    lastCandidateAt=Date.now();
+    lastCandidateSource=source||"";
+  }
+
+  for(const cmd of fresh){
+    candidateCompleted++;
+    emit(cmd,"candidate:"+source);
+  }
+
+  if(partial){
     activeCandidates.add(el);
     schedulePartialDiagnostic();
   }else{
@@ -181,8 +209,13 @@ function inspectCandidate(el,source,isNew=false){
   }
 
   const anyClosed=(text.includes(STREAM_END)||text.includes(B64_END));
-  if(parsed.length===0 && anyClosed && !(legacyPartial||b64Partial)){
-    candidateParseErrors++;
+  if(parsed.length===0&&anyClosed&&!partial){
+    if(candidateErrorText.get(el)!==text){
+      candidateParseErrors++;
+      candidateErrorText.set(el,text);
+    }
+  }else{
+    candidateErrorText.delete(el);
   }
 }
 
@@ -190,13 +223,12 @@ function trackCandidate(node,source){
   const el=candidateContainer(node);
   if(!el)return;
   if(activeCandidates.size>=32&&!activeCandidates.has(el)){
-    const first=activeCandidates.values().next().value;if(first)activeCandidates.delete(first);
+    const first=activeCandidates.values().next().value;
+    if(first)activeCandidates.delete(first);
   }
   const isNew=!activeCandidates.has(el);
-  activeCandidates.add(el);
   inspectCandidate(el,source,isNew);
 }
-
 function inspectActiveCandidates(source){
   for(const el of [...activeCandidates]){
     try{
@@ -237,12 +269,12 @@ function feedStream(fragment,node,source){
   const lane=laneForNode(node);
   const laneNow=Date.now();
   for(const [k,t] of [...laneTouched]){
-    if(laneNow-t>STREAM_LANE_TTL){laneTouched.delete(k);laneBuffers.delete(k)}
+    if(laneNow-t>STREAM_LANE_TTL){laneTouched.delete(k);laneBuffers.delete(k);streamPartialLanes.delete(k)}
   }
   if(!laneBuffers.has(lane)&&laneBuffers.size>=MAX_STREAM_LANES){
     let oldest=null,oldestAt=Infinity;
     for(const [k,t] of laneTouched)if(t<oldestAt){oldest=k;oldestAt=t}
-    if(oldest){laneTouched.delete(oldest);laneBuffers.delete(oldest)}
+    if(oldest){laneTouched.delete(oldest);laneBuffers.delete(oldest);streamPartialLanes.delete(oldest)}
   }
   laneTouched.set(lane,laneNow);
   let buf=(laneBuffers.get(lane)||"")+fragment;
@@ -257,6 +289,7 @@ function feedStream(fragment,node,source){
   while(true){
     const a=buf.indexOf(STREAM_START);
     if(a<0){
+      streamPartialLanes.delete(lane);
       buf=buf.slice(-Math.max(0,STREAM_START.length-1));
       break;
     }
@@ -264,13 +297,17 @@ function feedStream(fragment,node,source){
 
     const b=buf.indexOf(STREAM_END,STREAM_START.length);
     if(b<0){
-      streamStartsSeen++;
+      if(!streamPartialLanes.has(lane)){
+        streamStartsSeen++;
+        streamPartialLanes.add(lane);
+      }
       break;
     }
 
+    streamPartialLanes.delete(lane);
     const body=buf.slice(STREAM_START.length,b).trim();
     try{
-      const cmd=JSON.parse(body);
+      const cmd=JSON.parse(b64urlDecodeUtf8(body));
       if(cmd?.id&&cmd?.action){
         streamCompleted++;
         lastStreamCaptureAt=Date.now();
@@ -310,7 +347,7 @@ function captureText(text,source){
   if(hasLegacy)for(const c of commands(text))emit(c,source);
   if(hasB64)for(const c of b64Commands(text))emit(c,source+":b64");
 }
-function captureNode(node,source){
+function captureNode(node,source,feed=true){
   if(!armed||!node)return;
   let t="";
   try{
@@ -320,7 +357,7 @@ function captureNode(node,source){
   }catch{}
   captureText(t,source);
   trackCandidate(node,source);
-  feedStream(t,node,source);
+  if(feed)feedStream(t,node,source);
   try{
     const p=node.parentNode;
     if(p&&p!==document&&p.textContent)captureText(p.textContent,source+":parent");
@@ -340,7 +377,7 @@ function immediateMutation(ms){
       characterMutationsSeen++;
       const delta=mutationDelta(m);
       if(delta)feedStream(delta,m.target,"characterDataDelta");
-      captureNode(m.target,"characterData");
+      captureNode(m.target,"characterData",false);
       try{captureText(m.target?.parentNode?.textContent||"","characterDataParent")}catch{}
     }else if(m.type==="attributes"){
       try{
@@ -431,7 +468,7 @@ function sendButton(el,payload){
   try{const b=Core.sendButton();if(b)return b}catch{}
   if(!el||textOf(el).trim()!==String(payload||"").trim()||!String(payload||"").trim())return null;
   const f=nearestForm(el)||document;
-  let a=[];try{a=[...f.querySelectorAll('button[type="submit"]')].filter(x=>{const s=((x.getAttribute("data-testid")||"")+" "+(x.getAttribute("aria-label")||"")+" "+(x.title||"")).toLowerCase();return vis(x)&&!x.disabled&&x.getAttribute("aria-disabled")!=="true"&&!/(mic|voice|upload|attach|stop|cancel|tool|camera|record)/.test(s)})}catch{}
+  let a=[];try{a=[...f.querySelectorAll('button[type="submit"],[data-testid*="send" i],button[aria-label*="send" i],button[title*="send" i],[role="button"][aria-label*="send" i]')].filter(x=>{const s=((x.getAttribute("data-testid")||"")+" "+(x.getAttribute("aria-label")||"")+" "+(x.title||"")).toLowerCase();return vis(x)&&!x.disabled&&x.getAttribute("aria-disabled")!=="true"&&!/(mic|voice|upload|attach|stop|cancel|tool|camera|record)/.test(s)})}catch{}
   return a.length?a[a.length-1]:null;
 }
 function fireInput(el,text){
@@ -612,7 +649,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m?.type==="BASELINE"){
     start();
     reply({ok:true,commands:[],diagnostics:{
-      detector:"v3.9.4-core-wire",baselineSeen:seen.size,observerRootCount:observers.size
+      detector:"v3.9.5-core-wire",baselineSeen:seen.size,observerRootCount:observers.size
     },frameHref:location.href});
     return;
   }
@@ -629,8 +666,8 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
     try{fallback=Core.scanAll().diagnostics||{}}catch{}
     lastScanAt=Date.now();
     reply({
-      ok:true,version:"3.9.4",armed,frameHref:location.href,topFrame:window.top===window,
-      detector:"v3.9.4-core-wire",commandCount:0,commandIds:[],
+      ok:true,version:"3.9.5",armed,frameHref:location.href,topFrame:window.top===window,
+      detector:"v3.9.5-core-wire",commandCount:0,commandIds:[],
       diagnostics:{
         ...fallback,observerRootCount:observers.size,mutationCallbacks,
         addedNodesSeen,characterMutationsSeen,legacyMarkerCaptures,
@@ -649,9 +686,9 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
 });
 
 function dispose(){if(disposed)return;disposed=true;stop()}
-globalThis[G]={version:"3.9.4",dispose};
+globalThis[G]={version:"3.9.5",dispose};
 chrome.runtime.sendMessage({
   type:"CONTENT_READY",url:location.href,topFrame:window.top===window,
-  detector:"v3.9.4-core-wire"
+  detector:"v3.9.5-core-wire"
 }).catch(()=>{});
 })();

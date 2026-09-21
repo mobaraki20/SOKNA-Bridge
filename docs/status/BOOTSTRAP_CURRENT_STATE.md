@@ -38,3 +38,16 @@ Canonical source of truth for bootstrap work.
 
 ## Rule
 Before any bootstrap/extension fix, read this file and current git diff/status first. Do not redo fixes already marked completed or local-only; continue from the recorded state.
+
+## SOKNA Bridge V3.9.5 stable transport â€” 2026-09-21
+- Status: **STABLE / DO NOT RECHECK**
+- Primary carrier: `SOKNA3CMD:<base64url>:SOKNA3END`
+- Short V3 carrier: PASS
+- Long fragmented V3 carrier: PASS
+- Candidate dedupe: PASS
+- Stream diagnostic dedupe: PASS
+- Delivery: PASS (`pendingPostCount=0`, state `Ready`)
+- Official V3.9.5 self-test: **8/8 PASS**
+- Root cause resolved: `content.js` stream/candidate paths were still parsing legacy command markers while `dom_core.js` used the real V3 carrier.
+- Live cafe Agent remains 2.5.3; packaged Agent remains 2.5.4.
+- Home PC must catch up from GitHub + latest Bootstrap artifact; do not repeat this transport diagnosis.

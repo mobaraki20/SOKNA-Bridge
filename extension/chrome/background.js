@@ -31,7 +31,7 @@ async function suppressLegacyPending(){
 async function getStatus(tabId){const a=await statusAll();return a[String(tabId)]||null}
 async function setStatus(tabId,patch){
   const a=await statusAll(),prev=a[String(tabId)]||{};
-  const next={version:"3.9.4",state:"Ready",detail:"",actionRequired:false,etaMs:null,etaConfidence:"unknown",...prev,...patch,lastActivityAt:now()};
+  const next={version:"3.9.5",state:"Ready",detail:"",actionRequired:false,etaMs:null,etaConfidence:"unknown",...prev,...patch,lastActivityAt:now()};
   a[String(tabId)]=next;await sset("session",{[STATUS_KEY]:a});await paint(tabId,next);return next;
 }
 async function clearStatus(tabId){const a=await statusAll();delete a[String(tabId)];await sset("session",{[STATUS_KEY]:a})}
@@ -44,9 +44,9 @@ function badgeFor(s){
 }
 async function paint(tabId,st){
   const b=badgeFor(st?.state||"Ready");
-  try{await chrome.action.setBadgeText({tabId,text:b.t});await chrome.action.setBadgeBackgroundColor({tabId,color:b.c});await chrome.action.setTitle({tabId,title:`SOKNA Bridge V3.9.4 — ${st?.state||"Ready"}${st?.detail?" — "+st.detail:""}`})}catch{}
+  try{await chrome.action.setBadgeText({tabId,text:b.t});await chrome.action.setBadgeBackgroundColor({tabId,color:b.c});await chrome.action.setTitle({tabId,title:`SOKNA Bridge V3.9.5 — ${st?.state||"Ready"}${st?.detail?" — "+st.detail:""}`})}catch{}
 }
-async function clearBadge(tabId){try{await chrome.action.setBadgeText({tabId,text:""});await chrome.action.setTitle({tabId,title:"SOKNA Bridge V3.9.4 — disabled"})}catch{}}
+async function clearBadge(tabId){try{await chrome.action.setBadgeText({tabId,text:""});await chrome.action.setTitle({tabId,title:"SOKNA Bridge V3.9.5 — disabled"})}catch{}}
 function conv(url){try{const u=new URL(url);return u.origin+u.pathname}catch{return ""}}
 function b64urlUtf8(s){
   const bytes=new TextEncoder().encode(String(s));let bin="";for(const b of bytes)bin+=String.fromCharCode(b);
@@ -106,7 +106,7 @@ async function arm(tabId){
   const a=await armedAll();for(const [tid,r] of Object.entries(a)){if(Number(tid)!==tabId&&r?.conversationKey===conv(tab.url))return {ok:false,error:"This conversation is already armed in another tab."}}
   a[String(tabId)]={conversationKey:conv(tab.url),url:tab.url,armedAt:now(),baselineCount:(base.commands||[]).length};await saveArmed(a);
   await setStatus(tabId,{state:"Ready",detail:"Armed",baselineCount:(base.commands||[]).length,lastError:"",actionRequired:false});
-  return {ok:true,armed:true,version:"3.9.4",conversationKey:conv(tab.url),baselineCount:(base.commands||[]).length};
+  return {ok:true,armed:true,version:"3.9.5",conversationKey:conv(tab.url),baselineCount:(base.commands||[]).length};
 }
 async function disarm(tabId){
   try{
@@ -225,7 +225,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           if(currentKey&&a.registered?.conversationKey&&currentKey!==a.registered.conversationKey){
             return reply({ok:true,armed:false,reason:"conversation changed"});
           }
-          // Critical V3.9.4 fix: a newly loaded content script starts unarmed.
+          // Critical V3.9.5 fix: a newly loaded content script starts unarmed.
           // Re-send BASELINE immediately to THIS frame so its MutationObserver is restored.
           try{
             const frameId=Number.isInteger(sender.frameId)?sender.frameId:0;
@@ -249,7 +249,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
             await setStatus(tabId,{state:"Ready",detail:"Armed",lastError:"",actionRequired:false});
           }catch{}
         }
-        return reply({ok:true,version:"3.9.4",armed:a.armed,registered:a.registered,status:await getStatus(tabId),pendingPostCount:pending,suppressedPendingCount:suppressed,pageDiagnostics});
+        return reply({ok:true,version:"3.9.5",armed:a.armed,registered:a.registered,status:await getStatus(tabId),pendingPostCount:pending,suppressedPendingCount:suppressed,pageDiagnostics});
       }
       if(m.type==="HOST_PING")return reply(await hostPing());
       if(m.type==="AGENT_PING")return reply(await agentExec({id:`v3-popup-${now()}`,action:"ping",params:{}}));
