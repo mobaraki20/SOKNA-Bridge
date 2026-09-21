@@ -1,10 +1,10 @@
-# SOKNA Bridge Bootstrap — Current State
+# SOKNA Bridge Bootstrap - Current State
 
 Canonical source of truth for bootstrap work.
 
 ## Remote baseline
 - Branch: `dev/bootstrap-v2.5`
-- Remote HEAD before cafe fixes: `de0d21f7b9185486ef796ac4dd3f8246b682d5d7`
+- Current remote HEAD: c01399da1ba465628aa75930c4e5ca339704c5ab
 - Bootstrap workflow run `35609296174`: SUCCESS
 - Artifact: `SOKNA-Bridge-Setup`
 
@@ -19,7 +19,7 @@ Canonical source of truth for bootstrap work.
 ## Cafe-PC findings
 1. `config.json` written by Windows PowerShell `Set-Content -Encoding UTF8` had BOM; Go Native Host rejected it.
    - Local fix applied in `installer/bootstrap/install.ps1`
-   - Status: LOCAL ONLY until committed/pushed
+   - Status: PUSHED @ c01399da1ba465628aa75930c4e5ca339704c5ab
 2. Installer currently registers both workspaces even if folders do not exist; Agent validates all configured workspaces at startup and exits.
    - Status: PENDING FIX
 3. On cafe PC, long assistant carrier messages are less reliable than on home PC.
