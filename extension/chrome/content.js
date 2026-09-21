@@ -17,7 +17,7 @@ let lastScanAt=0,lastCommandDetectedAt=0,lastPostMethod="",lastPostError="";
 let mutationCallbacks=0,addedNodesSeen=0,characterMutationsSeen=0;
 let legacyMarkerCaptures=0,lastLegacyCaptureAt=0,lastLegacySource="";
 let immediateTextChars=0,b64ParseErrors=0;
-let deliveryStateTimer=0,lastDeliveryGate="";
+let deliveryStateTimer=0,lastDeliveryGate="",periodicScanTimer=0;
 
 // V3.8: secondary streaming reassembly path for long commands.
 const STREAM_START="[SOKNA-V2-CMD]";
@@ -73,7 +73,7 @@ function b64Commands(text){
         b64ParseErrors++;
         chrome.runtime.sendMessage({
           type:"TRANSPORT_DIAG",
-          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:"3.9.3",error:String(e)}
+          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:"3.9.4",error:String(e)}
         }).catch(()=>{});
       }
     }
@@ -90,7 +90,7 @@ function emit(c,source){
   lastCommandDetectedAt=Date.now();
   chrome.runtime.sendMessage({
     type:"COMMAND",command:c,frameHref:location.href,
-    detector:"v3.9.3-core-wire",source:lastLegacySource
+    detector:"v3.9.4-core-wire",source:lastLegacySource
   }).catch(()=>{});
 }
 
@@ -100,15 +100,15 @@ function candidateContainer(node){
   try{el=node?.nodeType===Node.ELEMENT_NODE?node:node?.parentElement}catch{}
   if(!el)return null;
 
-  let best=null,depth=0;
+  let depth=0;
   while(el && el!==document.body && el!==document.documentElement && depth<14){
     let t="";
     try{t=el.textContent||""}catch{}
-    if((t.includes(STREAM_START)||t.includes(B64_START)) && t.length<=262144)best=el;
+    if((t.includes(STREAM_START)||t.includes(B64_START)) && t.length<=262144)return el;
     el=el.parentElement;
     depth++;
   }
-  return best;
+  return null;
 }
 
 function candidateStillPartial(text){
@@ -129,7 +129,7 @@ function schedulePartialDiagnostic(){
       type:"TRANSPORT_DIAG",
       diagnostic:{
         kind:"partial-command-stalled",
-        version:"3.9.3",
+        version:"3.9.4",
         activeCandidates:activeCandidates.size,
         candidateStartsSeen,
         candidateCompleted,
@@ -147,7 +147,7 @@ function schedulePartialDiagnostic(){
   },5000);
 }
 
-function inspectCandidate(el,source){
+function inspectCandidate(el,source,isNew=false){
   if(!armed||!el)return;
   let text="";
   try{text=el.textContent||""}catch{return}
@@ -157,7 +157,7 @@ function inspectCandidate(el,source){
     return;
   }
 
-  candidateStartsSeen++;
+  if(isNew)candidateStartsSeen++;
   lastCandidateAt=Date.now();
   lastCandidateSource=source||"";
 
@@ -192,8 +192,9 @@ function trackCandidate(node,source){
   if(activeCandidates.size>=32&&!activeCandidates.has(el)){
     const first=activeCandidates.values().next().value;if(first)activeCandidates.delete(first);
   }
+  const isNew=!activeCandidates.has(el);
   activeCandidates.add(el);
-  inspectCandidate(el,source);
+  inspectCandidate(el,source,isNew);
 }
 
 function inspectActiveCandidates(source){
@@ -384,14 +385,19 @@ function baseline(){
   }
   try{const r=Core.scanAll();for(const c of(r.commands||[]))seen.add(c.id);lastScanAt=Date.now()}catch{}
 }
+function runPeriodicScan(){
+  if(!armed)return;
+  try{const r=Core.scanAll();lastScanAt=Date.now();for(const c of(r.commands||[]))emit(c,"periodic")}catch{}
+}
 function start(){
   if(armed)return;
-  armed=true;baseline();observeRoots();lastDeliveryGate=deliveryGateState();scheduleDeliveryStateCheck();
+  armed=true;baseline();observeRoots();lastDeliveryGate=deliveryGateState();scheduleDeliveryStateCheck();clearInterval(periodicScanTimer);periodicScanTimer=setInterval(runPeriodicScan,1000);
 }
 function stop(){
   armed=false;
   disconnect();
   clearTimeout(partialDiagTimer);
+  clearInterval(periodicScanTimer);periodicScanTimer=0;
   activeCandidates.clear();
 }
 
@@ -421,18 +427,12 @@ function textOf(el){
   return el.innerText||el.textContent||"";
 }
 function nearestForm(el){return el?.closest?.("form")||null}
-function sendButton(el){
-  const form=nearestForm(el),roots=form?[form,document]:[document];
-  const selectors=[
-    '[data-testid="send-button"]','#composer-submit-button',
-    'button[aria-label*="send" i]','button[aria-label*="ارسال" i]',
-    'button[title*="send" i]','button[title*="ارسال" i]','button[type="submit"]'
-  ];
-  for(const root of roots)for(const q of selectors){
-    let a=[];try{a=[...root.querySelectorAll(q)].filter(vis)}catch{}
-    if(a.length)return a[a.length-1];
-  }
-  try{return Core.sendButton()}catch{return null}
+function sendButton(el,payload){
+  try{const b=Core.sendButton();if(b)return b}catch{}
+  if(!el||textOf(el).trim()!==String(payload||"").trim()||!String(payload||"").trim())return null;
+  const f=nearestForm(el)||document;
+  let a=[];try{a=[...f.querySelectorAll('button[type="submit"]')].filter(x=>{const s=((x.getAttribute("data-testid")||"")+" "+(x.getAttribute("aria-label")||"")+" "+(x.title||"")).toLowerCase();return vis(x)&&!x.disabled&&x.getAttribute("aria-disabled")!=="true"&&!/(mic|voice|upload|attach|stop|cancel|tool|camera|record)/.test(s)})}catch{}
+  return a.length?a[a.length-1]:null;
 }
 function fireInput(el,text){
   try{el.dispatchEvent(new InputEvent("beforeinput",{bubbles:true,cancelable:true,inputType:"insertText",data:text}))}catch{}
@@ -475,7 +475,7 @@ async function sent(payload,el){
   return false;
 }
 async function clickAttempt(el,payload){
-  const b=sendButton(el);
+  const b=sendButton(el,payload);
   if(!b||b.disabled||b.getAttribute("aria-disabled")==="true")return false;
   try{
     b.scrollIntoView?.({block:"nearest"});b.focus?.({preventScroll:true});
@@ -489,7 +489,7 @@ async function clickAttempt(el,payload){
 async function submitAttempt(el,payload){
   const f=nearestForm(el);if(!f)return false;
   try{
-    const b=sendButton(el);
+    const b=sendButton(el,payload);
     if(f.requestSubmit)f.requestSubmit(b&&b.form===f?b:undefined);
     else f.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}));
   }catch{return false}
@@ -599,7 +599,7 @@ const rejectedB64=new Set();
       if(buttons.length>=12)break;
     }
   }catch{}
-  const chosen=sendButton(el);
+  const chosen=sendButton();
   const f=nearestForm(el);
   return {
     composer:pack(el),chosenSend:pack(chosen),buttons,
@@ -612,7 +612,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m?.type==="BASELINE"){
     start();
     reply({ok:true,commands:[],diagnostics:{
-      detector:"v3.9.3-core-wire",baselineSeen:seen.size,observerRootCount:observers.size
+      detector:"v3.9.4-core-wire",baselineSeen:seen.size,observerRootCount:observers.size
     },frameHref:location.href});
     return;
   }
@@ -629,8 +629,8 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
     try{fallback=Core.scanAll().diagnostics||{}}catch{}
     lastScanAt=Date.now();
     reply({
-      ok:true,version:"3.9.3",armed,frameHref:location.href,topFrame:window.top===window,
-      detector:"v3.9.3-core-wire",commandCount:0,commandIds:[],
+      ok:true,version:"3.9.4",armed,frameHref:location.href,topFrame:window.top===window,
+      detector:"v3.9.4-core-wire",commandCount:0,commandIds:[],
       diagnostics:{
         ...fallback,observerRootCount:observers.size,mutationCallbacks,
         addedNodesSeen,characterMutationsSeen,legacyMarkerCaptures,
@@ -649,9 +649,9 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
 });
 
 function dispose(){if(disposed)return;disposed=true;stop()}
-globalThis[G]={version:"3.9.3",dispose};
+globalThis[G]={version:"3.9.4",dispose};
 chrome.runtime.sendMessage({
   type:"CONTENT_READY",url:location.href,topFrame:window.top===window,
-  detector:"v3.9.3-core-wire"
+  detector:"v3.9.4-core-wire"
 }).catch(()=>{});
 })();

@@ -80,9 +80,9 @@ try{
   if(!env.includes("[SOKNA-V2-RESULT]")||!env.includes(cmd.id))throw new Error("legacy result envelope failed");
   say("   PASS");
 
-  say("   V3.9.3 note: live transport also tracks incomplete command containers until the end marker arrives.");
-  say("   V3.9.3 note: complex commands use Base64URL envelopes to avoid chat escaping.");
-  status.textContent="PASS — V3.9.3 hybrid mutation-time transport self-test completed";
+  say("   V3.9.4 note: live transport also tracks incomplete command containers until the end marker arrives.");
+  say("   V3.9.4 note: complex commands use Base64URL envelopes to avoid chat escaping.");
+  status.textContent="PASS — V3.9.4 hybrid mutation-time transport self-test completed";
   status.style.color="green";
 }catch(e){
   say("FAIL — "+String(e?.stack||e));

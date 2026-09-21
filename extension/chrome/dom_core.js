@@ -221,11 +221,13 @@
 
   function sendButton(doc=document){
     return findFirst([
-      '[data-testid="send-button"]','#composer-submit-button',
+      '[data-testid="send-button"]','[data-testid="composer-submit-button"]','button[data-testid*="submit" i]','#composer-submit-button',
       'button[aria-label*="send" i]','button[aria-label*="ارسال" i]',
-      'button[title*="send" i]','button[title*="ارسال" i]','button[type="submit"]'
+      'button[title*="send" i]','button[title*="ارسال" i]'
     ],b=>!b.disabled&&b.getAttribute("aria-disabled")!=="true",doc);
   }
+
+  function genericSubmitButton(doc=document){return findFirst(['button[type="submit"]'],x=>{const s=((x.getAttribute("data-testid")||"")+" "+(x.getAttribute("aria-label")||"")+" "+(x.title||"")).toLowerCase();return !x.disabled&&x.getAttribute("aria-disabled")!=="true"&&!/(mic|voice|upload|attach|stop|cancel|tool|camera|record)/.test(s)},doc)}
 
   const delay=ms=>new Promise(r=>setTimeout(r,ms));
 
@@ -253,7 +255,7 @@
       await delay(100);
     }
 
-    const b=sendButton(),form=b?.form||el.closest?.("form");
+    const b=sendButton()||(textOf(el).trim()===envelope?genericSubmitButton():null),form=b?.form||el.closest?.("form");
     if(form){
       try{HTMLFormElement.prototype.requestSubmit.call(form,b&&b.form===form?b:undefined)}catch{}
       if(await verifySent(el,envelope))return {ok:true,method:"requestSubmit"};
@@ -272,7 +274,7 @@
   }
 
   globalThis[G]={
-    version:"3.9.3",LINK_PREFIX,
+    version:"3.9.4",LINK_PREFIX,
     b64urlToUtf8,parseEncoded,parseTextCarriers,parseLinkCarriers,
     shadowOf,collectRoots,scanAll,composer,textOf,sendButton,submitEnvelope
   };
