@@ -4,6 +4,19 @@ $ErrorActionPreference="Stop"
 function JsonResponse($ctx,[int]$status,$obj) {
   $json=$obj | ConvertTo-Json -Depth 40 -Compress
   $b=[Text.Encoding]::UTF8.GetBytes($json)
+  $maxInline=24000
+  if($b.Length -gt $maxInline){
+    $dir=if($env:LOCALAPPDATA){Join-Path $env:LOCALAPPDATA "SOKNA\Bridge\results"}else{Join-Path $PSScriptRoot "results"}
+    if(-not(Test-Path $dir)){New-Item -ItemType Directory -Path $dir -Force|Out-Null}
+    $shaAlg=[Security.Cryptography.SHA256]::Create()
+    try{$sha=([BitConverter]::ToString($shaAlg.ComputeHash($b))).Replace("-","").ToLowerInvariant()}finally{$shaAlg.Dispose()}
+    $path=Join-Path $dir ($sha+".json")
+    if(-not(Test-Path $path -PathType Leaf)){[IO.File]::WriteAllBytes($path,$b)}
+    $ok=($status-lt400);try{if($null-ne$obj.ok){$ok=[bool]$obj.ok}}catch{}
+    $obj=[ordered]@{ok=$ok;large_result=$true;result_ref=[ordered]@{id=$sha;bytes=$b.Length;content_type="application/json"}}
+    $json=$obj|ConvertTo-Json -Depth 10 -Compress
+    $b=[Text.Encoding]::UTF8.GetBytes($json)
+  }
   $ctx.Response.StatusCode=$status
   $ctx.Response.ContentType="application/json; charset=utf-8"
   $ctx.Response.ContentLength64=$b.Length
@@ -158,6 +171,21 @@ function WorkspaceSummary {
 
 function InvokeAction([string]$action,$p) {
   switch($action) {
+    "result.get" {
+      $id=[string]$p.id
+      if($id-notmatch'^[a-f0-9]{64}$'){throw "Invalid result ref id"}
+      $dir=if($env:LOCALAPPDATA){Join-Path $env:LOCALAPPDATA "SOKNA\Bridge\results"}else{Join-Path $PSScriptRoot "results"}
+      $path=Join-Path $dir ($id+".json")
+      if(-not(Test-Path $path -PathType Leaf)){throw ("Result ref not found: "+$id)}
+      $txt=[IO.File]::ReadAllText($path,[Text.Encoding]::UTF8)
+      $offset=if($p.offset){[Math]::Max([int]$p.offset,0)}else{0}
+      $limit=if($p.limit){[Math]::Min([Math]::Max([int]$p.limit,1),12000)}else{8000}
+      if($offset-gt$txt.Length){$offset=$txt.Length}
+      $take=[Math]::Min($limit,$txt.Length-$offset)
+      $chunk=if($take-gt0){$txt.Substring($offset,$take)}else{""}
+      $next=$offset+$take
+      return @{ok=$true;result_ref=$id;offset=$offset;next_offset=$next;total_chars=$txt.Length;done=($next-ge$txt.Length);content=$chunk}
+    }
     "ping" {
       return @{ok=$true;agent="sokna-bridge-v2.5.4";version="2.5.4";computer=$env:COMPUTERNAME;default_workspace=[string]$script:cfg.default_workspace;workspaces=(WorkspaceSummary)}
     }
