@@ -1,7 +1,7 @@
 # SOKNA Bridge - READ FIRST / New Chat
 Status: MANDATORY.
 
-- Canonical: HOME `C:\SOKNA\SOKNA-Bridge`, branch `dev/bootstrap-v2.5`, durable head `97d6bbc`. Inspect before any sync/reset/clean.
+- Canonical: HOME `C:\SOKNA\SOKNA-Bridge`, branch `dev/bootstrap-v2.5`. Treat the checked-out repository HEAD as the durable source; verify it with Git before any sync/reset/clean and never rely on a hard-coded SHA in this file.
 - SoknaCafe remains read-only.
 - Read `docs/AI_AGENT_OPERATING_CONTRACT_V2.md` + `docs/AI_AGENT_COMMAND_PREFLIGHT_V1.md` before any command. Use V4 + preflight; never hand-edit carriers.
 - Result-first + Code-Activation barriers are mandatory.
