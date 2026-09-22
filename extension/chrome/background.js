@@ -85,6 +85,17 @@ async function baselineAllFrames(tabId){
   const map=new Map();for(const c of commands)if(c?.id)map.set(c.id,c);
   return {ok:true,commands:[...map.values()],frames:diagnostics};
 }
+async function reconcileAllFrames(tabId){
+  const frames=await frameList(tabId);
+  for(const f of frames){
+    try{
+      const rr=await messageFrame(tabId,f.frameId,{type:"RECONCILE"});
+      const persisted=await seenAll();
+      const fresh=(rr?.commands||[]).filter(c=>c?.id&&!persisted[c.id]);
+      for(const c of fresh)await handleCommand(tabId,c);
+    }catch{}
+  }
+}
 async function diagAllFrames(tabId){
   const frames=await frameList(tabId),out=[];
   for(const f of frames){
@@ -104,7 +115,7 @@ async function arm(tabId){
   if(!base?.ok)return {ok:false,error:base?.error||"Baseline failed"};
   const seen=await seenAll();for(const c of (base.commands||[]))seen[c.id]={state:"baseline",ts:now(),conversationKey:conv(tab.url),action:c.action};await saveSeen(seen);
   const a=await armedAll();for(const [tid,r] of Object.entries(a)){if(Number(tid)!==tabId&&r?.conversationKey===conv(tab.url))return {ok:false,error:"This conversation is already armed in another tab."}}
-  a[String(tabId)]={conversationKey:conv(tab.url),url:tab.url,armedAt:now(),baselineCount:(base.commands||[]).length};await saveArmed(a);
+  a[String(tabId)]={conversationKey:conv(tab.url),url:tab.url,armedAt:now(),baselineCount:(base.commands||[]).length,reconcileReady:true};await saveArmed(a);
   await setStatus(tabId,{state:"Ready",detail:"Armed",baselineCount:(base.commands||[]).length,lastError:"",actionRequired:false});
   return {ok:true,armed:true,version:"3.9.5",conversationKey:conv(tab.url),baselineCount:(base.commands||[]).length};
 }
@@ -115,7 +126,15 @@ async function disarm(tabId){
   const a=await armedAll();delete a[String(tabId)];await saveArmed(a);
   await clearStatus(tabId);await clearBadge(tabId);return {ok:true,armed:false}
 }
+const postFlights=new Map();
 async function postPending(tabId,id,rec){
+  const key=`${tabId}:${id}`;
+  if(postFlights.has(key))return await postFlights.get(key);
+  const flight=postPendingInner(tabId,id,rec);
+  postFlights.set(key,flight);
+  try{return await flight}finally{if(postFlights.get(key)===flight)postFlights.delete(key)}
+}
+async function postPendingInner(tabId,id,rec){
   const a=await isArmed(tabId);
   let tab=null;try{tab=await chrome.tabs.get(tabId)}catch{}
   if(!a.armed||!tab||conv(tab.url)!==rec.conversationKey){
@@ -127,11 +146,11 @@ async function postPending(tabId,id,rec){
   let p;try{p=await chrome.tabs.sendMessage(tabId,{type:"POST_RESULT",envelope:env},{frameId:0})}catch(e){p={ok:false,waiting:true,reason:"page_unavailable",error:String(e)}}
   const seen=await seenAll();
   if(seen[id]){
-    const attempts=(seen[id].postAttempts||0)+(p?.ok?0:1);
-    const delay=Math.min(RETRY_MAX_MS,RETRY_BASE_MS*Math.pow(2,Math.max(0,attempts-1)));
-    seen[id].posted=!!p?.ok;seen[id].postMethod=p?.method||"";seen[id].postError=p?.error||"";
+    const attempts=(seen[id].postAttempts||0)+(p?.ok||p?.reason==="awaiting_conversation_ack"?0:1);
+    const delay=p?.reason==="awaiting_conversation_ack"?15000:Math.min(RETRY_MAX_MS,RETRY_BASE_MS*Math.pow(2,Math.max(0,attempts-1)));
+    seen[id].posted=seen[id].posted||!!p?.ok;seen[id].postMethod=p?.method||"";seen[id].postError=p?.error||"";
     seen[id].postAttempts=attempts;seen[id].waitReason=p?.reason||"";
-    seen[id].postedAt=p?.ok?now():0;seen[id].nextPostAt=p?.ok?0:(now()+delay);
+    seen[id].postedAt=seen[id].posted?(seen[id].postedAt||now()):0;seen[id].nextPostAt=seen[id].posted?0:(now()+delay);
     await saveSeen(seen);
     rec=seen[id];
   }
@@ -190,7 +209,15 @@ async function postTransportDiagnostic(tabId,diagnostic){
   return {ok:false,error:p?.error||"Diagnostic submit failed"};
 }
 
+const commandTails=new Map();
 async function handleCommand(tabId,command){
+  const key=String(tabId);
+  const prev=commandTails.get(key)||Promise.resolve();
+  const run=prev.catch(()=>{}).then(()=>handleCommandInner(tabId,command));
+  commandTails.set(key,run);
+  try{return await run}finally{if(commandTails.get(key)===run)commandTails.delete(key)}
+}
+async function handleCommandInner(tabId,command){
   const a=await isArmed(tabId);if(!a.armed)return {ok:false,ignored:true};
   let seen=await seenAll();if(seen[command.id])return {ok:true,duplicate:true,state:seen[command.id].state};
   const acceptedAt=now();seen[command.id]={state:"running",ts:acceptedAt,acceptedAt,ackAt:acceptedAt,conversationKey:a.registered.conversationKey,sessionId:a.registered.conversationKey,sequence:acceptedAt,action:command.action,posted:false};await saveSeen(seen);
@@ -229,7 +256,19 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           // Re-send BASELINE immediately to THIS frame so its MutationObserver is restored.
           try{
             const frameId=Number.isInteger(sender.frameId)?sender.frameId:0;
-            await messageFrame(tabId,frameId,{type:"BASELINE"});
+            if(a.registered?.reconcileReady){
+              const rr=await messageFrame(tabId,frameId,{type:"RECONCILE"});
+              const persisted=await seenAll();
+              const fresh=(rr?.commands||[]).filter(c=>c?.id&&!persisted[c.id]);
+              for(const c of fresh)await handleCommand(tabId,c);
+            }else{
+              const br=await messageFrame(tabId,frameId,{type:"BASELINE"});
+              const persisted=await seenAll();
+              for(const c of(br?.commands||[]))if(c?.id&&!persisted[c.id])persisted[c.id]={state:"baseline",ts:now(),conversationKey:a.registered.conversationKey,action:c.action};
+              await saveSeen(persisted);
+              const all=await armedAll();
+              if(all[String(tabId)]){all[String(tabId)].reconcileReady=true;await saveArmed(all)}
+            }
           }catch(e){
             await setStatus(tabId,{state:"Needs Action",detail:"Page adapter re-arm failed",lastError:String(e),actionRequired:true});
             return reply({ok:false,armed:true,error:"re-arm failed: "+String(e)});
@@ -244,7 +283,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         let pageDiagnostics=await diagAllFrames(tabId);
         if(a.armed && pageDiagnostics.some(x=>x?.ok && x.topFrame && x.armed===false)){
           try{
-            await baselineAllFrames(tabId);
+            await reconcileAllFrames(tabId);
             pageDiagnostics=await diagAllFrames(tabId);
             await setStatus(tabId,{state:"Ready",detail:"Armed",lastError:"",actionRequired:false});
           }catch{}

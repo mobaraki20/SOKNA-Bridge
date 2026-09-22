@@ -9,7 +9,7 @@ Canonical source of truth for bootstrap work.
 - Artifact: `SOKNA-Bridge-Setup` (ID `10653504099`, SHA256 `e5055abde35044ee22ecf343857f78d0f413ad53ccf8a9cee7e6dfa97a00c86b`)
 
 ## Confirmed working
-- Extension `3.9.4`
+- Extension `3.9.5`
 - Live cafe Agent: `2.5.3`
 - New bootstrap runtime: `2.5.4` (empty-workspace E2E PASS)
 - Native Host bridge
@@ -73,3 +73,12 @@ Before any bootstrap/extension fix, read this file and current git diff/status f
 - Expires: 2026-12-20T18:58:06Z
 - Home PC: sync dev/bootstrap-v2.5, then install artifact 10657943197.
 - OPEN: very-large assistant carriers can fail before full DOM render; use short commands/indirection.
+
+## Reliable Browser Transport next-stage baseline - 2026-09-21
+- Verified repository baseline: `43c9af4ee10647cb38a058fd57402b8683958e25` on `dev/bootstrap-v2.5`, matching origin before new RBT design work.
+- No V3.9.6 implementation or partial single-flight patch was present in the repository; V3.9.5 is the actual fallback baseline.
+- Official design contract: `docs/RBT_AGENT_JOB_ENGINE_CONTRACT_V1.md`.
+- Official reliability acceptance requirements: `docs/RBT_RELIABILITY_TEST_REQUIREMENTS_V1.md`.
+- Confirmed outbound failure: a pending RESULT can survive reload while auto-submit waits for composer input/render to expose an enabled Send control.
+- Confirmed Agent failure-mode requirement: wrapper/shell errors must propagate as job failure even when a process returns exit code 0 after non-terminating errors.
+- Do not promote the new transport until reconciliation/rescan, per-result single-flight, monotonic delivered state, conversation-bubble ACK, submit-render readiness, and the reliability suite pass.

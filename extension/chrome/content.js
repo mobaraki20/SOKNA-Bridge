@@ -413,14 +413,14 @@ function disconnect(){
   observers.clear();
 }
 function baseline(){
-  const candidates=[];
+  const map=new Map(),candidates=[];
   try{candidates.push(document.body?.innerText||"")}catch{}
   try{candidates.push(document.body?.textContent||"")}catch{}
   for(const t of candidates){
-    for(const c of commands(t))seen.add(c.id);
-    for(const c of b64Commands(t))seen.add(c.id);
+    for(const c of commands(t)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
+    for(const c of b64Commands(t)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
   }
-  try{const r=Core.scanAll();for(const c of(r.commands||[]))seen.add(c.id);lastScanAt=Date.now()}catch{}
+  try{const r=Core.scanAll();for(const c of(r.commands||[])){seen.add(c.id);if(c?.id)map.set(c.id,c)}lastScanAt=Date.now()}catch{};return [...map.values()]
 }
 function runPeriodicScan(){
   if(!armed)return;
@@ -428,7 +428,7 @@ function runPeriodicScan(){
 }
 function start(){
   if(armed)return;
-  armed=true;baseline();observeRoots();lastDeliveryGate=deliveryGateState();scheduleDeliveryStateCheck();clearInterval(periodicScanTimer);periodicScanTimer=setInterval(runPeriodicScan,1000);
+  armed=true;const base=baseline();observeRoots();lastDeliveryGate=deliveryGateState();scheduleDeliveryStateCheck();clearInterval(periodicScanTimer);periodicScanTimer=setInterval(runPeriodicScan,1000);return base;
 }
 function stop(){
   armed=false;
@@ -496,20 +496,7 @@ function setInput(el,text){
   fireInput(el,text);
 }
 async function sent(payload,el){
-  // V3.4 BUG:
-  // document.body.innerText also contains the composer text, so merely finding
-  // the payload in body text could falsely report "sent" while it was still
-  // sitting unsent in the composer.
-  //
-  // V3.8 considers submission successful ONLY after the active composer no
-  // longer contains the payload. This forces click -> requestSubmit -> Enter
-  // fallbacks to continue when a synthetic click did not actually submit.
-  for(let i=0;i<8;i++){
-    await wait(125);
-    const current=composer()||el;
-    if(!textOf(current).includes(payload))return true;
-  }
-  return false;
+  return await waitForResultVisible(payload,4000);
 }
 async function clickAttempt(el,payload){
   const b=sendButton(el,payload);
@@ -541,6 +528,42 @@ async function enterAttempt(el,payload){
     el.dispatchEvent(new KeyboardEvent("keyup",opts));
   }catch{return false}
   return await sent(payload,el);
+}
+function resultVisibleInUserTurn(payload){
+  try{
+    const p=''+(payload||'');
+    const m=p.match(/"id"\s*:\s*"([^"]+)"/);
+    const id=m&&m[1]?m[1]:'';
+
+    if(!id)return false;
+
+    const b=document.body;
+    if(!b)return false;
+
+    const s=b['inner\u0054ext']||b['text\u0043ontent']||'';
+
+    const hit=
+      s.includes('"id":"'+id+'"')||
+      s.includes('"id": "'+id+'"');
+
+    if(!hit)return false;
+
+    const el=composer();
+
+    if(!el)return true;
+
+    const c=('value' in el)
+      ?(el.value||'')
+      :(el['inner\u0054ext']||el['text\u0043ontent']||'');
+
+    return !c.includes(id);
+  }catch{}
+
+  return false;
+}async function waitForResultVisible(payload,timeoutMs=8000){
+  const end=Date.now()+timeoutMs;
+  do{if(resultVisibleInUserTurn(payload))return true;await wait(125)}while(Date.now()<end);
+  return false;
 }
 function deliveryBlockReason(el){
   try{
@@ -577,29 +600,151 @@ function scheduleDeliveryStateCheck(){
   },250);
 }
 async function post(payload){
-  if(window.top!==window)return {ok:false,error:"POST_RESULT must target top frame"};
-  const existing=composer(),draft=textOf(existing).trim();
-  if(draft&&!draft.includes(payload))return {ok:false,waiting:true,reason:"user_draft",error:"Composer contains user text; delivery queued."};
+  if(window.top!==window)
+    return {ok:false,error:"POST_RESULT must target top frame"};
+
+  // Conversation is the source of truth.
+  if(resultVisibleInUserTurn(payload))
+    return {ok:true,method:"existing-bubble"};
+
+  const existing=composer();
+  const draft=textOf(existing).trim();
+
+  if(draft&&!draft.includes(payload))
+    return {
+      ok:false,
+      waiting:true,
+      reason:"user_draft",
+      error:"Composer contains user text; delivery queued."
+    };
+
   let initialGate=deliveryBlockReason(existing);
-  if(initialGate==="assistant_generating"){for(let i=0;i<480&&initialGate==="assistant_generating";i++){await wait(250);initialGate=deliveryBlockReason(composer())}}
-  if(initialGate)return {ok:false,waiting:true,reason:initialGate,error:"Automatic delivery is waiting for the page to become safe."};
+
+  if(initialGate==="assistant_generating"){
+    for(let i=0;i<480&&initialGate==="assistant_generating";i++){
+      await wait(250);
+      initialGate=deliveryBlockReason(composer());
+    }
+  }
+
+  if(initialGate)
+    return {
+      ok:false,
+      waiting:true,
+      reason:initialGate,
+      error:"Automatic delivery is waiting for the page to become safe."
+    };
 
   for(let i=0;i<30;i++){
-    if(pageBroken()){await wait(1000);continue}
-    let el=composer();if(!el){await wait(500);continue}
-    const gate=deliveryBlockReason(el);
-    if(gate)return {ok:false,waiting:true,reason:gate,error:"Automatic delivery is waiting for the page to become safe."};
-    if(!textOf(el).includes(payload))setInput(el,payload);
-    await wait(500);
+    // Reconcile before every retry.
+    if(resultVisibleInUserTurn(payload))
+      return {ok:true,method:"existing-bubble"};
 
-    el=composer()||el;if(await clickAttempt(el,payload))return {ok:true,method:"v251-click"};
-    el=composer()||el;if(await submitAttempt(el,payload))return {ok:true,method:"v251-requestSubmit"};
-    el=composer()||el;if(await enterAttempt(el,payload))return {ok:true,method:"v251-enter"};
+    if(pageBroken()){
+      await wait(1000);
+      continue;
+    }
+
+    let el=composer();
+    if(!el){
+      await wait(500);
+      continue;
+    }
+
+    const gate=deliveryBlockReason(el);
+    if(gate)
+      return {
+        ok:false,
+        waiting:true,
+        reason:gate,
+        error:"Automatic delivery is waiting for the page to become safe."
+      };
+
+    const current=textOf(el);
+
+    if(current.trim()&&!current.includes(payload))
+      return {
+        ok:false,
+        waiting:true,
+        reason:"user_draft",
+        error:"Composer contains user text; delivery queued."
+      };
+
+    if(!current.includes(payload))
+      setInput(el,payload);
+
+    // The Send control can materialize only after input/render settles.
+    for(let r=0;r<24;r++){
+      if(resultVisibleInUserTurn(payload))
+        return {ok:true,method:"existing-bubble"};
+
+      el=composer()||el;
+      if(sendButton(el,payload))
+        break;
+
+      await wait(125);
+    }
+
+    el=composer()||el;
+
+    if(await clickAttempt(el,payload))
+      return {ok:true,method:"rbt-click-ack"};
+
+    el=composer()||el;
+
+    // Submitted but ACK has not rendered yet: do not submit again.
+    if(!textOf(el).includes(payload))
+      return {
+        ok:false,
+        waiting:true,
+        submitted:true,
+        reason:"awaiting_conversation_ack",
+        error:"Result submitted; waiting for conversation ACK."
+      };
+
+    if(await submitAttempt(el,payload))
+      return {ok:true,method:"rbt-requestSubmit-ack"};
+
+    el=composer()||el;
+
+    if(!textOf(el).includes(payload))
+      return {
+        ok:false,
+        waiting:true,
+        submitted:true,
+        reason:"awaiting_conversation_ack",
+        error:"Result submitted; waiting for conversation ACK."
+      };
+
+    if(await enterAttempt(el,payload))
+      return {ok:true,method:"rbt-enter-ack"};
+
+    el=composer()||el;
+
+    if(!textOf(el).includes(payload))
+      return {
+        ok:false,
+        waiting:true,
+        submitted:true,
+        reason:"awaiting_conversation_ack",
+        error:"Result submitted; waiting for conversation ACK."
+      };
+
     await wait(750);
   }
+
   const cur=composer();
-  if(cur&&textOf(cur).trim()===String(payload).trim())try{setInput(cur,"")}catch{}
-  return {ok:false,waiting:true,reason:"submit_blocked",error:"Automatic submit did not complete; result remains queued."};
+
+  if(cur&&textOf(cur).trim()===String(payload).trim()){
+    try{setInput(cur,"")}catch{}
+  }
+
+  return {
+    ok:false,
+    waiting:true,
+    reason:"submit_blocked",
+    error:"Automatic submit did not complete; result remains queued."
+  };
 }
 
 function deliveryProbe(){
@@ -647,9 +792,16 @@ const rejectedB64=new Set();
 }
 chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m?.type==="BASELINE"){
-    start();
-    reply({ok:true,commands:[],diagnostics:{
+    const base=start()||[];
+    reply({ok:true,commands:base,diagnostics:{
       detector:"v3.9.5-core-wire",baselineSeen:seen.size,observerRootCount:observers.size
+    },frameHref:location.href});
+    return;
+  }
+  if(m?.type==="RECONCILE"){
+    const current=start()||[];
+    reply({ok:true,commands:current,diagnostics:{
+      detector:"v3.9.5-core-wire",reconcileSeen:seen.size,observerRootCount:observers.size
     },frameHref:location.href});
     return;
   }
