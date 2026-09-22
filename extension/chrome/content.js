@@ -3,6 +3,7 @@
 const G="__SOKNA_BRIDGE_V33_CONTENT__";
 try{globalThis[G]?.dispose?.()}catch{}
 
+const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const Core=globalThis.__SOKNA_V33_DOM_CORE__;
 const RE=/\[SOKNA-V2-CMD\]([\s\S]*?)\[\/SOKNA-V2-CMD\]/g;
 const B64_RE=/\[SOKNA-CMD-B64\]([\s\S]*?)\[\/SOKNA-CMD-B64\]/g;
@@ -17,11 +18,16 @@ let lastScanAt=0,lastCommandDetectedAt=0,lastPostMethod="",lastPostError="";
 let mutationCallbacks=0,addedNodesSeen=0,characterMutationsSeen=0;
 let legacyMarkerCaptures=0,lastLegacyCaptureAt=0,lastLegacySource="";
 let immediateTextChars=0,b64ParseErrors=0;
-let deliveryStateTimer=0,lastDeliveryGate="",periodicScanTimer=0;
+let deliveryStateTimer=0,lastDeliveryGate="",lastDeliveryReadySignalAt=0,periodicScanTimer=0;
 
 // V3.8: secondary streaming reassembly path for long commands.
 const STREAM_START="SOKNA3CMD:";
 const STREAM_END=":SOKNA3END";
+const V4_START="SOKNA4CMD:";
+const V4_END=":SOKNA4END";
+const MAX_V3_CARRIER_CHARS=PROTO.maxCarrierChars,MAX_V3_PAYLOAD_BYTES=PROTO.maxPayloadBytes;
+const VERSION="3.10.2",DETECTOR="v3.10.2-core-wire";
+const rejectedV3Bodies=new Set();
 const laneBuffers=new Map();
 const laneTouched=new Map();
 const streamPartialLanes=new Set();
@@ -36,8 +42,17 @@ let lastStreamCaptureAt=0,lastStreamLane="";
 const activeCandidates=new Set();
 let candidateStartsSeen=0,candidateCompleted=0,candidateParseErrors=0;
 let lastCandidateAt=0,lastCandidateSource="",partialDiagTimer=0,lastPartialDiagAt=0;
+const recentV4Starts=new Map(),V4_START_EVIDENCE_TTL=15000;
+function noteRecentV4Start(text){
+  const t=String(text||""),re=/SOKNA4CMD:([A-Za-z0-9._-]{1,96}):/g,now=Date.now();let m;
+  while((m=re.exec(t)))recentV4Starts.set(m[1],now);
+  for(const [id,ts] of recentV4Starts)if(now-ts>V4_START_EVIDENCE_TTL)recentV4Starts.delete(id);
+}
+function hasRecentV4Start(id){const ts=recentV4Starts.get(String(id||""));return !!ts&&Date.now()-ts<=V4_START_EVIDENCE_TTL;}
 
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const utf8Bytes=s=>PROTO.bytes(s);
+
 
 function pageBroken(){
   return (document.body?.innerText||"").toLowerCase().includes("content failed to load");
@@ -54,14 +69,48 @@ function commands(text){
 }
 
 function b64urlDecodeUtf8(s){
-  s=String(s||"").replace(/\s+/g,"");if(!s||!/^[A-Za-z0-9_-]+$/.test(s))throw new Error("invalid_base64url");
-  s=s.replace(/-/g,"+").replace(/_/g,"/");
+  s=String(s||"").replace(/\s+/g,"");if(!s||!/^[A-Za-z0-9_-]+={0,2}$/.test(s)){const e=new Error("invalid_base64url");e.code="invalid_base64url";throw e}
+  s=s.replace(/=+$/,"").replace(/-/g,"+").replace(/_/g,"/");
   while(s.length%4)s+="=";
   const bin=atob(s),bytes=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
   return new TextDecoder().decode(bytes);
 }
-function b64Commands(text){
+function stableTransportRef(s){
+  s=String(s||"");let h=2166136261;
+  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}
+  return "rx-"+(h>>>0).toString(16).padStart(8,"0");
+}
+function commandIdHint(raw){
+  try{const x=JSON.parse(raw);return String(x?.id||x?.i||"")}catch{}
+  const m=String(raw||"").match(/(?:"id"|"i")\s*:\s*"([A-Za-z0-9._:-]{1,96})"/);
+  return m?.[1]||"";
+}
+function decodeV3Body(body,span,outerId=""){
+  let raw;
+  try{raw=b64urlDecodeUtf8(body)}catch(e){if(!e.code)e.code="invalid_base64url";e.commandId=outerId||"";throw e}
+  if(!PROTO.accept(raw,span)){
+    const e=new Error("contract_budget_exceeded");e.code="contract_budget_exceeded";e.commandId=outerId||commandIdHint(raw);e.payloadBytes=utf8Bytes(raw);throw e;
+  }
+  let parsed;try{parsed=JSON.parse(raw)}catch(e){const x=new Error("invalid_json");x.code="invalid_json";x.commandId=outerId||commandIdHint(raw);x.raw=raw;throw x}
+  const c=PROTO.expand(parsed);
+  if(!(c?.id&&c?.action)){const e=new Error("invalid_compact_command");e.code="invalid_compact_command";e.commandId=outerId||String(parsed?.id||parsed?.i||"");throw e}
+  if(outerId&&c.id!==outerId){const e=new Error("outer_id_mismatch");e.code="outer_id_mismatch";e.commandId=outerId;e.innerCommandId=c.id;throw e}
+  Object.defineProperty(c,"__soknaTransportValidated",{value:true});
+  return c;
+}
+function recordV3ParseFailure(body,source,error,extra={},report=true){
+  const normalized=String(body||"").replace(/\s+/g,"").slice(0,4096);
+  const ref=extra.transportRef||stableTransportRef(normalized||String(extra.outerId||source||"parse"));
+  const key=`${ref}:${error?.code||"carrier_parse_failed"}`;
+  if(rejectedV3Bodies.has(key))return;
+  rejectedV3Bodies.add(key);if(rejectedV3Bodies.size>64)rejectedV3Bodies.delete(rejectedV3Bodies.values().next().value);
+  if(!report)return;
+  const candidateId=String(error?.commandId||extra.outerId||"");
+  const commandId=/^[A-Za-z0-9._-]{1,96}$/.test(candidateId)?candidateId:"";
+  chrome.runtime.sendMessage({type:"TRANSPORT_DIAG",diagnostic:{kind:"command-intake-failed",final:extra.final!==false,reason:error?.code||"carrier_parse_failed",version:VERSION,error:String(error?.message||error||"parse failed"),source,commandId,transportRef:ref,span:extra.span??null}}).catch(()=>{});
+}
+function b64Commands(text,report=true){
   const out=[];B64_RE.lastIndex=0;let m;
   while((m=B64_RE.exec(text||""))){
     try{
@@ -72,9 +121,9 @@ function b64Commands(text){
       if(!rejectedB64.has(raw)){
         rejectedB64.add(raw);if(rejectedB64.size>64)rejectedB64.delete(rejectedB64.values().next().value);
         b64ParseErrors++;
-        chrome.runtime.sendMessage({
+        if(report)chrome.runtime.sendMessage({
           type:"TRANSPORT_DIAG",
-          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:"3.9.5",error:String(e)}
+          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:VERSION,error:String(e)}
         }).catch(()=>{});
       }
     }
@@ -82,7 +131,7 @@ function b64Commands(text){
   return out;
 }
 
-function v3Commands(text){
+function v3Commands(text,report=true){
   const out=[];
   text=String(text||"");
   let from=0;
@@ -91,17 +140,60 @@ function v3Commands(text){
     if(a<0)break;
     const b=text.indexOf(STREAM_END,a+STREAM_START.length);
     if(b<0)break;
-    const body=text.slice(a+STREAM_START.length,b).trim();
+    const body=text.slice(a+STREAM_START.length,b).trim(),span=b+STREAM_END.length-a;
     try{
-      const c=JSON.parse(b64urlDecodeUtf8(body));
-      if(c?.id&&c?.action)out.push(c);
-    }catch{}
+      out.push(decodeV3Body(body,span));
+    }catch(e){
+      if(e?.code==="contract_budget_exceeded"){
+        const ref=stableTransportRef(body),key=`${ref}:${e.code}`;
+        if(!rejectedV3Bodies.has(key)){
+          rejectedV3Bodies.add(key);if(rejectedV3Bodies.size>64)rejectedV3Bodies.delete(rejectedV3Bodies.values().next().value);
+          if(report)chrome.runtime.sendMessage({type:"TRANSPORT_DIAG",diagnostic:{kind:"command-rejected",final:true,commandId:e.commandId||"",transportRef:ref,reason:e.code,version:VERSION,span,payloadBytes:e.payloadBytes??null,maxBytes:PROTO.maxPayloadBytes}}).catch(()=>{});
+        }
+      }else recordV3ParseFailure(body,"snapshot",e,{span},report);
+    }
     from=b+STREAM_END.length;
   }
   return out;
 }
+function v4Commands(text,report=true){
+  const out=[];text=String(text||"");let from=0;
+  while(true){
+    const a=text.indexOf(V4_START,from);if(a<0)break;
+    const b=text.indexOf(V4_END,a+V4_START.length);if(b<0)break;
+    const inner=text.slice(a+V4_START.length,b).trim();
+    const sep=inner.indexOf(":");
+    const outerId=sep>0?inner.slice(0,sep).trim():"";
+    const body=sep>0?inner.slice(sep+1).trim():"";
+    const span=b+V4_END.length-a;
+    // A real guarded V4 carrier is one contiguous token. Broad parent/container scans can
+    // otherwise cross-pair an old START with a new END and manufacture a false failure.
+    if(/\s/.test(inner)){
+      const e=new Error("carrier_contains_whitespace");e.code="carrier_parse_failed";e.commandId=/^[A-Za-z0-9._-]{1,96}$/.test(outerId)?outerId:"";
+      recordV3ParseFailure(inner,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner),final:false},report);from=b+V4_END.length;continue;
+    }
+    if(!outerId||!/^[A-Za-z0-9._-]{1,96}$/.test(outerId)){
+      const e=new Error("invalid_outer_id");e.code="invalid_outer_id";recordV3ParseFailure(body||inner,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner),final:false},report);from=b+V4_END.length;continue;
+    }
+    try{out.push(decodeV3Body(body,span,outerId))}
+    catch(e){
+      if(e?.code==="contract_budget_exceeded"){
+        const ref=stableTransportRef(inner),key=`${ref}:${e.code}`;
+        if(!rejectedV3Bodies.has(key)){
+          rejectedV3Bodies.add(key);if(rejectedV3Bodies.size>64)rejectedV3Bodies.delete(rejectedV3Bodies.values().next().value);
+          if(report)chrome.runtime.sendMessage({type:"TRANSPORT_DIAG",diagnostic:{kind:"command-rejected",final:true,commandId:outerId,transportRef:ref,reason:e.code,version:VERSION,span,payloadBytes:e.payloadBytes??null,maxBytes:PROTO.maxPayloadBytes}}).catch(()=>{});
+        }
+      }else recordV3ParseFailure(body,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner)},report);
+    }
+    from=b+V4_END.length;
+  }
+  return out;
+}
+
 function emit(c,source){
   if(!armed||!c?.id||seen.has(c.id))return;
+  const payloadBytes=utf8Bytes(JSON.stringify(c));
+  if(payloadBytes>(c.__soknaTransportValidated?PROTO.maxExpandedCommandBytes:MAX_V3_PAYLOAD_BYTES)){chrome.runtime.sendMessage({type:"TRANSPORT_DIAG",diagnostic:{kind:"command-rejected",reason:"contract_payload_budget_exceeded",version:VERSION,commandId:c.id,payloadBytes,maxBytes:(c.__soknaTransportValidated?PROTO.maxExpandedCommandBytes:MAX_V3_PAYLOAD_BYTES),source}}).catch(()=>{});return}
   seen.add(c.id);
   legacyMarkerCaptures++;
   lastLegacyCaptureAt=Date.now();
@@ -109,7 +201,7 @@ function emit(c,source){
   lastCommandDetectedAt=Date.now();
   chrome.runtime.sendMessage({
     type:"COMMAND",command:c,frameHref:location.href,
-    detector:"v3.9.5-core-wire",source:lastLegacySource
+    detector:DETECTOR,source:lastLegacySource
   }).catch(()=>{});
 }
 
@@ -123,7 +215,7 @@ function candidateContainer(node){
   while(el && el!==document.body && el!==document.documentElement && depth<14){
     let t="";
     try{t=el.textContent||""}catch{}
-    if((t.includes(STREAM_START)||t.includes(B64_START)) && t.length<=262144)return el;
+    if((t.includes(STREAM_START)||t.includes(V4_START)||t.includes(B64_START)) && t.length<=262144)return el;
     el=el.parentElement;
     depth++;
   }
@@ -132,9 +224,10 @@ function candidateContainer(node){
 
 function candidateStillPartial(text){
   text=String(text||"");
-  const a=text.lastIndexOf(STREAM_START);
-  if(a<0)return false;
-  const b=text.indexOf(STREAM_END,a+STREAM_START.length);
+  const a3=text.lastIndexOf(STREAM_START),a4=text.lastIndexOf(V4_START);
+  const a=Math.max(a3,a4);if(a<0)return false;
+  const start=a4>a3?V4_START:STREAM_START,end=a4>a3?V4_END:STREAM_END;
+  const b=text.indexOf(end,a+start.length);
   return b<0;
 }
 
@@ -144,11 +237,18 @@ function schedulePartialDiagnostic(){
   partialDiagTimer=setTimeout(()=>{
     if(!armed||activeCandidates.size===0)return;
     lastPartialDiagAt=Date.now();
+    // A stalled complete-message candidate is observable. V4 can expose an outer id even if its body/end is broken.
+    let stalledId="";try{for(const el of activeCandidates){const t=el?.textContent||"";const a=t.lastIndexOf(V4_START);if(a>=0){const r=t.slice(a+V4_START.length);const c=r.indexOf(":");if(c>0){const x=r.slice(0,c).trim();if(/^[A-Za-z0-9._-]{1,96}$/.test(x)){stalledId=x;break}}}}}catch{}
+    const correlatedStall=!!stalledId&&hasRecentV4Start(stalledId);
     chrome.runtime.sendMessage({
       type:"TRANSPORT_DIAG",
       diagnostic:{
         kind:"partial-command-stalled",
-        version:"3.9.5",
+        final:correlatedStall,
+        commandId:correlatedStall?stalledId:"",
+        transportRef:stalledId?stableTransportRef(stalledId+":"+lastCandidateAt):"",
+        reason:correlatedStall?"carrier_incomplete":"partial-command-stalled",
+        version:VERSION,
         activeCandidates:activeCandidates.size,
         candidateStartsSeen,
         candidateCompleted,
@@ -173,13 +273,13 @@ function inspectCandidate(el,source,isNew=false){
   let text="";
   try{text=el.textContent||""}catch{return}
 
-  if(!(text.includes(STREAM_START)||text.includes(B64_START))){
+  if(!(text.includes(STREAM_START)||text.includes(V4_START)||text.includes(B64_START))){
     activeCandidates.delete(el);
     candidateErrorText.delete(el);
     return;
   }
 
-  const parsed=[...v3Commands(text),...commands(text),...b64Commands(text)];
+  const parsed=[...v4Commands(text),...v3Commands(text),...commands(text),...b64Commands(text)];
   const fresh=parsed.filter(cmd=>cmd?.id&&!seen.has(cmd.id));
 
   const legacyPartial=candidateStillPartial(text);
@@ -306,18 +406,17 @@ function feedStream(fragment,node,source){
 
     streamPartialLanes.delete(lane);
     const body=buf.slice(STREAM_START.length,b).trim();
+    const span=b+STREAM_END.length;
     try{
-      const cmd=JSON.parse(b64urlDecodeUtf8(body));
-      if(cmd?.id&&cmd?.action){
-        streamCompleted++;
-        lastStreamCaptureAt=Date.now();
-        lastStreamLane=lane+":"+source;
-        emit(cmd,"stream:"+source);
-      }else{
-        streamParseErrors++;
-      }
-    }catch{
+      const cmd=decodeV3Body(body,span);
+      streamCompleted++;
+      lastStreamCaptureAt=Date.now();
+      lastStreamLane=lane+":"+source;
+      emit(cmd,"stream:"+source);
+    }catch(e){
       streamParseErrors++;
+      if(e?.code==="contract_budget_exceeded")chrome.runtime.sendMessage({type:"TRANSPORT_DIAG",diagnostic:{kind:"command-rejected",commandId:e.commandId||"",reason:e.code,version:VERSION,span,payloadBytes:e.payloadBytes??null,maxBytes:PROTO.maxPayloadBytes}}).catch(()=>{});
+      else recordV3ParseFailure(body,"stream:"+source,e);
     }
     buf=buf.slice(b+STREAM_END.length);
   }
@@ -343,9 +442,13 @@ function captureText(text,source){
   immediateTextChars+=text.length;
   const hasLegacy=text.includes("[SOKNA-V2-CMD]");
   const hasB64=text.includes(B64_START);
-  if(!hasLegacy&&!hasB64)return;
+  const hasV3=text.includes(STREAM_START);
+  const hasV4=text.includes(V4_START);
+  if(!hasLegacy&&!hasB64&&!hasV3&&!hasV4)return;
   if(hasLegacy)for(const c of commands(text))emit(c,source);
   if(hasB64)for(const c of b64Commands(text))emit(c,source+":b64");
+  if(hasV4)for(const c of v4Commands(text))emit(c,source+":v4");
+  if(hasV3)for(const c of v3Commands(text))emit(c,source+":v3");
 }
 function captureNode(node,source,feed=true){
   if(!armed||!node)return;
@@ -370,13 +473,14 @@ function immediateMutation(ms){
     if(m.type==="childList"){
       for(const n of m.addedNodes){
         addedNodesSeen++;
+        try{noteRecentV4Start(n?.textContent||n?.nodeValue||"")}catch{}
         captureNode(n,"addedNode");
       }
       try{captureText(m.target?.textContent||"","childListTarget")}catch{}
     }else if(m.type==="characterData"){
       characterMutationsSeen++;
       const delta=mutationDelta(m);
-      if(delta)feedStream(delta,m.target,"characterDataDelta");
+      if(delta){noteRecentV4Start(delta);feedStream(delta,m.target,"characterDataDelta");}
       captureNode(m.target,"characterData",false);
       try{captureText(m.target?.parentNode?.textContent||"","characterDataParent")}catch{}
     }else if(m.type==="attributes"){
@@ -417,14 +521,19 @@ function baseline(){
   try{candidates.push(document.body?.innerText||"")}catch{}
   try{candidates.push(document.body?.textContent||"")}catch{}
   for(const t of candidates){
+    // Baseline is discovery-only: seed valid command ids and rejection fingerprints,
+    // but never emit transport NACKs for historical examples already on the page.
     for(const c of commands(t)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
-    for(const c of b64Commands(t)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
+    for(const c of b64Commands(t,false)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
+    for(const c of v3Commands(t,false)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
+    for(const c of v4Commands(t,false)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
   }
   try{const r=Core.scanAll();for(const c of(r.commands||[])){seen.add(c.id);if(c?.id)map.set(c.id,c)}lastScanAt=Date.now()}catch{};return [...map.values()]
 }
 function runPeriodicScan(){
   if(!armed)return;
   try{const r=Core.scanAll();lastScanAt=Date.now();for(const c of(r.commands||[]))emit(c,"periodic")}catch{}
+  scheduleDeliveryStateCheck();
 }
 function start(){
   if(armed)return;
@@ -463,6 +572,12 @@ function textOf(el){
   if(el instanceof HTMLTextAreaElement||el instanceof HTMLInputElement)return el.value||"";
   return el.innerText||el.textContent||"";
 }
+function isBridgeEnvelopeText(text){
+  const t=String(text||"").trim();
+  return (t.startsWith("[SOKNA-V2-RESULT]")&&t.endsWith("[/SOKNA-V2-RESULT]"))||
+    (t.startsWith("[SOKNA-V2-STATUS]")&&t.endsWith("[/SOKNA-V2-STATUS]"));
+}
+function samePayload(text,payload){return String(text||"").trim()===String(payload||"").trim()}
 function nearestForm(el){return el?.closest?.("form")||null}
 function sendButton(el,payload){
   try{const b=Core.sendButton();if(b)return b}catch{}
@@ -496,7 +611,7 @@ function setInput(el,text){
   fireInput(el,text);
 }
 async function sent(payload,el){
-  return await waitForResultVisible(payload,4000);
+  return await waitForResultVisible(payload,1500);
 }
 async function clickAttempt(el,payload){
   const b=sendButton(el,payload);
@@ -505,6 +620,7 @@ async function clickAttempt(el,payload){
     b.scrollIntoView?.({block:"nearest"});b.focus?.({preventScroll:true});
     b.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true,cancelable:true,pointerType:"mouse",isPrimary:true}));
     b.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0}));
+    b.dispatchEvent(new PointerEvent("pointerup",{bubbles:true,cancelable:true,pointerType:"mouse",isPrimary:true}));
     b.dispatchEvent(new MouseEvent("mouseup",{bubbles:true,cancelable:true,button:0}));
     b.click();
   }catch{try{HTMLElement.prototype.click.call(b)}catch{}}
@@ -532,7 +648,7 @@ async function enterAttempt(el,payload){
 function resultVisibleInUserTurn(payload){
   try{
     const p=''+(payload||'');
-    const m=p.match(/"id"\s*:\s*"([^"]+)"/);
+    const m=p.match(/"id"\s*:\s*"([^"]+)"/)||p.match(/"commandId"\s*:\s*"([^"]+)"/);
     const id=m&&m[1]?m[1]:'';
 
     if(!id)return false;
@@ -544,7 +660,7 @@ function resultVisibleInUserTurn(payload){
 
     const hit=
       s.includes('"id":"'+id+'"')||
-      s.includes('"id": "'+id+'"');
+      s.includes('"id": "'+id+'"')||s.includes('"commandId":"'+id+'"')||s.includes('"commandId": "'+id+'"');
 
     if(!hit)return false;
 
@@ -582,19 +698,24 @@ function deliveryBlockReason(el){
 function deliveryGateState(){
   const el=composer();
   if(!el)return "composer_missing";
-  if(textOf(el).trim())return "user_draft";
-  return deliveryBlockReason(el)||"ready";
+  const block=deliveryBlockReason(el);if(block)return block;
+  const t=textOf(el).trim();
+  if(!t)return "ready";
+  if(isBridgeEnvelopeText(t))return sendButton(el,t)?"ready":"bridge_payload_waiting";
+  return "user_draft";
 }
 function scheduleDeliveryStateCheck(){
   clearTimeout(deliveryStateTimer);
   if(!armed||disposed)return;
   deliveryStateTimer=setTimeout(()=>{
-    const gate=deliveryGateState();
-    const prev=lastDeliveryGate;
+    const el=composer(),gate=deliveryGateState();
+    const prev=lastDeliveryGate,bridgeReady=gate==="ready"&&isBridgeEnvelopeText(textOf(el));
     lastDeliveryGate=gate;
-    if(prev&&prev!=="ready"&&gate==="ready"){
+    const now=Date.now();
+    if((prev&&prev!=="ready"&&gate==="ready")||(bridgeReady&&now-lastDeliveryReadySignalAt>=1500)){
+      lastDeliveryReadySignalAt=now;
       chrome.runtime.sendMessage({
-        type:"DELIVERY_READY",from:prev,ts:Date.now(),frameHref:location.href
+        type:"DELIVERY_READY",from:prev,to:gate,force:!bridgeReady,bridgeDraft:bridgeReady,ts:now,frameHref:location.href
       }).catch(()=>{});
     }
   },250);
@@ -610,7 +731,7 @@ async function post(payload){
   const existing=composer();
   const draft=textOf(existing).trim();
 
-  if(draft&&!draft.includes(payload))
+  if(draft&&!samePayload(draft,payload))
     return {
       ok:false,
       waiting:true,
@@ -635,7 +756,7 @@ async function post(payload){
       error:"Automatic delivery is waiting for the page to become safe."
     };
 
-  for(let i=0;i<30;i++){
+  for(let i=0;i<3;i++){
     // Reconcile before every retry.
     if(resultVisibleInUserTurn(payload))
       return {ok:true,method:"existing-bubble"};
@@ -662,7 +783,7 @@ async function post(payload){
 
     const current=textOf(el);
 
-    if(current.trim()&&!current.includes(payload))
+    if(current.trim()&&!samePayload(current,payload))
       return {
         ok:false,
         waiting:true,
@@ -670,7 +791,7 @@ async function post(payload){
         error:"Composer contains user text; delivery queued."
       };
 
-    if(!current.includes(payload))
+    if(!samePayload(current,payload))
       setInput(el,payload);
 
     // The Send control can materialize only after input/render settles.
@@ -693,7 +814,7 @@ async function post(payload){
     el=composer()||el;
 
     // Submitted but ACK has not rendered yet: do not submit again.
-    if(!textOf(el).includes(payload))
+    if(!textOf(el).trim())
       return {
         ok:false,
         waiting:true,
@@ -701,13 +822,15 @@ async function post(payload){
         reason:"awaiting_conversation_ack",
         error:"Result submitted; waiting for conversation ACK."
       };
+    if(!samePayload(textOf(el),payload))
+      return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed after submit attempt; Bridge stopped to protect user text."};
 
     if(await submitAttempt(el,payload))
       return {ok:true,method:"rbt-requestSubmit-ack"};
 
     el=composer()||el;
 
-    if(!textOf(el).includes(payload))
+    if(!textOf(el).trim())
       return {
         ok:false,
         waiting:true,
@@ -715,13 +838,15 @@ async function post(payload){
         reason:"awaiting_conversation_ack",
         error:"Result submitted; waiting for conversation ACK."
       };
+    if(!samePayload(textOf(el),payload))
+      return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed after submit attempt; Bridge stopped to protect user text."};
 
     if(await enterAttempt(el,payload))
       return {ok:true,method:"rbt-enter-ack"};
 
     el=composer()||el;
 
-    if(!textOf(el).includes(payload))
+    if(!textOf(el).trim())
       return {
         ok:false,
         waiting:true,
@@ -729,21 +854,20 @@ async function post(payload){
         reason:"awaiting_conversation_ack",
         error:"Result submitted; waiting for conversation ACK."
       };
+    if(!samePayload(textOf(el),payload))
+      return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed after submit attempt; Bridge stopped to protect user text."};
 
     await wait(750);
   }
 
   const cur=composer();
-
-  if(cur&&textOf(cur).trim()===String(payload).trim()){
-    try{setInput(cur,"")}catch{}
-  }
-
+  const retained=!!cur&&samePayload(textOf(cur),payload);
   return {
     ok:false,
     waiting:true,
     reason:"submit_blocked",
-    error:"Automatic submit did not complete; result remains queued."
+    bridgeDraftRetained:retained,
+    error:"Automatic submit did not complete; result remains queued for durable retry."
   };
 }
 
@@ -783,8 +907,10 @@ const rejectedB64=new Set();
   }catch{}
   const chosen=sendButton();
   const f=nearestForm(el);
+  const composerText=textOf(el).trim();
   return {
-    composer:pack(el),chosenSend:pack(chosen),buttons,
+    composer:pack(el),composerKind:!composerText?"empty":isBridgeEnvelopeText(composerText)?"bridge_payload":"user_draft",
+    chosenSend:pack(chosen),buttons,
     form:f?{tag:f.tagName||"",id:f.id||"",action:f.getAttribute?.("action")||"",method:f.getAttribute?.("method")||""}:null,
     active:pack(document.activeElement),
     blockReason:deliveryBlockReason(el)
@@ -794,14 +920,14 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m?.type==="BASELINE"){
     const base=start()||[];
     reply({ok:true,commands:base,diagnostics:{
-      detector:"v3.9.5-core-wire",baselineSeen:seen.size,observerRootCount:observers.size
+      detector:DETECTOR,baselineSeen:seen.size,observerRootCount:observers.size
     },frameHref:location.href});
     return;
   }
   if(m?.type==="RECONCILE"){
     const current=start()||[];
     reply({ok:true,commands:current,diagnostics:{
-      detector:"v3.9.5-core-wire",reconcileSeen:seen.size,observerRootCount:observers.size
+      detector:DETECTOR,reconcileSeen:seen.size,observerRootCount:observers.size
     },frameHref:location.href});
     return;
   }
@@ -818,8 +944,8 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
     try{fallback=Core.scanAll().diagnostics||{}}catch{}
     lastScanAt=Date.now();
     reply({
-      ok:true,version:"3.9.5",armed,frameHref:location.href,topFrame:window.top===window,
-      detector:"v3.9.5-core-wire",commandCount:0,commandIds:[],
+      ok:true,version:VERSION,armed,frameHref:location.href,topFrame:window.top===window,
+      detector:DETECTOR,commandCount:0,commandIds:[],
       diagnostics:{
         ...fallback,observerRootCount:observers.size,mutationCallbacks,
         addedNodesSeen,characterMutationsSeen,legacyMarkerCaptures,
@@ -838,9 +964,9 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
 });
 
 function dispose(){if(disposed)return;disposed=true;stop()}
-globalThis[G]={version:"3.9.5",dispose};
+globalThis[G]={version:VERSION,dispose};
 chrome.runtime.sendMessage({
   type:"CONTENT_READY",url:location.href,topFrame:window.top===window,
-  detector:"v3.9.5-core-wire"
+  detector:DETECTOR
 }).catch(()=>{});
 })();

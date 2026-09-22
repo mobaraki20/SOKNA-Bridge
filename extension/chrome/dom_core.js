@@ -4,7 +4,9 @@
   if(globalThis[G])return;
 
   const TEXT_START="SOKNA3CMD:",TEXT_END=":SOKNA3END";
+  const V4_START="SOKNA4CMD:",V4_END=":SOKNA4END";
   const LINK_PREFIX="https://sokna.invalid/cmd/";
+  const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 
   function b64urlToUtf8(s){
     s=String(s||"").replace(/\s+/g,"").replace(/-/g,"+").replace(/_/g,"/");
@@ -14,10 +16,16 @@
     return new TextDecoder().decode(bytes);
   }
 
-  function parseEncoded(encoded){
+  function parseEncoded(encoded,outerId="",spanOverride=0){
     try{
-      const obj=JSON.parse(b64urlToUtf8(encoded));
-      return obj&&obj.id&&obj.action?obj:null;
+      const raw=b64urlToUtf8(encoded);
+      const span=spanOverride||TEXT_START.length+String(encoded||"").length+TEXT_END.length;
+      if(PROTO&&!PROTO.accept(raw,span))return null;
+      const obj=PROTO?.expand?PROTO.expand(JSON.parse(raw)):JSON.parse(raw);
+      if(!(obj&&obj.id&&obj.action))return null;
+      if(outerId&&obj.id!==outerId)return null;
+      try{Object.defineProperty(obj,"__soknaTransportValidated",{value:true})}catch{}
+      return obj;
     }catch{return null}
   }
 
@@ -30,6 +38,21 @@
       const obj=parseEncoded(text.slice(a+TEXT_START.length,b).trim());
       if(obj)out.push(obj);
       pos=b+TEXT_END.length;
+    }
+    return out;
+  }
+
+  function parseV4Carriers(text){
+    text=String(text||"");const out=[];let pos=0;
+    while(true){
+      const a=text.indexOf(V4_START,pos);if(a<0)break;
+      const b=text.indexOf(V4_END,a+V4_START.length);if(b<0)break;
+      const inner=text.slice(a+V4_START.length,b).trim(),sep=inner.indexOf(":");
+      if(sep>0&&!/\s/.test(inner)){
+        const id=inner.slice(0,sep).trim(),body=inner.slice(sep+1).trim();
+        if(/^[A-Za-z0-9._-]{1,96}$/.test(id)&&/^[A-Za-z0-9_-]+={0,2}$/.test(body)){const obj=parseEncoded(body,id,b+V4_END.length-a);if(obj)out.push(obj)}
+      }
+      pos=b+V4_END.length;
     }
     return out;
   }
@@ -120,13 +143,18 @@
             const items=parseTextCarriers(v);
             if(items.length){attributeCarrierCount+=items.length;addAll(items)}
           }
+          if(v.includes(V4_START)){
+            const items=parseV4Carriers(v);
+            if(items.length){attributeCarrierCount+=items.length;addAll(items)}
+          }
         }
       }
 
       // 3) Text fallback.
       const t=textOfRoot(root);
       totalChars+=t.length;
-      textMarkerStarts+=(t.match(/SOKNA3CMD:/g)||[]).length;
+      textMarkerStarts+=(t.match(/SOKNA3CMD:/g)||[]).length+(t.match(/SOKNA4CMD:/g)||[]).length;
+      addAll(parseV4Carriers(t));
       addAll(parseTextCarriers(t));
       addAll(parseLinkCarriers(t));
 
@@ -139,6 +167,10 @@
         }
         if(html.includes(TEXT_START)){
           const items=parseTextCarriers(html);
+          if(items.length){htmlCarrierCount+=items.length;addAll(items)}
+        }
+        if(html.includes(V4_START)){
+          const items=parseV4Carriers(html);
           if(items.length){htmlCarrierCount+=items.length;addAll(items)}
         }
       }catch{}
@@ -274,8 +306,8 @@
   }
 
   globalThis[G]={
-    version:"3.9.5",LINK_PREFIX,
-    b64urlToUtf8,parseEncoded,parseTextCarriers,parseLinkCarriers,
+    version:"3.10.2",LINK_PREFIX,
+    b64urlToUtf8,parseEncoded,parseTextCarriers,parseV4Carriers,parseLinkCarriers,
     shadowOf,collectRoots,scanAll,composer,textOf,sendButton,submitEnvelope
   };
 })();

@@ -7,6 +7,7 @@ document.getElementById("enable").onclick=async()=>{const t=await tab();const r=
 document.getElementById("disable").onclick=async()=>{const t=await tab();out.textContent=JSON.stringify(await msg({type:"DISARM",tabId:t.id}),null,2);await paint()};
 document.getElementById("host").onclick=async()=>{out.textContent=JSON.stringify(await msg({type:"HOST_PING"}),null,2)};
 document.getElementById("agent").onclick=async()=>{out.textContent=JSON.stringify(await msg({type:"AGENT_PING"}),null,2)};
-document.getElementById("status").onclick=async()=>{const t=await tab();out.textContent=JSON.stringify(await msg({type:"STATUS",tabId:t.id,conversationKey:conv(t)}),null,2);await paint()};paint().catch(()=>{});
+document.getElementById("status").onclick=async()=>{const t=await tab();const r=await msg({type:"STATUS",tabId:t.id,conversationKey:conv(t)});out.textContent=JSON.stringify({ok:r.ok,health:r.health},null,2);await paint()};
+document.getElementById("details").onclick=async()=>{const t=await tab();out.textContent=JSON.stringify(await msg({type:"STATUS",tabId:t.id,conversationKey:conv(t)}),null,2);await paint()};paint().catch(()=>{});
 
 document.getElementById("selftest").onclick=async()=>{const u=chrome.runtime.getURL("selftest.html");await chrome.tabs.create({url:u});};

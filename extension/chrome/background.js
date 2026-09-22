@@ -1,9 +1,14 @@
+importScripts("protocol.js");
+const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const HOST="com.sokna.bridge.v3";
+const VERSION="3.10.2";
+const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
 const STATUS_KEY="status_v3";
 const MAX_SEEN=1500;
-const RETRY_ALARM="sokna-v39-pending";
+const RETRY_ALARM="sokna-v3100-pending";
+const RETRY_TAB_PREFIX="sokna-v3100-pending-tab:";
 const V391_MIGRATION_CUTOFF=1789892342550;
 const RETRY_BASE_MS=3000,RETRY_MAX_MS=60000,MAX_POST_ATTEMPTS=8;
 
@@ -31,7 +36,7 @@ async function suppressLegacyPending(){
 async function getStatus(tabId){const a=await statusAll();return a[String(tabId)]||null}
 async function setStatus(tabId,patch){
   const a=await statusAll(),prev=a[String(tabId)]||{};
-  const next={version:"3.9.5",state:"Ready",detail:"",actionRequired:false,etaMs:null,etaConfidence:"unknown",...prev,...patch,lastActivityAt:now()};
+  const next={version:VERSION,state:"Ready",detail:"",actionRequired:false,etaMs:null,etaConfidence:"unknown",...prev,...patch,lastActivityAt:now()};
   a[String(tabId)]=next;await sset("session",{[STATUS_KEY]:a});await paint(tabId,next);return next;
 }
 async function clearStatus(tabId){const a=await statusAll();delete a[String(tabId)];await sset("session",{[STATUS_KEY]:a})}
@@ -44,9 +49,9 @@ function badgeFor(s){
 }
 async function paint(tabId,st){
   const b=badgeFor(st?.state||"Ready");
-  try{await chrome.action.setBadgeText({tabId,text:b.t});await chrome.action.setBadgeBackgroundColor({tabId,color:b.c});await chrome.action.setTitle({tabId,title:`SOKNA Bridge V3.9.5 — ${st?.state||"Ready"}${st?.detail?" — "+st.detail:""}`})}catch{}
+  try{await chrome.action.setBadgeText({tabId,text:b.t});await chrome.action.setBadgeBackgroundColor({tabId,color:b.c});await chrome.action.setTitle({tabId,title:`SOKNA Bridge V${VERSION} — ${st?.state||"Ready"}${st?.detail?" — "+st.detail:""}`})}catch{}
 }
-async function clearBadge(tabId){try{await chrome.action.setBadgeText({tabId,text:""});await chrome.action.setTitle({tabId,title:"SOKNA Bridge V3.9.5 — disabled"})}catch{}}
+async function clearBadge(tabId){try{await chrome.action.setBadgeText({tabId,text:""});await chrome.action.setTitle({tabId,title:`SOKNA Bridge V${VERSION} — disabled`})}catch{}}
 function conv(url){try{const u=new URL(url);return u.origin+u.pathname}catch{return ""}}
 function b64urlUtf8(s){
   const bytes=new TextEncoder().encode(String(s));let bin="";for(const b of bytes)bin+=String.fromCharCode(b);
@@ -64,6 +69,11 @@ async function agentExec(command){
 async function isArmed(tabId,conversationKey=""){
   const a=await armedAll(),r=a[String(tabId)];return {armed:!!r&&(!conversationKey||r.conversationKey===conversationKey),registered:r||null};
 }
+const retryAlarmName=tabId=>`${RETRY_TAB_PREFIX}${tabId}`;
+async function scheduleRetryAlarm(tabId,whenMs){
+  try{await chrome.alarms.create(retryAlarmName(tabId),{when:Math.max(now()+1000,Number(whenMs)||now()+RETRY_BASE_MS)})}catch{}
+}
+async function clearRetryAlarm(tabId){try{await chrome.alarms.clear(retryAlarmName(tabId))}catch{}}
 
 async function frameList(tabId){
   try{return await chrome.webNavigation.getAllFrames({tabId})||[]}catch{return [{frameId:0,url:""}]}
@@ -117,14 +127,15 @@ async function arm(tabId){
   const a=await armedAll();for(const [tid,r] of Object.entries(a)){if(Number(tid)!==tabId&&r?.conversationKey===conv(tab.url))return {ok:false,error:"This conversation is already armed in another tab."}}
   a[String(tabId)]={conversationKey:conv(tab.url),url:tab.url,armedAt:now(),baselineCount:(base.commands||[]).length,reconcileReady:true};await saveArmed(a);
   await setStatus(tabId,{state:"Ready",detail:"Armed",baselineCount:(base.commands||[]).length,lastError:"",actionRequired:false});
-  return {ok:true,armed:true,version:"3.9.5",conversationKey:conv(tab.url),baselineCount:(base.commands||[]).length};
+  retryPending(tabId).catch(()=>{});
+  return {ok:true,armed:true,version:VERSION,conversationKey:conv(tab.url),baselineCount:(base.commands||[]).length};
 }
 async function disarm(tabId){
   try{
     for(const f of await frameList(tabId)){try{await messageFrame(tabId,f.frameId,{type:"STOP"})}catch{}}
   }catch{}
   const a=await armedAll();delete a[String(tabId)];await saveArmed(a);
-  await clearStatus(tabId);await clearBadge(tabId);return {ok:true,armed:false}
+  await clearRetryAlarm(tabId);await clearStatus(tabId);await clearBadge(tabId);return {ok:true,armed:false}
 }
 const postFlights=new Map();
 async function postPending(tabId,id,rec){
@@ -140,8 +151,8 @@ async function postPendingInner(tabId,id,rec){
   if(!a.armed||!tab||conv(tab.url)!==rec.conversationKey){
     return {ok:false,stale:true,error:"Conversation changed; stale result was not posted."};
   }
-  if(rec.nextPostAt&&rec.nextPostAt>now())return {ok:false,waiting:true,reason:"backoff"};
-  const env=resultEnvelope({id,...rec.result});
+  if(rec.nextPostAt&&rec.nextPostAt>now()){await scheduleRetryAlarm(tabId,rec.nextPostAt);return {ok:false,waiting:true,reason:"backoff"}};
+  const env=rec.kind==="transport-nack"?statusEnvelope(rec.result):resultEnvelope({id,...rec.result});
   await setStatus(tabId,{state:"Posting",detail:`Sending ${id}`,currentCommandId:id,actionRequired:false});
   let p;try{p=await chrome.tabs.sendMessage(tabId,{type:"POST_RESULT",envelope:env},{frameId:0})}catch(e){p={ok:false,waiting:true,reason:"page_unavailable",error:String(e)}}
   const seen=await seenAll();
@@ -153,9 +164,10 @@ async function postPendingInner(tabId,id,rec){
     seen[id].postedAt=seen[id].posted?(seen[id].postedAt||now()):0;seen[id].nextPostAt=seen[id].posted?0:(now()+delay);
     await saveSeen(seen);
     rec=seen[id];
+    if(rec.posted)await clearRetryAlarm(tabId);else await scheduleRetryAlarm(tabId,rec.nextPostAt);
   }
   if(p?.ok){
-    await setStatus(tabId,{state:"Ready",detail:"Armed",lastCompletedCommandId:id,lastPostMethod:p.method||"",currentCommandId:"",lastError:"",actionRequired:false});
+    await setStatus(tabId,{state:"Ready",detail:"Armed",...(rec.kind==="transport-nack"?{}:{lastCompletedCommandId:id}),lastPostMethod:p.method||"",currentCommandId:"",lastError:"",actionRequired:false});
     setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
     return {ok:true};
   }
@@ -209,6 +221,18 @@ async function postTransportDiagnostic(tabId,diagnostic){
   return {ok:false,error:p?.error||"Diagnostic submit failed"};
 }
 
+async function queueTransportNack(t,d){
+  const a=await isArmed(t);if(!a.armed)return{ok:false,ignored:true};
+  const cid=String(d.commandId||"");
+  // Chat-visible NACKs must be correlated to a syntactically valid command id.
+  // Uncorrelated scanner noise stays in Health/diagnostics and must never become a user-visible STATUS.
+  if(!VALID_COMMAND_ID.test(cid))return{ok:true,ignored:true,uncorrelated:true};
+  const ref=cid;
+  const k=`__nack__:${ref}:${d.reason||"rejected"}`;
+  let s=await seenAll();if(s[k]?.posted)return{ok:true,duplicate:true};
+  if(!s[k])s[k]={state:"done",kind:"transport-nack",ts:now(),conversationKey:a.registered.conversationKey,posted:false,result:{kind:"transport-nack",commandId:d.commandId||"",transportRef:d.transportRef||"",reason:d.reason||"rejected",executed:false,retryable:true,source:d.source||"",error:d.error||"",payloadBytes:d.payloadBytes??null,maxBytes:d.maxBytes??null}};
+  await saveSeen(s);return await postPending(t,k,s[k]);
+}
 const commandTails=new Map();
 async function handleCommand(tabId,command){
   const key=String(tabId);
@@ -227,12 +251,26 @@ async function handleCommandInner(tabId,command){
   seen=await seenAll();seen[command.id]={...(seen[command.id]||{}),state:"done",completedAt:now(),result,posted:false};await saveSeen(seen);
   return await postPending(tabId,command.id,seen[command.id]);
 }
+function classifyPending(seen,registered,t=now(),force=false){
+  const retryEligible=[],deferred=[],stale=[],suppressed=[];
+  const conversationKey=registered?.conversationKey||"",armedAt=registered?.armedAt||0;
+  for(const [id,r] of Object.entries(seen||{})){
+    if(r?.state!=="done"||r?.posted)continue;
+    if(r?.suppressed){suppressed.push([id,r,"suppressed"]);continue}
+    if(!conversationKey||r?.conversationKey!==conversationKey){stale.push([id,r,"different_conversation"]);continue}
+    if(!r?.result){stale.push([id,r,"missing_result"]);continue}
+    if(r?.kind==="transport-nack"&&(r?.ts||0)<armedAt){stale.push([id,r,"pre_arm_nack"]);continue}
+    if(!force&&r?.nextPostAt&&r.nextPostAt>t){deferred.push([id,r,"backoff"]);continue}
+    retryEligible.push([id,r,"retry_eligible"]);
+  }
+  const byAge=(x,y)=>(x[1].acceptedAt||x[1].ts||0)-(y[1].acceptedAt||y[1].ts||0);
+  retryEligible.sort(byAge);deferred.sort(byAge);stale.sort(byAge);suppressed.sort(byAge);
+  return {retryEligible,deferred,stale,suppressed};
+}
 async function retryPending(tabId,force=false){
   const a=await isArmed(tabId);if(!a.armed)return;
-  const seen=await seenAll(),t=now();
-  const p=Object.entries(seen)
-    .filter(([id,r])=>r?.state==="done"&&!r?.posted&&!r?.suppressed&&r?.conversationKey===a.registered.conversationKey&&r?.result&&(force||!r.nextPostAt||r.nextPostAt<=t))
-    .sort((x,y)=>(x[1].acceptedAt||x[1].ts||0)-(y[1].acceptedAt||y[1].ts||0))[0];
+  const seen=await seenAll(),c=classifyPending(seen,a.registered,now(),force);
+  const p=c.retryEligible[0];
   if(p)await postPending(tabId,p[0],p[1]);
 }
 
@@ -243,8 +281,14 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
       if(m.type==="ARM")return reply(await arm(tabId));
       if(m.type==="DISARM")return reply(await disarm(tabId));
       if(m.type==="COMMAND")return reply(await handleCommand(tabId,m.command));
-      if(m.type==="TRANSPORT_DIAG")return reply(await postTransportDiagnostic(tabId,m.diagnostic||{}));
-      if(m.type==="DELIVERY_READY"){const a=await isArmed(tabId);if(a.armed)retryPending(tabId,true).catch(()=>{});return reply({ok:true,armed:a.armed})}
+      if(m.type==="TRANSPORT_DIAG"){
+        const d=m.diagnostic||{};await setStatus(tabId,{lastTransportDiagnostic:d});
+        const hard=new Set(["contract_budget_exceeded","contract_payload_budget_exceeded","invalid_base64url","invalid_json","invalid_compact_command","invalid_outer_id","outer_id_mismatch","carrier_parse_failed","carrier_incomplete"]);
+        const correlated=VALID_COMMAND_ID.test(String(d.commandId||""));
+        if(d.final===true&&hard.has(d.reason)&&correlated)return reply(await queueTransportNack(tabId,d));
+        return reply({ok:true,recorded:true,uncorrelated:d.final===true&&hard.has(d.reason)&&!correlated});
+      }
+      if(m.type==="DELIVERY_READY"){const a=await isArmed(tabId);if(a.armed)retryPending(tabId,!!m.force).catch(()=>{});return reply({ok:true,armed:a.armed})}
       if(m.type==="CONTENT_READY"){
         const a=await isArmed(tabId);
         if(a.armed){
@@ -252,7 +296,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           if(currentKey&&a.registered?.conversationKey&&currentKey!==a.registered.conversationKey){
             return reply({ok:true,armed:false,reason:"conversation changed"});
           }
-          // Critical V3.9.5 fix: a newly loaded content script starts unarmed.
+          // Critical re-arm fix: a newly loaded content script starts unarmed.
           // Re-send BASELINE immediately to THIS frame so its MutationObserver is restored.
           try{
             const frameId=Number.isInteger(sender.frameId)?sender.frameId:0;
@@ -279,7 +323,9 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         return reply({ok:true,armed:a.armed});
       }
       if(m.type==="STATUS"){
-        const a=await isArmed(tabId,m.conversationKey||"");const seen=await seenAll();const pending=Object.values(seen).filter(r=>r?.state==="done"&&!r?.posted&&!r?.suppressed&&(!m.conversationKey||r?.conversationKey===m.conversationKey)).length;const suppressed=Object.values(seen).filter(r=>r?.state==="done"&&!r?.posted&&r?.suppressed).length;
+        const a=await isArmed(tabId,m.conversationKey||"");const seen=await seenAll();
+        const registered=a.registered||{conversationKey:m.conversationKey||"",armedAt:0};
+        const pending=classifyPending(seen,registered,now(),false);
         let pageDiagnostics=await diagAllFrames(tabId);
         if(a.armed && pageDiagnostics.some(x=>x?.ok && x.topFrame && x.armed===false)){
           try{
@@ -288,7 +334,29 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
             await setStatus(tabId,{state:"Ready",detail:"Armed",lastError:"",actionRequired:false});
           }catch{}
         }
-        return reply({ok:true,version:"3.9.5",armed:a.armed,registered:a.registered,status:await getStatus(tabId),pendingPostCount:pending,suppressedPendingCount:suppressed,pageDiagnostics});
+        const status=await getStatus(tabId);
+        const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame);
+        const activePostCount=status?.state==="Posting"&&status?.currentCommandId?1:0;
+        const currentRec=(status?.currentCommandId&&seen[status.currentCommandId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||null;
+        const nextRetryAt=Number(currentRec?.nextPostAt||0);
+        const probe=top?.deliveryProbe||{};
+        const health={
+          runtimeVersion:VERSION,armed:a.armed,conversationKeySuffix:(registered?.conversationKey||"").slice(-12),
+          state:status?.state||"Ready",currentCommandId:status?.currentCommandId||"",
+          pendingRetryEligibleCount:pending.retryEligible.length,deferredPendingCount:pending.deferred.length,
+          staleUnpostedCount:pending.stale.length,suppressedCount:pending.suppressed.length,activePostCount,
+          waitReason:currentRec?.waitReason||"",postAttempts:Number(currentRec?.postAttempts||0),
+          nextRetryAt,nextRetryInMs:nextRetryAt?Math.max(0,nextRetryAt-now()):0,
+          sendControlReady:!!probe.chosenSend&&!probe.chosenSend.disabled&&probe.chosenSend.ariaDisabled!=="true",
+          composerTextLen:Number(probe.composer?.textLen||0),composerKind:probe.composerKind||"",
+          lastErrorCode:status?.lastError?"runtime_error":"",
+          lastTransportDiagnosticCode:status?.lastTransportDiagnostic?.reason||status?.lastTransportDiagnostic?.kind||"",
+          pageAdapterState:top?(top.armed===a.armed?"ready":"arm_mismatch"):"unavailable"
+        };
+        return reply({ok:true,version:VERSION,armed:a.armed,registered:a.registered,status,
+          pendingPostCount:health.pendingRetryEligibleCount,pendingRetryEligibleCount:health.pendingRetryEligibleCount,
+          deferredPendingCount:health.deferredPendingCount,staleUnpostedCount:health.staleUnpostedCount,
+          suppressedPendingCount:health.suppressedCount,activePostCount,health,pageDiagnostics});
       }
       if(m.type==="HOST_PING")return reply(await hostPing());
       if(m.type==="AGENT_PING")return reply(await agentExec({id:`v3-popup-${now()}`,action:"ping",params:{}}));
@@ -301,8 +369,14 @@ async function ensureRetryAlarm(){
   try{await chrome.alarms.create(RETRY_ALARM,{periodInMinutes:1})}catch{}
 }
 chrome.alarms.onAlarm.addListener(a=>{
-  if(a?.name!==RETRY_ALARM)return;
-  armedAll().then(x=>Promise.all(Object.keys(x).map(t=>retryPending(Number(t)).catch(()=>{})))).catch(()=>{});
+  if(a?.name===RETRY_ALARM){
+    armedAll().then(x=>Promise.all(Object.keys(x).map(t=>retryPending(Number(t)).catch(()=>{})))).catch(()=>{});
+    return;
+  }
+  if(a?.name?.startsWith(RETRY_TAB_PREFIX)){
+    const tabId=Number(a.name.slice(RETRY_TAB_PREFIX.length));
+    if(Number.isInteger(tabId))retryPending(tabId).catch(()=>{});
+  }
 });
 chrome.runtime.onStartup.addListener(()=>ensureRetryAlarm().catch(()=>{}));
 chrome.runtime.onInstalled.addListener(()=>ensureRetryAlarm().catch(()=>{}));

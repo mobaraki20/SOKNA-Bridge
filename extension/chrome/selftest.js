@@ -4,6 +4,8 @@
 const HOST="com.sokna.bridge.v3";
 const START="SOKNA3CMD:";
 const END=":SOKNA3END";
+const V4_START="SOKNA4CMD:";
+const V4_END=":SOKNA4END";
 
 const log=document.getElementById("log");
 const status=document.getElementById("status");
@@ -11,6 +13,9 @@ const status=document.getElementById("status");
 const say=s=>{log.textContent+=s+"\n"};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const uid=()=>crypto.randomUUID?.()||String(Date.now());
+const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
+const protoBoundary=()=>PROTO.accept('x'.repeat(800),800)&&!PROTO.accept('x'.repeat(801),801);
+function protocolTest(){const a='x'.repeat(800),b=a+'x';if(!PROTO.accept(a,1200)||PROTO.accept(b,1200))throw new Error('payload boundary');if(!PROTO.accept('x',1200)||PROTO.accept('x',1201))throw new Error('carrier boundary');const e=PROTO.expand({i:'z',o:'fr',w:'B',a:{f:'x'}});if(e.id!=='z'||e.action!=='file.read'||e.params.workspace!=='SOKNA-Bridge'||e.params.path!=='x')throw new Error('protocol alias');if(PROTO.bytes('سلام')<=4)throw new Error('utf8')}
 
 const toB64url=s=>{
   const bytes=new TextEncoder().encode(s);
@@ -28,6 +33,7 @@ const fromB64url=s=>{
 };
 
 const envelope=cmd=>`${START}${toB64url(JSON.stringify(cmd))}${END}`;
+const envelopeV4=cmd=>`${V4_START}${cmd.i||cmd.id}:${toB64url(JSON.stringify(cmd))}${V4_END}`;
 
 function parseV3(text){
   const out=[];
@@ -44,13 +50,34 @@ function parseV3(text){
     const body=text.slice(a+START.length,b).trim();
 
     try{
-      const cmd=JSON.parse(fromB64url(body));
+      const raw=fromB64url(body);
+      const span=b+END.length-a;
+      if(!PROTO.accept(raw,span)){from=b+END.length;continue}
+      const cmd=PROTO.expand(JSON.parse(raw));
       if(cmd?.id&&cmd?.action)out.push(cmd);
     }catch{}
 
     from=b+END.length;
   }
 
+  return out;
+}
+
+function parseV4(text){
+  const out=[];text=String(text||"");let from=0;
+  while(true){
+    const a=text.indexOf(V4_START,from);if(a<0)break;
+    const b=text.indexOf(V4_END,a+V4_START.length);if(b<0)break;
+    const inner=text.slice(a+V4_START.length,b).trim(),sep=inner.indexOf(":");
+    if(sep>0&&!/\s/.test(inner)){
+      const outerId=inner.slice(0,sep).trim(),body=inner.slice(sep+1).trim();
+      if(/^[A-Za-z0-9._-]{1,96}$/.test(outerId)&&/^[A-Za-z0-9_-]+={0,2}$/.test(body))try{
+        const raw=fromB64url(body),span=b+V4_END.length-a;
+        if(PROTO.accept(raw,span)){const cmd=PROTO.expand(JSON.parse(raw));if(cmd?.id&&cmd?.action&&cmd.id===outerId)out.push(cmd)}
+      }catch{}
+    }
+    from=b+V4_END.length;
+  }
   return out;
 }
 
@@ -81,22 +108,26 @@ const native=m=>new Promise((resolve,reject)=>{
 
 (async()=>{
 try{
+  say("Protocol V1 boundary...");protocolTest();
+  const a800="x".repeat(800),a801=a800+"x";
+  if(!PROTO.accept(a800,800)||PROTO.accept(a801,801))throw new Error("protocol boundary");
+  say("   PASS");
   say("1/8 Native Host + Windows Agent...");
   const hp=await native({
     type:"host.ping",
-    request_id:"v395-host"
+    request_id:"v3100-host"
   });
   if(!hp.ok)throw new Error(hp.error||"host ping failed");
 
   const agentCmd={
-    id:"v395-agent-"+uid(),
+    id:"v3100-agent-"+uid(),
     action:"ping",
     params:{}
   };
 
   const ap=await native({
     type:"agent.exec",
-    request_id:"v395-agent",
+    request_id:"v3100-agent",
     command:agentCmd
   });
 
@@ -105,9 +136,9 @@ try{
   }
   say("   PASS");
 
-  say("2/8 Real V3 Base64URL carrier parser...");
+  say("2/8 Real V3/V4 Base64URL carrier parser...");
   const cmd={
-    id:"v395-v3-"+uid(),
+    id:"v3100-v3-"+uid(),
     action:"ping",
     params:{text:"سلام SOKNA / V3"}
   };
@@ -120,11 +151,22 @@ try{
   if(parsed.params?.text!==cmd.params.text){
     throw new Error("V3 UTF-8 Base64URL decode failed");
   }
+  const compact={i:"v3100-compact-"+uid(),w:"B",o:"fr",a:{f:"extension/chrome/background.js",s:220,n:90}};
+  const compactParsed=parseV3(envelope(compact))[0];
+  if(compactParsed?.id!==compact.i||compactParsed?.action!=="file.read"||compactParsed?.params?.workspace!=="SOKNA-Bridge"){
+    throw new Error("compact V3 carrier expansion failed");
+  }
+  const paddedCmd={i:"v3100-pad",w:"B",o:"fs",a:{q:"x"}};
+  const paddedRaw=JSON.stringify(paddedCmd);
+  let paddedBin="";for(const b of new TextEncoder().encode(paddedRaw))paddedBin+=String.fromCharCode(b);
+  const paddedBody=btoa(paddedBin).replace(/\+/g,"-").replace(/\//g,"_");
+  const paddedParsed=parseV3(`${START}${paddedBody}${END}`)[0];
+  if(paddedParsed?.id!==paddedCmd.i||paddedParsed?.action!=="file.search")throw new Error("padded Base64URL carrier failed");
   say("   PASS");
 
   say("3/8 Legacy marker compatibility...");
   const legacyCmd={
-    id:"v395-legacy-"+uid(),
+    id:"v3100-legacy-"+uid(),
     action:"ping",
     params:{}
   };
@@ -230,7 +272,7 @@ try{
 
   say("6/8 Long fragmented V3 envelope...");
   const longCmd={
-    id:"v395-long-"+uid(),
+    id:"v3100-long-"+uid(),
     action:"ping",
     params:{
       padding:
@@ -260,7 +302,7 @@ try{
   say("7/8 Native round-trip...");
   const rr=await native({
     type:"agent.exec",
-    request_id:"v395-e2e",
+    request_id:"v3100-e2e",
     command:cmd
   });
 
@@ -289,12 +331,23 @@ try{
   say("   PASS");
 
   say("");
-  say("V3.9.5: primary carrier is SOKNA3CMD:<base64url>:SOKNA3END.");
-  say("V3.9.5: long commands are validated through fragmented V3 reassembly.");
-  say("V3.9.5: candidate and stream diagnostics are deduplicated.");
+
+  const v4cmd={i:"v3100-v4-"+uid(),w:"B",o:"p",a:{}};
+  const v4parsed=parseV4(envelopeV4(v4cmd));
+  if(v4parsed.length!==1||v4parsed[0].id!==v4cmd.i||v4parsed[0].action!=="ping")throw new Error("V4 outer-id carrier parser");
+  const v4bad=envelopeV4({...v4cmd,i:v4cmd.i+"x"}).replace(v4cmd.i+"x",v4cmd.i);
+  if(parseV4(v4bad).length!==0)throw new Error("V4 outer-id mismatch accepted");
+  const crossPair=`SOKNA4CMD:${v4cmd.i}:broken historical prose with spaces ${envelopeV4(v4cmd)}`;
+  if(parseV4(crossPair).length!==0)throw new Error("V4 cross-message/prose pairing accepted");
+  const invalidOuter=envelopeV4(v4cmd).replace(`SOKNA4CMD:${v4cmd.i}:`,`SOKNA4CMD:<command-id>:`);
+  if(parseV4(invalidOuter).length!==0)throw new Error("V4 invalid outer id accepted");
+  say("   V4 outer-id/cross-pair guard PASS");
+  say("V3.10.2: guarded primary carrier uses SOKNA4-CMD:<id>:<base64url>:SOKNA4-END (non-executable notation); V3 remains backward-compatible.");
+  say("V3.10.2: long commands are validated through fragmented V3 reassembly.");
+  say("V3.10.2: candidate and stream diagnostics are deduplicated.");
 
   status.textContent=
-    "PASS - V3.9.5 reliable transport self-test completed";
+    "PASS - V3.10.2 reliable transport self-test completed";
   status.style.color="green";
 
 }catch(e){

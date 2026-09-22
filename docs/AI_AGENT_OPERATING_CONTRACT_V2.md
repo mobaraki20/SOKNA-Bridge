@@ -4,22 +4,33 @@ Status: MANDATORY / EXECUTABLE.
 
 ## Transport budget (provisional, enforced)
 - MAX_CHAT_CARRIER_CHARS: 1200.
-- MAX_INLINE_PAYLOAD_CHARS: 600.
+- MAX_INLINE_PAYLOAD_BYTES: 800.
 - Chat is control-plane only: ids, paths, refs, tiny parameters.
 - Never carry scripts, patches, file bodies, or bulk Base64 in chat.
 - Larger work MUST use local plan/job/ref or bounded file chunks.
+- Budget rejections MUST be recorded locally, MUST NOT execute the command, and MUST emit a small retryable transport NACK to the AI. NACK delivery MUST NOT advance lastCompletedCommandId.
+
+## Command preflight barrier
+- `docs/AI_AGENT_COMMAND_PREFLIGHT_V1.md` is mandatory for every Bridge-emitting agent.
+- Prefer V4 and validate serialize/parse, Base64URL round-trip, outer/inner command-id match, required structure, and 800-byte/1200-char budgets before emission.
+- If preflight cannot be completed, emit NO Bridge command.
 
 ## Result-first barrier
 - If pendingPostCount > 0 or state is Posting/Waiting for a queued RESULT, send NO new command.
 - Never retry the same mutation when delivery is uncertain; reconcile/ACK the queued RESULT first.
+- lastCompletedCommandId advances only after valid RESULT delivery/ACK, never merely after local execution.
 
 ## Execution gate
 - Observe -> prove state -> smallest safe mutation -> verify RESULT.
 - No success/commit/push/test claim without observed RESULT evidence.
 - Failed exact match => read back; no blind retry.
+- plan.stage success proves storage only; validate staged JSON/SHA before plan.run.
 - Unknown artifacts stay untouched until provenance is known.
 
+## Code-activation barrier
+- Changes under extension/chrome/* are NOT runtime-active until unpacked Extension reload + target page reload/re-arm + runtime verification.
+
 ## Calibration & versioning
-- 1200/600 are provisional safe limits, not guesses to expand casually.
+- 1200/800 are provisional safe limits, not guesses to expand casually.
 - Change budgets only after repeatable threshold tests and record evidence.
 - Each budget change requires a versioned contract update and test evidence in repo.
