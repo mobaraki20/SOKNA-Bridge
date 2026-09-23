@@ -1,0 +1,58 @@
+{
+  "schema": "sokna-artifact-provider-policy-v1",
+  "version": 1,
+  "artifact_root_required": true,
+  "provider_contract": {
+    "operations": [
+      "probe",
+      "acquire",
+      "verify"
+    ],
+    "required_metadata": [
+      "provider",
+      "source_ref",
+      "artifact_id",
+      "size",
+      "sha256",
+      "content_type",
+      "created_at"
+    ],
+    "rules": [
+      "write-only-under-artifact-root",
+      "hash-before-accept",
+      "no-auto-execute",
+      "audit-every-transition"
+    ]
+  },
+  "providers": {
+    "local_file": {
+      "status": "mvp",
+      "transport": "filesystem"
+    },
+    "managed_folder": {
+      "status": "mvp-design",
+      "transport": "filesystem"
+    },
+    "github_release_asset": {
+      "status": "roadmap",
+      "transport": "https",
+      "note": "optional; not core dependency"
+    },
+    "object_storage": {
+      "status": "roadmap",
+      "transport": "https"
+    },
+    "chat_attachment": {
+      "status": "feasibility-only",
+      "transport": "page-session",
+      "fail_closed_schemes": [
+        "sandbox:"
+      ],
+      "note": "do not ship hidden-click fallback without evidence"
+    },
+    "github_actions_artifact": {
+      "status": "optional-evidence",
+      "must_not_back_result_plane": true
+    }
+  }
+}

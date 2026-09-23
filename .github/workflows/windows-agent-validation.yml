@@ -1,0 +1,60 @@
+name: Windows Agent Validation
+run-name: >-
+  Windows Agent Validation (${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'quick' }})
+  [${{ github.event_name == 'workflow_dispatch' && inputs.request_id || 'push' }}]
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Validation profile
+        required: true
+        default: full
+        type: choice
+        options: [quick, full]
+      request_id:
+        description: Correlation id for durable Agent collection
+        required: true
+        type: string
+  push:
+    branches: [dev/bootstrap-v2.5]
+    paths:
+      - 'native/runtime/**'
+      - 'extension/chrome/**'
+      - 'tools/ci/**'
+      - 'tools/knowledge/**'
+      - 'tools/tests/**'
+      - 'docs/contracts/**'
+      - 'docs/knowledge/**'
+      - '.github/workflows/windows-agent-validation.yml'
+permissions:
+  contents: read
+concurrency:
+  group: windows-agent-validation-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'quick' }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Extension pure contract tests
+        shell: powershell
+        run: node tools/tests/test_agent_job_core.mjs
+      - name: Repository contract tests
+        shell: powershell
+        run: python tools/tests/test_autonomy_bootstrap.py
+      - name: Environment selector and knowledge helpers
+        shell: powershell
+        run: |
+          $selection = ./tools/ci/Select-ExecutionEnvironment.ps1 -Traits @('windows-specific','clean-environment-sufficient') | ConvertFrom-Json
+          if ($selection.environment -ne 'github_windows_clean') { throw "ENV_SELECTOR_MISMATCH: $($selection.environment)" }
+          $kb = ./tools/knowledge/Query-AgentKnowledge.ps1 -Tags @('windows') -Limit 10 | ConvertFrom-Json
+          if ([int]$kb.count -lt 1) { throw 'KB_WINDOWS_QUERY_EMPTY' }
+      - name: Windows Agent runtime
+        shell: powershell
+        run: |
+          $profile='${{ inputs.profile }}'
+          if([string]::IsNullOrWhiteSpace($profile)){$profile='quick'}
+          ./tools/ci/Test-WindowsAgentEnvironment.ps1 -Profile $profile -RuntimeVersion '2.5.5'

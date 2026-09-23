@@ -8,3 +8,6 @@ Status: MANDATORY.
 - Result-first + Code-Activation barriers are mandatory.
 - Runtime 3.10.3 + Agent 2.5.5 live PASS; see `docs/status/TRANSPORT_V3103_AGENT255_ACCEPTANCE.md`.
 - Preserve unknown untracked files. PowerShell shown to user must be lowercase.
+
+## Autonomy Bootstrap checkpoint (2026-09-23)
+See `docs/AUTONOMY_BOOTSTRAP_V1_FA.md`. Windows release candidates require GitHub Windows PASS before real-PC acceptance; runtime 2.5.6 remains blocked.

@@ -26,7 +26,7 @@ const STREAM_END=":SOKNA3END";
 const V4_START="SOKNA4CMD:";
 const V4_END=":SOKNA4END";
 const MAX_V3_CARRIER_CHARS=PROTO.maxCarrierChars,MAX_V3_PAYLOAD_BYTES=PROTO.maxPayloadBytes;
-const VERSION="3.10.3",DETECTOR="v3.10.3-core-wire";
+const VERSION="3.10.4",DETECTOR="v3.10.4-core-wire";
 const rejectedV3Bodies=new Set();
 const laneBuffers=new Map();
 const laneTouched=new Map();

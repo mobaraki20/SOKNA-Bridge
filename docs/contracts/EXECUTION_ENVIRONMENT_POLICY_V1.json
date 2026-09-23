@@ -1,0 +1,131 @@
+{
+  "schema": "sokna-execution-environment-policy-v1",
+  "version": 1,
+  "principle": "choose the lowest-cost environment that can validly exercise the material risk of the job",
+  "environments": {
+    "local_development": {
+      "cost_rank": 1,
+      "use_for": [
+        "source-analysis",
+        "patch-generation",
+        "platform-neutral-validation",
+        "static-tests"
+      ]
+    },
+    "github_windows_clean": {
+      "cost_rank": 2,
+      "requires": [
+        "git-repository",
+        "github-actions",
+        "authenticated-gh"
+      ],
+      "use_for": [
+        "powershell-semantics",
+        "process-lifecycle",
+        "httplistener",
+        "windows-runtime",
+        "installer-lifecycle",
+        "rollback",
+        "windows-build"
+      ]
+    },
+    "controlled_browser": {
+      "cost_rank": 2,
+      "use_for": [
+        "dom-geometry",
+        "screenshots",
+        "console-network",
+        "visual-regression",
+        "accessibility"
+      ]
+    },
+    "real_windows_pc": {
+      "cost_rank": 4,
+      "use_for": [
+        "installed-extension",
+        "logged-in-user-session",
+        "printer",
+        "lan-wifi",
+        "machine-policy",
+        "real-upgrade-history",
+        "final-acceptance"
+      ]
+    },
+    "dedicated_self_hosted": {
+      "cost_rank": 3,
+      "status": "roadmap",
+      "use_for": [
+        "reboot-scenarios",
+        "persistent-test-state",
+        "special-hardware"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "id": "real-session",
+      "when_all": [
+        "needs-real-user-session"
+      ],
+      "choose": "real_windows_pc"
+    },
+    {
+      "id": "hardware-network",
+      "when_any": [
+        "needs-printer",
+        "needs-lan-wifi",
+        "needs-real-hardware"
+      ],
+      "choose": "real_windows_pc"
+    },
+    {
+      "id": "windows-clean",
+      "when_all": [
+        "windows-specific",
+        "clean-environment-sufficient"
+      ],
+      "choose": "github_windows_clean"
+    },
+    {
+      "id": "browser-clean",
+      "when_all": [
+        "browser-qa",
+        "no-personal-session-needed"
+      ],
+      "choose": "controlled_browser"
+    },
+    {
+      "id": "platform-neutral",
+      "when_all": [
+        "platform-neutral"
+      ],
+      "choose": "local_development"
+    }
+  ],
+  "release_gates": [
+    {
+      "when_any": [
+        "windows-runtime-release-candidate",
+        "windows-installer-release-candidate"
+      ],
+      "require_before": "real_windows_pc",
+      "gate": "github_windows_clean"
+    }
+  ],
+  "prohibitions": [
+    "github-is-not-a-core-dependency",
+    "real-pc-is-not-primary-development-environment",
+    "result-plane-must-not-depend-on-actions-artifact-download",
+    "runtime-2.5.6-must-not-activate"
+  ],
+  "blocked_runtime_versions": [
+    "2.5.6"
+  ],
+  "github_cost_guard": {
+    "path_filters_required": true,
+    "cancel_in_progress": true,
+    "default_timeout_minutes": 15,
+    "artifact_retention_days": 5,
+    "heavy_profile": "explicit-release-gate-only"
+  }
+}

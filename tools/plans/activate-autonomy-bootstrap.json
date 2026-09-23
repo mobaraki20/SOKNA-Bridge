@@ -1,0 +1,22 @@
+{
+  "id": "activate-autonomy-bootstrap-v1",
+  "steps": [
+    {
+      "name": "activate-autonomy-bootstrap",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "tools/activation/Activate-AutonomyBootstrap.ps1"
+        ],
+        "timeout_sec": 300,
+        "mutating": true
+      }
+    }
+  ]
+}

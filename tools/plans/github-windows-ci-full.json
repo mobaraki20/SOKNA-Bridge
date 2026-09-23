@@ -1,0 +1,25 @@
+{
+  "id": "github-windows-ci-full-v1",
+  "steps": [
+    {
+      "name": "github-windows-ci-full",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "tools/ci/Invoke-GitHubWindowsCI.ps1",
+          "-Profile",
+          "full",
+          "-TimeoutSec",
+          "900"
+        ],
+        "timeout_sec": 1200
+      }
+    }
+  ]
+}

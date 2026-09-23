@@ -1,7 +1,8 @@
-importScripts("protocol.js");
+importScripts("protocol.js","agent_job_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
+const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.10.3";
+const VERSION="3.10.4";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -9,6 +10,9 @@ const STATUS_KEY="status_v3";
 const MAX_SEEN=1500;
 const RETRY_ALARM="sokna-v3100-pending";
 const RETRY_TAB_PREFIX="sokna-v3100-pending-tab:";
+const JOB_WATCH_KEY="job_watches_v1";
+const JOB_ALARM_PREFIX="sokna-v3104-job:";
+const JOB_MAX_AGE_MS=2*60*60*1000;
 const V391_MIGRATION_CUTOFF=1789892342550;
 const RETRY_BASE_MS=3000,RETRY_MAX_MS=60000,MAX_POST_ATTEMPTS=8;
 
@@ -40,6 +44,8 @@ async function setStatus(tabId,patch){
   a[String(tabId)]=next;await sset("session",{[STATUS_KEY]:a});await paint(tabId,next);return next;
 }
 async function clearStatus(tabId){const a=await statusAll();delete a[String(tabId)];await sset("session",{[STATUS_KEY]:a})}
+async function jobWatchesAll(){const d=await sget("local",[JOB_WATCH_KEY]);return d[JOB_WATCH_KEY]||{}}
+async function saveJobWatches(v){await sset("local",{[JOB_WATCH_KEY]:v})}
 function badgeFor(s){
   if(s==="Working"||s==="Posting")return {t:"RUN",c:"#2563eb"};
   if(s==="Waiting")return {t:"WAIT",c:"#d97706"};
@@ -152,7 +158,8 @@ async function postPendingInner(tabId,id,rec){
     return {ok:false,stale:true,error:"Conversation changed; stale result was not posted."};
   }
   if(rec.nextPostAt&&rec.nextPostAt>now()){await scheduleRetryAlarm(tabId,rec.nextPostAt);return {ok:false,waiting:true,reason:"backoff"}};
-  const env=rec.kind==="transport-nack"?statusEnvelope(rec.result):resultEnvelope({id,...rec.result});
+  const isStatusEvent=rec.kind==="transport-nack"||rec.kind==="status-event";
+  const env=isStatusEvent?statusEnvelope(rec.result):resultEnvelope({id,...rec.result});
   await setStatus(tabId,{state:"Posting",detail:`Sending ${id}`,currentCommandId:id,actionRequired:false});
   let p;try{p=await chrome.tabs.sendMessage(tabId,{type:"POST_RESULT",envelope:env},{frameId:0})}catch(e){p={ok:false,waiting:true,reason:"page_unavailable",error:String(e)}}
   const seen=await seenAll();
@@ -167,7 +174,7 @@ async function postPendingInner(tabId,id,rec){
     if(rec.posted)await clearRetryAlarm(tabId);else await scheduleRetryAlarm(tabId,rec.nextPostAt);
   }
   if(p?.ok){
-    await setStatus(tabId,{state:"Ready",detail:"Armed",...(rec.kind==="transport-nack"?{}:{lastCompletedCommandId:id}),lastPostMethod:p.method||"",currentCommandId:"",lastError:"",actionRequired:false});
+    await setStatus(tabId,{state:"Ready",detail:"Armed",...(isStatusEvent?{}:{lastCompletedCommandId:id}),lastPostMethod:p.method||"",currentCommandId:"",lastError:"",actionRequired:false});
     setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
     return {ok:true};
   }
@@ -221,6 +228,43 @@ async function postTransportDiagnostic(tabId,diagnostic){
   return {ok:false,error:p?.error||"Diagnostic submit failed"};
 }
 
+async function queueStatusEvent(tabId,conversationKey,key,parentCommandId,result){
+  const id=`__event__:${key}`;
+  let seen=await seenAll();
+  if(!seen[id])seen[id]={state:"done",kind:"status-event",ts:now(),acceptedAt:now(),conversationKey:String(conversationKey||""),parentCommandId:String(parentCommandId||""),posted:false,result};
+  await saveSeen(seen);
+  if(Number.isInteger(tabId))retryPending(tabId).catch(()=>{});
+  return {ok:true,queued:true};
+}
+const jobAlarmName=id=>`${JOB_ALARM_PREFIX}${id}`;
+async function scheduleJobPoll(id,delay=5000){try{await chrome.alarms.create(jobAlarmName(id),{when:now()+Math.max(1000,delay)})}catch{}}
+async function registerJobWatch(tabId,parentCommandId,result,conversationKey){
+  const jobId=String(result?.job_id||"");if(!jobId)return;
+  const watches=await jobWatchesAll();
+  if(!watches[jobId])watches[jobId]={jobId,parentCommandId,tabId,conversationKey,createdAt:now(),attempts:0};
+  await saveJobWatches(watches);await scheduleJobPoll(jobId,4000);
+}
+async function pollJobWatch(jobId){
+  const watches=await jobWatchesAll(),w=watches[jobId];if(!w)return;
+  if(now()-Number(w.createdAt||0)>JOB_MAX_AGE_MS){
+    delete watches[jobId];await saveJobWatches(watches);
+    await queueStatusEvent(Number(w.tabId),w.conversationKey,`job:${jobId}`,w.parentCommandId,{kind:"job-terminal",commandId:w.parentCommandId,jobId,status:"watch_timeout",ok:false,error:"job watch timed out"});return;
+  }
+  try{
+    const r=await agentExec({id:`job-watch-${now()}-${uid().slice(0,8)}`,action:"job.get",params:{id:jobId}});
+    if(JOBCORE.terminalJobStatus(r?.job?.status)){
+      const summary=JOBCORE.summarizeJob(r);summary.commandId=w.parentCommandId;
+      delete watches[jobId];await saveJobWatches(watches);
+      await queueStatusEvent(Number(w.tabId),w.conversationKey,`job:${jobId}`,w.parentCommandId,summary);return;
+    }
+    w.attempts=0;watches[jobId]=w;await saveJobWatches(watches);await scheduleJobPoll(jobId,5000);
+  }catch(e){
+    w.attempts=Number(w.attempts||0)+1;watches[jobId]=w;await saveJobWatches(watches);
+    await scheduleJobPoll(jobId,Math.min(60000,5000*Math.pow(2,Math.min(4,w.attempts))));
+  }
+}
+async function resumeJobWatches(){const watches=await jobWatchesAll();for(const id of Object.keys(watches))await scheduleJobPoll(id,1500)}
+
 async function queueTransportNack(t,d){
   const a=await isArmed(t);if(!a.armed)return{ok:false,ignored:true};
   const cid=String(d.commandId||"");
@@ -248,6 +292,7 @@ async function handleCommandInner(tabId,command){
   await setStatus(tabId,{state:"Working",detail:`Executing ${command.action}`,currentCommandId:command.id,etaMs:null,etaConfidence:"unknown"});
   let result;
   try{result=await agentExec(command)}catch(e){result={ok:false,error:String(e)}}
+  if(command.action==="job.submit"&&result?.ok&&result?.job_id){try{await registerJobWatch(tabId,command.id,result,a.registered.conversationKey)}catch{}}
   seen=await seenAll();seen[command.id]={...(seen[command.id]||{}),state:"done",completedAt:now(),result,posted:false};await saveSeen(seen);
   return await postPending(tabId,command.id,seen[command.id]);
 }
@@ -260,6 +305,7 @@ function classifyPending(seen,registered,t=now(),force=false){
     if(!conversationKey||r?.conversationKey!==conversationKey){stale.push([id,r,"different_conversation"]);continue}
     if(!r?.result){stale.push([id,r,"missing_result"]);continue}
     if(r?.kind==="transport-nack"&&(r?.ts||0)<armedAt){stale.push([id,r,"pre_arm_nack"]);continue}
+    if(JOBCORE.shouldBlockStatusEvent(id,r,seen,conversationKey)){deferred.push([id,r,"result_first_barrier"]);continue}
     if(!force&&r?.nextPostAt&&r.nextPostAt>t){deferred.push([id,r,"backoff"]);continue}
     retryEligible.push([id,r,"retry_eligible"]);
   }
@@ -335,6 +381,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           }catch{}
         }
         const status=await getStatus(tabId);
+        const jobWatchCount=Object.keys(await jobWatchesAll()).length;
         const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame);
         const activePostCount=status?.state==="Posting"&&status?.currentCommandId?1:0;
         const currentRec=(status?.currentCommandId&&seen[status.currentCommandId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||null;
@@ -351,7 +398,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           composerTextLen:Number(probe.composer?.textLen||0),composerKind:probe.composerKind||"",
           lastErrorCode:status?.lastError?"runtime_error":"",
           lastTransportDiagnosticCode:status?.lastTransportDiagnostic?.reason||status?.lastTransportDiagnostic?.kind||"",
-          pageAdapterState:top?(top.armed===a.armed?"ready":"arm_mismatch"):"unavailable"
+          pageAdapterState:top?(top.armed===a.armed?"ready":"arm_mismatch"):"unavailable",jobWatchCount
         };
         return reply({ok:true,version:VERSION,armed:a.armed,registered:a.registered,status,
           pendingPostCount:health.pendingRetryEligibleCount,pendingRetryEligibleCount:health.pendingRetryEligibleCount,
@@ -376,10 +423,15 @@ chrome.alarms.onAlarm.addListener(a=>{
   if(a?.name?.startsWith(RETRY_TAB_PREFIX)){
     const tabId=Number(a.name.slice(RETRY_TAB_PREFIX.length));
     if(Number.isInteger(tabId))retryPending(tabId).catch(()=>{});
+    return;
+  }
+  if(a?.name?.startsWith(JOB_ALARM_PREFIX)){
+    const jobId=a.name.slice(JOB_ALARM_PREFIX.length);if(jobId)pollJobWatch(jobId).catch(()=>{});
   }
 });
-chrome.runtime.onStartup.addListener(()=>ensureRetryAlarm().catch(()=>{}));
-chrome.runtime.onInstalled.addListener(()=>ensureRetryAlarm().catch(()=>{}));
+chrome.runtime.onStartup.addListener(()=>{ensureRetryAlarm().catch(()=>{});resumeJobWatches().catch(()=>{})});
+chrome.runtime.onInstalled.addListener(()=>{ensureRetryAlarm().catch(()=>{});resumeJobWatches().catch(()=>{})});
 suppressLegacyPending().catch(()=>{});
 ensureRetryAlarm().catch(()=>{});
+resumeJobWatches().catch(()=>{});
 chrome.tabs.onRemoved.addListener(tabId=>{disarm(tabId).catch(()=>{})});
