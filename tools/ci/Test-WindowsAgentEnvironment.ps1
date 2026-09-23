@@ -1,4 +1,4 @@
-param(
+﻿param(
   [ValidateSet('quick','full')][string]$Profile = 'quick',
   [string]$RuntimeVersion = '2.5.5'
 )
@@ -93,6 +93,13 @@ try {
     $obj | Add-Member -NotePropertyName active_version -NotePropertyValue $null -Force
     $obj.active_version = 'x'
     if ($obj.active_version -ne 'x') { throw 'PSCustomObject declared-property mutation failed' }
+  }
+
+  if($RuntimeVersion -eq '2.5.7'){
+    $z=Join-Path $repo '.ci/R4.zip';if((Get-FileHash $z).Hash.ToLower()-ne(gc (Join-Path $repo '.ci/R4.sha256') -Raw).Trim()){throw 'R4_ZIP_HASH'};$r4=Join-Path $env:RUNNER_TEMP 'SOKNA-Agent-2.5.7-R4-Release';rm $r4 -Recurse -Force -EA 0;Expand-Archive $z $env:RUNNER_TEMP -Force
+    python (Join-Path $r4 'validation/verify_release.py');if($LASTEXITCODE){throw 'R4_VERIFY_FAILED'}
+    & (Join-Path $r4 'State-Schema-Regression257.ps1') -PackageRoot $r4
+    & (Join-Path $r4 'Startup-Probe-AgentRuntime257.ps1') -PackageRoot $r4 -InstallRoot $root
   }
 
   [ordered]@{

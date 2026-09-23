@@ -12,7 +12,7 @@ Status: MANDATORY.
 - Read `docs/AI_AGENT_OPERATING_CONTRACT_V2.md` + `docs/AI_AGENT_COMMAND_PREFLIGHT_V1.md` before any command. Use V4 + preflight; never hand-edit carriers.
 - Before non-basic actions, call `agent.capabilities` advertised by `ping`; older runtimes use their version-matched manifest. Never guess action names or schemas.
 - Result-first + Code-Activation barriers are mandatory.
-- Accepted baseline before the current candidate: Extension 3.10.4 + Agent 2.5.5. Individual PCs may be older; probe before use.
+- Accepted baseline: Extension 3.10.5 + Agent 2.5.7. Individual PCs may be older; probe before use.
 - Preserve unknown untracked files. PowerShell shown to user must be lowercase.
 
 ## Autonomy Bootstrap checkpoint (2026-09-23)

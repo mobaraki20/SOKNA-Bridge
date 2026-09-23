@@ -76,4 +76,4 @@ jobs:
         run: |
           $profile='${{ inputs.profile }}'
           if([string]::IsNullOrWhiteSpace($profile)){$profile='quick'}
-          ./tools/ci/Test-WindowsAgentEnvironment.ps1 -Profile $profile -RuntimeVersion '2.5.5'
+          ./tools/ci/Test-WindowsAgentEnvironment.ps1 -Profile $profile -RuntimeVersion '2.5.7'

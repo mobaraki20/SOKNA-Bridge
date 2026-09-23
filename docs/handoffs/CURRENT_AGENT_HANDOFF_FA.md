@@ -1,3 +1,7 @@
+# LIVE CHECKPOINT - 2026-09-23
+
+Baseline: Extension 3.10.5 + Agent 2.5.7. R4 live acceptance PASS; SoknaCafe remains read-only.
+
 # HANDOFF COMPLETE — Universal Agent / Fast Work Path
 
 Timestamp checkpoint: 2026-09-23 07:34 +03:30
