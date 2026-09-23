@@ -14,8 +14,8 @@ For a new Windows PC:
 9. Run HEALTH.cmd if you want to verify the Agent.
 
 Installed components:
-- Agent 2.5.4: %LOCALAPPDATA%\SOKNA-Bridge-V2
-- Extension 3.9.5 + Native Host: %LOCALAPPDATA%\SOKNA-Bridge-V3
+- Agent 2.5.5: %LOCALAPPDATA%\SOKNA-Bridge-V2
+- Extension 3.10.3 + Native Host: %LOCALAPPDATA%\SOKNA-Bridge-V3
 - Native Messaging host: com.sokna.bridge.v3
 - Startup: HKCU Run / SOKNA Bridge Agent
 

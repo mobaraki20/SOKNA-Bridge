@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "SOKNA Bridge V3.10.2 Guarded Transport",
-  "version": "3.10.2",
+  "name": "SOKNA Bridge V3.10.3 Guarded Transport",
+  "version": "3.10.3",
   "description": "Guarded V4/V3 transport with automatic malformed-carrier NACKs, durable queued delivery, and canonical diagnostics.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn4IhDMX6Ve4w4h2j+EqGj6sOZhBHB8AbZig6e89Nw7DCe4KGjXkTQggULIs4F/hmtQTGFdfF6Wv37dRhdchBKNqU98vLUJNf9qv0rHb2/oulzTsQSlHLsJB51otgBm0yQa1I3k+5aj/N7rAKi9loxM8h4WJwzLN/Wn48c7KxPrOet15Edt8tjceJQaqqwRPqBxpeoI1fntt9ZuYJg9CFd6YqorO1WWXQ/TnlP5f+EURfDV+qwGEcFmEi6wmUL2TmSAwIh4O5imxwVrvt1Tu3Mb5TGSg9X+C7T/UiSrEn5uIkuMo/ulC600YX/VMazbjGxmnklFpvxod42LtZHhIcFwIDAQAB",
   "permissions": [
@@ -16,7 +16,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "SOKNA Bridge V3.10.2"
+    "default_title": "SOKNA Bridge V3.10.3"
   },
   "content_scripts": [
     {

@@ -8,6 +8,7 @@ Status: MANDATORY / EXECUTABLE.
 - Chat is control-plane only: ids, paths, refs, tiny parameters.
 - Never carry scripts, patches, file bodies, or bulk Base64 in chat.
 - Larger work MUST use local plan/job/ref or bounded file chunks.
+- 2+ bounded deterministic steps SHOULD use one `job.batch` when safe; multi-step mutations SHOULD use one bounded plan/job instead of chat-by-chat orchestration; `large_result` SHOULD go directly to `result.get`.
 - Budget rejections MUST be recorded locally, MUST NOT execute the command, and MUST emit a small retryable transport NACK to the AI. NACK delivery MUST NOT advance lastCompletedCommandId.
 
 ## Command preflight barrier

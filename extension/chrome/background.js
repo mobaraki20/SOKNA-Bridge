@@ -1,7 +1,7 @@
 importScripts("protocol.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.10.2";
+const VERSION="3.10.3";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";

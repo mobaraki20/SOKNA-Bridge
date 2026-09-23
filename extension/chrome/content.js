@@ -26,7 +26,7 @@ const STREAM_END=":SOKNA3END";
 const V4_START="SOKNA4CMD:";
 const V4_END=":SOKNA4END";
 const MAX_V3_CARRIER_CHARS=PROTO.maxCarrierChars,MAX_V3_PAYLOAD_BYTES=PROTO.maxPayloadBytes;
-const VERSION="3.10.2",DETECTOR="v3.10.2-core-wire";
+const VERSION="3.10.3",DETECTOR="v3.10.3-core-wire";
 const rejectedV3Bodies=new Set();
 const laneBuffers=new Map();
 const laneTouched=new Map();
@@ -170,7 +170,7 @@ function v4Commands(text,report=true){
     // otherwise cross-pair an old START with a new END and manufacture a false failure.
     if(/\s/.test(inner)){
       const e=new Error("carrier_contains_whitespace");e.code="carrier_parse_failed";e.commandId=/^[A-Za-z0-9._-]{1,96}$/.test(outerId)?outerId:"";
-      recordV3ParseFailure(inner,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner),final:false},report);from=b+V4_END.length;continue;
+      recordV3ParseFailure(inner,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner),final:hasRecentV4Start(outerId)},report);from=b+V4_END.length;continue;
     }
     if(!outerId||!/^[A-Za-z0-9._-]{1,96}$/.test(outerId)){
       const e=new Error("invalid_outer_id");e.code="invalid_outer_id";recordV3ParseFailure(body||inner,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner),final:false},report);from=b+V4_END.length;continue;

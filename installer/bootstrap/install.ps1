@@ -22,7 +22,7 @@ function New-Token {
 }
 function Test-Agent([string]$token){
   try{
-    $body=@{id=('setup-ping-'+[guid]::NewGuid().ToString('N'));action='ping';params=@{}}|ConvertTo-Json -Compress
+    $body=@{id=('setup-ping-'+[guid]::NewGuid().ToString('N'));action='agent.capabilities';params=@{}}|ConvertTo-Json -Compress
     $r=Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api" -Method Post -Headers @{'X-Sokna-Token'=$token} -ContentType 'application/json' -Body $body -TimeoutSec 5
     return [bool]$r.ok
   }catch{return $false}
@@ -33,9 +33,14 @@ Ensure-Dir $AgentDir
 Ensure-Dir $ExtDir
 
 $agentSrc=Join-Path $Payload 'agent.ps1'
+$capsSrc=Join-Path $Payload 'AGENT_CAPABILITIES.json'
+$caps=Get-Content $capsSrc -Raw -Encoding UTF8|ConvertFrom-Json
+$AgentVersion=[string]$caps.agent
 $hostSrc=Join-Path $Payload 'sokna-bridge-native-host.exe'
 $extSrc=Join-Path $Payload 'extension'
+$ExtensionVersion=[string]((Get-Content (Join-Path $extSrc 'manifest.json') -Raw -Encoding UTF8|ConvertFrom-Json).version)
 if(-not(Test-Path $agentSrc)){throw "Missing payload: $agentSrc"}
+if(-not(Test-Path $capsSrc)){throw "Missing payload: $capsSrc"}
 if(-not(Test-Path $hostSrc)){throw "Missing payload: $hostSrc"}
 if(-not(Test-Path (Join-Path $extSrc 'manifest.json'))){throw "Missing extension payload"}
 
@@ -65,6 +70,7 @@ $config=[ordered]@{
 Write-Utf8NoBom $configPath ($config|ConvertTo-Json -Depth 8)
 
 Copy-Item $agentSrc (Join-Path $AgentDir 'agent.ps1') -Force
+Copy-Item $capsSrc (Join-Path $AgentDir 'AGENT_CAPABILITIES.json') -Force
 Copy-Item (Join-Path $extSrc '*') $ExtDir -Recurse -Force
 Copy-Item $hostSrc (Join-Path $Root 'sokna-bridge-native-host.exe') -Force
 
@@ -105,8 +111,8 @@ if(-not $SkipStart){
 $report=[ordered]@{
   version='1.0.0'
   installed_at=(Get-Date).ToString('o')
-  agent_version='2.5.4'
-  extension_version='3.9.5'
+  agent_version=$AgentVersion
+  extension_version=$ExtensionVersion
   agent_dir=$AgentDir
   extension_dir=$ExtDir
   native_host_manifest=$hostManifest
