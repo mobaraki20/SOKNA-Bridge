@@ -16,7 +16,7 @@ for x in ['JOB_WATCH_KEY','job.get','queueStatusEvent','result_first_barrier','r
 assert 'artifact.begin' not in bg and 'ARTIFACT_CANDIDATE' not in bg
 wf=(root/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
 for x in ['windows-2025','request_id','run-name:','cancel-in-progress: true']: assert x in wf,x
-for x in ['--json $v3Json','--json $v4Json','CARRIER_V3_GENERATOR_PROCESS_FAILED','CARRIER_V4_GENERATOR_PROCESS_FAILED']: assert x in wf,x
+for x in ['--json-b64 $v3B64','--json-b64 $v4B64','CARRIER_V3_GENERATOR_PROCESS_FAILED','CARRIER_V4_GENERATOR_PROCESS_FAILED']: assert x in wf,x
 assert "' | python tools/sokna_carrier_guard.py" not in wf
 ci=(root/'tools/ci/Invoke-GitHubWindowsCI.ps1').read_text(encoding='utf-8')
 for x in ['request_id=$requestId','--log-failed','CI_SHA_MISMATCH','displayTitle']: assert x in ci,x
