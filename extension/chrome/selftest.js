@@ -66,17 +66,14 @@ function parseV3(text){
 function parseV4(text){
   const out=[];text=String(text||"");let from=0;
   while(true){
-    const a=text.indexOf(V4_START,from);if(a<0)break;
-    const b=text.indexOf(V4_END,a+V4_START.length);if(b<0)break;
-    const inner=text.slice(a+V4_START.length,b).trim(),sep=inner.indexOf(":");
-    if(sep>0&&!/\s/.test(inner)){
-      const outerId=inner.slice(0,sep).trim(),body=inner.slice(sep+1).trim();
-      if(/^[A-Za-z0-9._-]{1,96}$/.test(outerId)&&/^[A-Za-z0-9_-]+={0,2}$/.test(body))try{
-        const raw=fromB64url(body),span=b+V4_END.length-a;
-        if(PROTO.accept(raw,span)){const cmd=PROTO.expand(JSON.parse(raw));if(cmd?.id&&cmd?.action&&cmd.id===outerId)out.push(cmd)}
-      }catch{}
-    }
-    from=b+V4_END.length;
+    const frame=PROTO.nextV4Frame(text,from);if(!frame||frame.kind==="partial")break;
+    if(frame.kind==="nested"){from=frame.nextFrom;continue}
+    from=frame.nextFrom;
+    if(frame.hasWhitespace||!frame.validOuterId)continue;
+    try{
+      const raw=fromB64url(frame.body);
+      if(PROTO.accept(raw,frame.span)){const cmd=PROTO.expand(JSON.parse(raw));if(cmd?.id&&cmd?.action&&cmd.id===frame.outerId)out.push(cmd)}
+    }catch{}
   }
   return out;
 }
@@ -338,16 +335,17 @@ try{
   const v4bad=envelopeV4({...v4cmd,i:v4cmd.i+"x"}).replace(v4cmd.i+"x",v4cmd.i);
   if(parseV4(v4bad).length!==0)throw new Error("V4 outer-id mismatch accepted");
   const crossPair=`SOKNA4CMD:${v4cmd.i}:broken historical prose with spaces ${envelopeV4(v4cmd)}`;
-  if(parseV4(crossPair).length!==0)throw new Error("V4 cross-message/prose pairing accepted");
+  const crossParsed=parseV4(crossPair);
+  if(crossParsed.length!==1||crossParsed[0].id!==v4cmd.i)throw new Error("V4 nested cross-pair recovery failed");
   const invalidOuter=envelopeV4(v4cmd).replace(`SOKNA4CMD:${v4cmd.i}:`,`SOKNA4CMD:<command-id>:`);
   if(parseV4(invalidOuter).length!==0)throw new Error("V4 invalid outer id accepted");
-  say("   V4 outer-id/cross-pair guard PASS");
-  say("V3.10.4: guarded primary carrier uses SOKNA4-CMD:<id>:<base64url>:SOKNA4-END (non-executable notation); V3 remains backward-compatible.");
-  say("V3.10.4: long commands are validated through fragmented V3 reassembly.");
-  say("V3.10.4: candidate and stream diagnostics are deduplicated.");
+  say("   V4 outer-id/correlated-NACK/cross-pair guard PASS");
+  say("V3.10.5: guarded primary carrier uses SOKNA4-CMD:<id>:<base64url>:SOKNA4-END (non-executable notation); V3 remains backward-compatible.");
+  say("V3.10.5: long commands are validated through fragmented V3 reassembly.");
+  say("V3.10.5: candidate and stream diagnostics are deduplicated.");
 
   status.textContent=
-    "PASS - V3.10.4 reliable transport self-test completed";
+    "PASS - V3.10.5 reliable transport self-test completed";
   status.style.color="green";
 
 }catch(e){

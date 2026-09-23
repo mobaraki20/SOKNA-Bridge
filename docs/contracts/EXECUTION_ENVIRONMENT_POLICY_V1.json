@@ -1,6 +1,6 @@
 {
   "schema": "sokna-execution-environment-policy-v1",
-  "version": 1,
+  "version": 2,
   "principle": "choose the lowest-cost environment that can validly exercise the material risk of the job",
   "environments": {
     "local_development": {
@@ -127,5 +127,38 @@
     "default_timeout_minutes": 15,
     "artifact_retention_days": 5,
     "heavy_profile": "explicit-release-gate-only"
+  },
+  "assistant_access_contract": {
+    "direct_authenticated_github": false,
+    "direct_user_windows_filesystem": false,
+    "access_plane": "SOKNA Bridge",
+    "must_not_ask_user_to_restate_in_new_chat": true
+  },
+  "source_acquisition": {
+    "non_trivial_requires_full_source": true,
+    "route_order": [
+      "existing_exact_development_archive",
+      "single_bridge_artifact_acquisition",
+      "verified_repository_mirror",
+      "targeted_bridge_read_last_resort"
+    ],
+    "forbid_repeated_piecemeal_bridge_reads_as_source_strategy": true
+  },
+  "development_flow": {
+    "workspace_first": true,
+    "batch_first": true,
+    "real_pc_development": false,
+    "github_role": [
+      "durable_checkpoint",
+      "independent_ci"
+    ],
+    "github_push_policy": "meaningful_validated_checkpoint_only",
+    "forbid_push_per_small_edit": true
+  },
+  "transport_generation": {
+    "programmatic_only": true,
+    "tool": "tools/sokna_carrier_guard.py",
+    "legacy_v3_before_extension": "3.10.0",
+    "v4_from_extension": "3.10.0"
   }
 }

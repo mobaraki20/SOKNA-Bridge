@@ -10,3 +10,5 @@
 حذف‌های آگاهانه نسبت به WIP قبلی: تغییر Native Host، chunked chat artifact ingest، artifact DOM scan و activation installer جدید حذف شدند؛ چون `sandbox:` fail-closed است و این scope برای bootstrap لازم نیست.
 
 Runtime 2.5.6 همچنان blocked است. Runtime live این bootstrap را روی 2.5.5 نگه می‌دارد؛ R4 2.5.7 فقط بعد از GitHub Windows PASS وارد real-PC acceptance می‌شود.
+
+> Current extension candidate note (2026-09-23): 3.10.5 preserves the 3.10.4 job/result behavior and adds correlated malformed-carrier NACK hardening. See `docs/status/TRANSPORT_V3105_CANDIDATE.md`.

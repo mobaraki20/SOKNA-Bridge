@@ -42,14 +42,27 @@ jobs:
       - name: Extension pure contract tests
         shell: powershell
         run: node tools/tests/test_agent_job_core.mjs
+      - name: Transport 3.10.5 regression tests
+        shell: powershell
+        run: node tools/tests/test_transport_v3105.mjs
       - name: Repository contract tests
         shell: powershell
         run: python tools/tests/test_autonomy_bootstrap.py
+      - name: Carrier generator legacy/current
+        shell: powershell
+        run: |
+          $v3 = '{"id":"ci-v3-1","action":"ping","params":{}}' | python tools/sokna_carrier_guard.py --extension-version 3.9.5 --meta
+          if(($v3 -join "`n") -notmatch 'SOKNA3CMD:'){ throw 'CARRIER_V3_GENERATION_FAILED' }
+          $v4 = '{"i":"ci-v4-1","o":"p","a":{}}' | python tools/sokna_carrier_guard.py --extension-version 3.10.5 --meta
+          if(($v4 -join "`n") -notmatch 'SOKNA4CMD:ci-v4-1:'){ throw 'CARRIER_V4_GENERATION_FAILED' }
       - name: Environment selector and knowledge helpers
         shell: powershell
         run: |
           $selection = ./tools/ci/Select-ExecutionEnvironment.ps1 -Traits @('windows-specific','clean-environment-sufficient') | ConvertFrom-Json
           if ($selection.environment -ne 'github_windows_clean') { throw "ENV_SELECTOR_MISMATCH: $($selection.environment)" }
+          $route = ./tools/ci/Select-FastWorkRoute.ps1 -Traits @('exact-source-already-in-development-workspace','windows-specific','clean-environment-sufficient') | ConvertFrom-Json
+          if ($route.source_route -ne 'existing_exact_development_archive') { throw "FAST_ROUTE_MISMATCH: $($route.source_route)" }
+          if ($route.github_push_policy -ne 'meaningful_validated_checkpoint_only') { throw 'FAST_ROUTE_PUSH_POLICY_MISMATCH' }
           $kb = ./tools/knowledge/Query-AgentKnowledge.ps1 -Tags @('windows') -Limit 10 | ConvertFrom-Json
           if ([int]$kb.count -lt 1) { throw 'KB_WINDOWS_QUERY_EMPTY' }
       - name: Windows Agent runtime
