@@ -95,6 +95,13 @@ try {
     if ($obj.active_version -ne 'x') { throw 'PSCustomObject declared-property mutation failed' }
   }
 
+  if($RuntimeVersion -eq '2.5.7'){
+    $r4=Join-Path $repo '.ci/r4-package'
+    python (Join-Path $r4 'validation/verify_release.py');if($LASTEXITCODE){throw 'R4_VERIFY_FAILED'}
+    & (Join-Path $r4 'State-Schema-Regression257.ps1') -PackageRoot $r4
+    & (Join-Path $r4 'Startup-Probe-AgentRuntime257.ps1') -PackageRoot $r4 -InstallRoot $root
+  }
+
   [ordered]@{
     ok = $true
     schema = 'sokna-windows-runtime-check-v1'
