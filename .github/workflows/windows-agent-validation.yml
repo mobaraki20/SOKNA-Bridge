@@ -52,11 +52,13 @@ jobs:
         shell: powershell
         run: |
           $v3Json = @{id='ci-v3-1';action='ping';params=@{}} | ConvertTo-Json -Compress
-          $v3 = python tools/sokna_carrier_guard.py --json $v3Json --extension-version 3.9.5 --meta
+          $v3B64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($v3Json))
+          $v3 = python tools/sokna_carrier_guard.py --json-b64 $v3B64 --extension-version 3.9.5 --meta
           if($LASTEXITCODE -ne 0){ throw 'CARRIER_V3_GENERATOR_PROCESS_FAILED' }
           if(($v3 -join "`n") -notmatch 'SOKNA3CMD:'){ throw 'CARRIER_V3_GENERATION_FAILED' }
           $v4Json = @{i='ci-v4-1';o='p';a=@{}} | ConvertTo-Json -Compress
-          $v4 = python tools/sokna_carrier_guard.py --json $v4Json --extension-version 3.10.5 --meta
+          $v4B64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($v4Json))
+          $v4 = python tools/sokna_carrier_guard.py --json-b64 $v4B64 --extension-version 3.10.5 --meta
           if($LASTEXITCODE -ne 0){ throw 'CARRIER_V4_GENERATOR_PROCESS_FAILED' }
           if(($v4 -join "`n") -notmatch 'SOKNA4CMD:ci-v4-1:'){ throw 'CARRIER_V4_GENERATION_FAILED' }
       - name: Environment selector and knowledge helpers

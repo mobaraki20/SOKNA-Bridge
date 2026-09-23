@@ -41,10 +41,17 @@ def transport_for_extension(version):
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--json',help='compact/expanded command JSON; omit to read stdin')
+    ap.add_argument('--json-b64',help='UTF-8 Base64 command JSON; avoids native-shell quoting loss')
     ap.add_argument('--transport',choices=['v3','v4'])
     ap.add_argument('--extension-version',help='select v3 for <3.10, v4 for >=3.10')
     ap.add_argument('--meta',action='store_true')
-    ns=ap.parse_args();text=ns.json if ns.json is not None else sys.stdin.read();obj=json.loads(text)
+    ns=ap.parse_args()
+    if ns.json is not None and ns.json_b64 is not None: raise ValueError('use only one of --json or --json-b64')
+    if ns.json_b64 is not None:
+        try: text=base64.b64decode(ns.json_b64,validate=True).decode('utf-8')
+        except Exception as e: raise ValueError('invalid --json-b64 payload') from e
+    else: text=ns.json if ns.json is not None else sys.stdin.read()
+    obj=json.loads(text)
     transport=ns.transport or (transport_for_extension(ns.extension_version) if ns.extension_version else 'v4')
     carrier,raw_n,carrier_n=build(obj,transport)
     if ns.meta: print(json.dumps({'ok':True,'transport':transport,'rawBytes':raw_n,'carrierChars':carrier_n},separators=(',',':')))
