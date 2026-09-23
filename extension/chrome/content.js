@@ -26,7 +26,7 @@ const STREAM_END=":SOKNA3END";
 const V4_START="SOKNA4CMD:";
 const V4_END=":SOKNA4END";
 const MAX_V3_CARRIER_CHARS=PROTO.maxCarrierChars,MAX_V3_PAYLOAD_BYTES=PROTO.maxPayloadBytes;
-const VERSION="3.10.4",DETECTOR="v3.10.4-core-wire";
+const VERSION="3.10.5",DETECTOR="v3.10.5-core-wire";
 const rejectedV3Bodies=new Set();
 const laneBuffers=new Map();
 const laneTouched=new Map();
@@ -159,21 +159,19 @@ function v3Commands(text,report=true){
 function v4Commands(text,report=true){
   const out=[];text=String(text||"");let from=0;
   while(true){
-    const a=text.indexOf(V4_START,from);if(a<0)break;
-    const b=text.indexOf(V4_END,a+V4_START.length);if(b<0)break;
-    const inner=text.slice(a+V4_START.length,b).trim();
-    const sep=inner.indexOf(":");
-    const outerId=sep>0?inner.slice(0,sep).trim():"";
-    const body=sep>0?inner.slice(sep+1).trim():"";
-    const span=b+V4_END.length-a;
-    // A real guarded V4 carrier is one contiguous token. Broad parent/container scans can
-    // otherwise cross-pair an old START with a new END and manufacture a false failure.
-    if(/\s/.test(inner)){
-      const e=new Error("carrier_contains_whitespace");e.code="carrier_parse_failed";e.commandId=/^[A-Za-z0-9._-]{1,96}$/.test(outerId)?outerId:"";
-      recordV3ParseFailure(inner,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner),final:hasRecentV4Start(outerId)},report);from=b+V4_END.length;continue;
+    const frame=PROTO.nextV4Frame(text,from);if(!frame||frame.kind==="partial")break;
+    if(frame.kind==="nested"){from=frame.nextFrom;continue}
+    const {inner,outerId,body,span,validOuterId,hasWhitespace}=frame;
+    from=frame.nextFrom;
+    // Broad ancestor snapshots can contain an old START before a newer complete carrier.
+    // nextV4Frame classifies that as nested and restarts at the newer START, so the old
+    // fragment cannot manufacture a visible NACK or hide the real carrier.
+    if(hasWhitespace){
+      const e=new Error("carrier_contains_whitespace");e.code="carrier_parse_failed";e.commandId=validOuterId?outerId:"";
+      recordV3ParseFailure(inner,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner),final:PROTO.correlatableMalformedV4(frame)},report);continue;
     }
-    if(!outerId||!/^[A-Za-z0-9._-]{1,96}$/.test(outerId)){
-      const e=new Error("invalid_outer_id");e.code="invalid_outer_id";recordV3ParseFailure(body||inner,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner),final:false},report);from=b+V4_END.length;continue;
+    if(!validOuterId){
+      const e=new Error("invalid_outer_id");e.code="invalid_outer_id";recordV3ParseFailure(body||inner,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner),final:false},report);continue;
     }
     try{out.push(decodeV3Body(body,span,outerId))}
     catch(e){
@@ -185,7 +183,6 @@ function v4Commands(text,report=true){
         }
       }else recordV3ParseFailure(body,"v4-snapshot",e,{outerId,span,transportRef:stableTransportRef(inner)},report);
     }
-    from=b+V4_END.length;
   }
   return out;
 }

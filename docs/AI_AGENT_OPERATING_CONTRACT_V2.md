@@ -35,3 +35,10 @@ Status: MANDATORY / EXECUTABLE.
 - 1200/800 are provisional safe limits, not guesses to expand casually.
 - Change budgets only after repeatable threshold tests and record evidence.
 - Each budget change requires a versioned contract update and test evidence in repo.
+
+## Fast execution routing barrier
+- SOKNA Bridge is the Chat agent access plane to authenticated GitHub and the user PC; do not assume direct access and do not ask the user to re-explain this in a new chat.
+- Non-trivial work requires one full-source acquisition into the development workspace. Repeated Bridge file reads are not a development strategy.
+- Development is workspace-first/batch-first. GitHub is used at meaningful validated checkpoints and for independent CI, never as a per-edit scratchpad.
+- Real PCs are access/activation/acceptance endpoints. A PC may run an older Agent/Extension; probe first and use the version-matched contract.
+- Route selection should minimize round trips while preserving the Full-Source, Result-First, and Code-Activation barriers.
