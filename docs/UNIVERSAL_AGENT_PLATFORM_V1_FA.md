@@ -49,6 +49,12 @@ Agent باید Download/Import -> Size Check -> Hash Check -> Policy/Signature C
 
 Providerها pluggable هستند: local file/downloads، shared folder/LAN، Google Drive، OneDrive، S3، GitHub Release یا provider اختصاصی. هیچ provider واحدی dependency هسته نیست.
 
+### ArtifactRoot / DownloadRoot
+
+ArtifactRoot یک تنظیم first-class و قابل انتخاب در Installer/Settings است. تمام دانلودهایی که خود Agent انجام می‌دهد باید فقط در این root مدیریت‌شده قرار گیرند؛ دانلود خودکار پراکنده در Downloads یا مسیرهای نامشخص مجاز نیست. تا پیش از آماده‌شدن Installer، runtime می‌تواند fallback شفاف و قابل گزارش داشته باشد.
+
+هر import/download باید audit event داشته باشد: artifact_id، source/provider، local path، size، sha256، timestamp، job_id/workspace در صورت وجود، نتیجه validation و cleanup state. سیاست retention/cleanup نیز باید صریح و قابل تنظیم باشد. نسخه 2.5.6 فقط local artifact import/apply را می‌سازد و دانلود خودکار را عمداً به فاز بعد موکول می‌کند.
+
 ## 5. Browser / UI Development
 
 Browser QA قابلیت درجه‌یک Agent است، نه افزونه جانبی.

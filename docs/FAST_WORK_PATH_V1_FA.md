@@ -40,3 +40,10 @@ Package:
 Pilot موفق است اگر انتقال و apply این بسته با یک دانلود کاربر و حداکثر دو تعامل اصلی Bridge انجام شود، بدون file-by-file carrier، و صحت hash/base/apply/QA اثبات شود.
 
 اگر موفق شد، Artifact Transport به‌عنوان مسیر استاندارد تغییرات متوسط/حجیم canonical می‌شود.
+
+## Runtime implementation checkpoint — 2.5.6
+
+- `artifact.inspect`: ZIP محلی داخل ArtifactRoot را بدون mutation از نظر SHA، manifest، target workspace/repo/branch/base، payload hash، handoff hash و `git apply --check` بررسی می‌کند.
+- `artifact.apply`: همان validation را تکرار می‌کند، tracked worktree تمیز و workspace writable/fresh را الزام می‌کند و سپس patch را apply می‌کند.
+- هر inspect/apply در artifact audit JSONL ثبت می‌شود.
+- Auto-download هنوز فعال نیست؛ ArtifactRoot انتخابی Installer و download provider/logging requirement ثبت شده و بعد از Installer/Foundation تکمیل می‌شود.

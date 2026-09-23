@@ -1,4 +1,4 @@
-param([string]$OutDir="dist",[string]$AgentVersion="2.5.5")
+param([string]$OutDir="dist",[string]$AgentVersion="2.5.6")
 $ErrorActionPreference="Stop"
 $Repo=(Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $Stage=Join-Path $Repo "$OutDir/SOKNA-Bridge-Setup"
