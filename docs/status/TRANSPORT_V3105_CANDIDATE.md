@@ -1,7 +1,7 @@
 # SOKNA Bridge Extension 3.10.5 — Candidate
 
 Date: 2026-09-23
-Status: DEVELOPMENT CANDIDATE / NOT LIVE ACCEPTED
+Status: LIVE ACCEPTED / BASELINE READY
 
 Scope:
 - correlated malformed V4 carriers with a valid outer command id must create a retryable chat-visible transport NACK;
@@ -24,3 +24,10 @@ Acceptance required before baseline promotion:
 5. invalid outer id -> no chat-visible NACK;
 6. valid V4 command remains executable;
 7. Result-First and Code-Activation barriers remain PASS.
+
+## LIVE ACCEPTED 2026-09-23
+CI 35890985925 PASS @ 42aa96806b674298fecc2890022efd46844d9444.
+Runtime 3.10.5; Agent 2.5.4.
+V4 valid PASS: v3105-valid-1.
+Malformed correlated PASS: v3105-badjson-1 => invalid_json, executed=false, retryable=true.
+Invalid outer id PASS: diagnostics-only invalid_outer_id; no visible anonymous NACK.

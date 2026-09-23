@@ -38,3 +38,10 @@ Fix:
 - R3 publish reached GitHub successfully: branch `fix/extension-correlated-nack-3105-r3`, commit `5b9683576c2cc72b51e515fd0d92c3be86c24ee0`.
 - Windows CI run `35881300733` failed only in the carrier-generator step because the PowerShell pipe delivered empty stdin to Python.
 - R4 does not change the Extension 3.10.5 transport fix. It changes CI carrier invocation to serialize in PowerShell and pass via `--json`, checks native process exit codes, and adds a regression contract preventing the pipe form from returning.
+
+## Final live acceptance - 2026-09-23
+- GitHub Windows CI: PASS, run 35890985925, HEAD 42aa96806b674298fecc2890022efd46844d9444.
+- Runtime: Extension 3.10.5; Agent 2.5.4.
+- Valid V4: v3105-valid-1 PASS.
+- Correlated malformed V4: v3105-badjson-1 -> transport-nack invalid_json, executed=false, retryable=true PASS.
+- Invalid outer id: diagnostics-only invalid_outer_id; no chat-visible anonymous NACK PASS.
