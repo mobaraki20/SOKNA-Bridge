@@ -76,7 +76,7 @@ assert '$buildOutput=@(' in workflow and 'Select-Object -Last 1' in workflow
 assert 'timeout-minutes: 30' in workflow
 
 windows_acceptance = (ROOT / 'tools/installer/Test-P1Windows.ps1').read_text(encoding='utf-8')
-for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime']:
+for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime', 'PROCESS_TIMEOUT:', 'P1_PROCESS_START', 'P1_PROCESS_EXIT']:
     assert marker in windows_acceptance, f'Windows lifecycle acceptance missing {marker}'
 assert not re.search(r'(?im)(^|[;\s])(gci|gc|cp|mv|rm|kill|sleep|gfh)(?=\s|;|$)', windows_acceptance), 'forbidden PowerShell alias in Windows acceptance script'
 

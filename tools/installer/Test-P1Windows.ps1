@@ -6,7 +6,10 @@ $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 
 function Invoke-ProcessChecked([string]$FilePath,[string[]]$Arguments,[int[]]$AllowedExitCodes=@(0)){
-  $p=Start-Process -FilePath $FilePath -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
+  Write-Host ('P1_PROCESS_START '+$FilePath)
+  $p=Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -WindowStyle Hidden
+  if(-not $p.WaitForExit(180000)){try{$p.Kill()}catch{};throw ('PROCESS_TIMEOUT: '+$FilePath)}
+  Write-Host ('P1_PROCESS_EXIT '+$FilePath+' '+$p.ExitCode)
   if($AllowedExitCodes -notcontains $p.ExitCode){throw "PROCESS_FAILED: $FilePath exit=$($p.ExitCode)"}
   return $p.ExitCode
 }
