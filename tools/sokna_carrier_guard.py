@@ -13,6 +13,8 @@ def validate_obj(obj):
     if not ID_RE.fullmatch(cid): raise ValueError('invalid command id')
     compact=('i' in obj or 'o' in obj or 'w' in obj or 'a' in obj)
     if compact:
+        if 'i' not in obj: raise ValueError('compact command requires i')
+        if any(k in obj for k in ('id','action','params')): raise ValueError('compact command mixes schemas')
         if not obj.get('o'): raise ValueError('compact command requires o')
         if 'a' in obj and not isinstance(obj['a'], dict): raise ValueError('a must be an object')
     else:

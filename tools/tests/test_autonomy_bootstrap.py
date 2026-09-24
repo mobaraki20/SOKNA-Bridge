@@ -48,4 +48,7 @@ handoff=(root/'docs/handoffs/FAST_WORK_ROUTE_AND_EXT3105_HANDOFF_FA.md').read_te
 for x in ['Agent 2.5.4 + Extension 3.9.5','GitHub is a durable checkpoint','programmatic only']:
     assert x in handoff,x
 
+cp=(root/'tools/ci/Invoke-SafeCheckpoint.ps1').read_text(encoding='utf-8')
+for x in ['Test-WindowsAdversarialPreflight.ps1','git diff --check','Compare-Object $c $p','git diff --cached --check','git push origin $b']: assert x in cp,x
+for x in ['compact command requires i','compact command mixes schemas']: assert x in guard,x
 print('AUTONOMY_BOOTSTRAP_CONTRACTS_PASS')
