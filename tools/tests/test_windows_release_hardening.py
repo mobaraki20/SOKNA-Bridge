@@ -2,10 +2,10 @@ from pathlib import Path
 import re
 ROOT=Path(__file__).resolve().parents[2]
 import json
-publish_plan=json.loads((ROOT/'tools/plans/publish-rc6.json').read_text(encoding='utf-8'))
+publish_plan=json.loads((ROOT/'tools/plans/publish-rc7.json').read_text(encoding='utf-8'))
 actions=[x['action'] for x in publish_plan['steps']]
 assert actions==['process.run','git.add','process.run','git.commit','process.run','process.run','process.run','process.run']
-assert publish_plan['steps'][4]['params']['args']==['tag','sokna-agent-2.6.0-rc6']
+assert publish_plan['steps'][4]['params']['args']==['tag','sokna-agent-2.6.0-rc7']
 wf=(ROOT/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
 helper=(ROOT/'tools/ci/Invoke-GitHubWindowsCI.ps1').read_text(encoding='utf-8')
 preflight=(ROOT/'tools/ci/Test-WindowsAgentEnvironment.ps1').read_text(encoding='utf-8')
@@ -41,11 +41,18 @@ runtime = ROOT / "native" / "runtime" / "v2.6.0"
 for ps in [*runtime.glob("*.ps1"), *runtime.glob("*.psm1")]:
     text = ps.read_text(encoding="utf-8")
     assert "return[ordered]@" not in text, f"PS5_RETURN_ORDERED_SPACING:{ps}"
+    assert not re.search(r"\breturn(?=[\$\[\(\'\"])", text), f"PS5_RETURN_LEXICAL_SPACING:{ps}"
+    assert not re.search(r"\bthrow(?=\$)", text), f"PS5_THROW_LEXICAL_SPACING:{ps}"
 workspace = (runtime / "Sokna.Workspace.psm1").read_text(encoding="utf-8")
 assert "$view['owner_job_id']" in workspace and "$view['expires_at']" in workspace, "PS5_ORDERED_DICTIONARY_DYNAMIC_KEY"
+assert "$null=Assert-SoknaWorkspaceFullAccess -Workspace $view -Access 'write'" in workspace, "PS5_WORKSPACE_PIPELINE_POLLUTION"
 jobcore = (ROOT / "extension" / "chrome" / "agent_job_core.js").read_text(encoding="utf-8")
 background = (ROOT / "extension" / "chrome" / "background.js").read_text(encoding="utf-8")
 assert "findSubmittedJobs" in jobcore, "NESTED_JOB_DISCOVERY_CORE"
 assert "JOBCORE.findSubmittedJobs(command.action,result)" in background, "NESTED_JOB_WATCH_REGISTRATION"
 
 print('WINDOWS_RELEASE_HARDENING_PASS')
+
+assert 'JOB_WATCH_DIAG_KEY="job_watch_diag_v1"' in background, "JOB_WATCH_DIAGNOSTICS"
+assert 'const q=await queueStatusEvent' in background, "JOB_TERMINAL_QUEUE_BEFORE_WATCH_DELETE"
+assert 'lastTerminalDeliveryOk' in background and 'jobWatchIds' in background, "JOB_WATCH_HEALTH_DIAGNOSTICS"

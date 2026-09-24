@@ -1,7 +1,7 @@
 param([string]$RepoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 function Fail([string]$m){throw ('P6_COMPONENT_AUTOMATION_WINDOWS_ACCEPTANCE_FAILED: '+$m)}
-function Sha([string]$p){return(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
+function Sha([string]$p){return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
 $case=Join-Path ([IO.Path]::GetTempPath()) ('sokna-p6-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $case -Force|Out-Null
 try{
   $runner=Join-Path $case 'sokna-artifact-provider.exe';Push-Location (Join-Path $RepoRoot 'native\provider');try{& go build -trimpath -o $runner .;if($LASTEXITCODE-ne0){Fail 'provider build failed'}}finally{Pop-Location}

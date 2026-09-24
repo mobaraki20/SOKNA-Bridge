@@ -7,7 +7,8 @@ s=C.summarizeJob({job:{id:'j3',status:'done',result:{results:[{result:{ok:true,s
 a(C.terminalJobStatus('done')&&C.terminalJobStatus('failed')&&!C.terminalJobStatus('running'),'terminal states');
 let jobs=C.findSubmittedJobs('job.submit',{ok:true,job_id:'direct-1'});a(jobs.length===1&&jobs[0].job_id==='direct-1','direct job discovery');
 jobs=C.findSubmittedJobs('job.batch',{ok:true,results:[{action:'plan.run',result:{ok:true,results:[{action:'job.submit',result:{ok:true,job_id:'nested-1'}}]}}]});a(jobs.length===1&&jobs[0].job_id==='nested-1','nested job discovery');
-const seen={a:{state:'done',posted:false,conversationKey:'c',acceptedAt:10},b:{state:'done',posted:true,conversationKey:'c',acceptedAt:20},e:{state:'done',posted:false,kind:'status-event',conversationKey:'c',acceptedAt:30}};
-a(C.shouldBlockStatusEvent('e',seen.e,seen,'c'),'result-first block');seen.a.posted=true;a(!C.shouldBlockStatusEvent('e',seen.e,seen,'c'),'result-first release');
+const seen={a:{state:'done',posted:false,conversationKey:'c',acceptedAt:10,result:{ok:true}},stale:{state:'done',posted:false,conversationKey:'c',acceptedAt:5},e:{state:'done',posted:false,kind:'status-event',conversationKey:'c',parentCommandId:'a',acceptedAt:30}};
+a(C.shouldBlockStatusEvent('e',seen.e,seen,'c'),'result-first parent block');seen.a.posted=true;a(!C.shouldBlockStatusEvent('e',seen.e,seen,'c'),'result-first parent release');
+const orphan={state:'done',posted:false,kind:'status-event',conversationKey:'c',parentCommandId:'missing',acceptedAt:40};a(!C.shouldBlockStatusEvent('o',orphan,seen,'c'),'stale unrelated result must not block terminal event');
 
-console.log(JSON.stringify({ok:true,tests:8}));
+console.log(JSON.stringify({ok:true,tests:9}));

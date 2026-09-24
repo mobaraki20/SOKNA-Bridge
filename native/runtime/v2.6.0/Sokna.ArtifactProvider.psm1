@@ -3,16 +3,16 @@ $ErrorActionPreference='Stop'
 $script:SoknaProviderContext=$null
 
 function Get-SoknaProviderOptional($Object,[string]$Name,$Default=$null){
-  if($null-eq$Object){return $Default};try{$p=$Object.PSObject.Properties[$Name];if($null-ne$p-and$null-ne$p.Value){return$p.Value}}catch{};return$Default
+  if($null-eq$Object){return $Default};try{$p=$Object.PSObject.Properties[$Name];if($null-ne$p-and$null-ne$p.Value){return $p.Value}}catch{};return $Default
 }
-function Test-SoknaProviderId([string]$Value){return((-not[string]::IsNullOrWhiteSpace($Value))-and$Value.Length-le100-and$Value-match'^[A-Za-z0-9._-]+$')}
+function Test-SoknaProviderId([string]$Value){return ((-not[string]::IsNullOrWhiteSpace($Value))-and$Value.Length-le100-and$Value-match'^[A-Za-z0-9._-]+$')}
 function Get-SoknaProviderRunner([string]$RuntimeRoot,$Config){
   $p=Get-SoknaProviderOptional $Config 'artifact_providers' $null;$override=[string](Get-SoknaProviderOptional $p 'runner_path' '')
-  if($override){$full=[IO.Path]::GetFullPath($override);if(Test-Path -LiteralPath $full -PathType Leaf){return$full};throw('ARTIFACT_PROVIDER_RUNNER_NOT_FOUND: '+$full)}
+  if($override){$full=[IO.Path]::GetFullPath($override);if(Test-Path -LiteralPath $full -PathType Leaf){return $full};throw('ARTIFACT_PROVIDER_RUNNER_NOT_FOUND: '+$full)}
   $installRoot=Split-Path -Parent ([IO.Path]::GetFullPath($RuntimeRoot));$name=if($env:OS-eq'Windows_NT'){'sokna-artifact-provider.exe'}else{'sokna-artifact-provider'}
-  $candidate=Join-Path (Join-Path $installRoot 'provider') $name;if(Test-Path -LiteralPath $candidate -PathType Leaf){return$candidate}
-  $nativeRoot=Split-Path -Parent $installRoot;$dev=Join-Path (Join-Path $nativeRoot 'provider') $name;if(Test-Path -LiteralPath $dev -PathType Leaf){return([IO.Path]::GetFullPath($dev))}
-  return$candidate
+  $candidate=Join-Path (Join-Path $installRoot 'provider') $name;if(Test-Path -LiteralPath $candidate -PathType Leaf){return $candidate}
+  $nativeRoot=Split-Path -Parent $installRoot;$dev=Join-Path (Join-Path $nativeRoot 'provider') $name;if(Test-Path -LiteralPath $dev -PathType Leaf){return ([IO.Path]::GetFullPath($dev))}
+  return $candidate
 }
 function Initialize-SoknaArtifactProviders($Config,[string]$RuntimeRoot){
   $cfg=Get-SoknaProviderOptional $Config 'artifact_providers' $null;$folders=@{}
@@ -25,7 +25,7 @@ function Initialize-SoknaArtifactProviders($Config,[string]$RuntimeRoot){
   [int]$backoff=[int](Get-SoknaProviderOptional $cfg 'backoff_ms' 500);if($backoff-lt1-or$backoff-gt5000){throw'ARTIFACT_PROVIDER_BACKOFF_INVALID'}
   [int]$timeout=[int](Get-SoknaProviderOptional $cfg 'timeout_seconds' 120);if($timeout-lt1-or$timeout-gt900){throw'ARTIFACT_PROVIDER_TIMEOUT_INVALID'}
   $script:SoknaProviderContext=[ordered]@{runner=(Get-SoknaProviderRunner $RuntimeRoot $Config);managed_folders=$folders;retries=$retries;backoff_ms=$backoff;timeout_seconds=$timeout}
-  return(Get-SoknaArtifactProviderStatus)
+  return (Get-SoknaArtifactProviderStatus)
 }
 function Get-SoknaArtifactProviderStatus{
   if($null-eq$script:SoknaProviderContext){throw'ARTIFACT_PROVIDER_NOT_INITIALIZED'};$ids=@($script:SoknaProviderContext.managed_folders.Keys|Sort-Object)
@@ -36,7 +36,7 @@ function Invoke-SoknaProviderRunner($Request){
   $json=$Request|ConvertTo-Json -Depth 20 -Compress;$psi=New-Object Diagnostics.ProcessStartInfo;$psi.FileName=$runner;$psi.UseShellExecute=$false;$psi.CreateNoWindow=$true;$psi.RedirectStandardInput=$true;$psi.RedirectStandardOutput=$true;$psi.RedirectStandardError=$true;$psi.StandardOutputEncoding=[Text.Encoding]::UTF8;$psi.StandardErrorEncoding=[Text.Encoding]::UTF8
   $p=New-Object Diagnostics.Process;$p.StartInfo=$psi;[void]$p.Start();$p.StandardInput.Write($json);$p.StandardInput.Close();$ot=$p.StandardOutput.ReadToEndAsync();$et=$p.StandardError.ReadToEndAsync();if(-not$p.WaitForExit(920000)){try{$p.Kill()}catch{};throw'ARTIFACT_PROVIDER_TIMEOUT'};$stdout=$ot.GetAwaiter().GetResult().Trim();$stderr=$et.GetAwaiter().GetResult().Trim()
   if([string]::IsNullOrWhiteSpace($stdout)){throw('ARTIFACT_PROVIDER_NO_RESULT: '+$stderr)};try{$result=$stdout|ConvertFrom-Json}catch{throw'ARTIFACT_PROVIDER_RESULT_INVALID_JSON'}
-  if($p.ExitCode-ne0-or-not[bool](Get-SoknaProviderOptional $result 'ok' $false)){throw('ARTIFACT_PROVIDER_FAILED: '+[string](Get-SoknaProviderOptional $result 'message' $stderr))};return$result
+  if($p.ExitCode-ne0-or-not[bool](Get-SoknaProviderOptional $result 'ok' $false)){throw('ARTIFACT_PROVIDER_FAILED: '+[string](Get-SoknaProviderOptional $result 'message' $stderr))};return $result
 }
 function Get-SoknaProviderSource($Params,[string]$Provider){
   $s=[ordered]@{}
@@ -46,18 +46,18 @@ function Get-SoknaProviderSource($Params,[string]$Provider){
     'github_release_asset' {$s.repository=[string](Get-SoknaProviderOptional $Params 'repository' '');$s.tag=[string](Get-SoknaProviderOptional $Params 'tag' 'latest');$s.asset=[string](Get-SoknaProviderOptional $Params 'asset' '');$s.url=[string](Get-SoknaProviderOptional $Params 'url' '');$s.url_env=[string](Get-SoknaProviderOptional $Params 'url_env' '');$s.credential_env=[string](Get-SoknaProviderOptional $Params 'credential_env' '')}
     default {$s.url=[string](Get-SoknaProviderOptional $Params 'url' '');$s.url_env=[string](Get-SoknaProviderOptional $Params 'url_env' '');$s.credential_env=[string](Get-SoknaProviderOptional $Params 'credential_env' '')}
   }
-  $origins=@(Get-SoknaProviderOptional $Params 'allowed_redirect_origins' @());if($origins.Count-gt0){$s.allowed_redirect_origins=$origins};return$s
+  $origins=@(Get-SoknaProviderOptional $Params 'allowed_redirect_origins' @());if($origins.Count-gt0){$s.allowed_redirect_origins=$origins};return $s
 }
 function New-SoknaProviderRequest([string]$Operation,[string]$Provider,$Params,[string]$ArtifactId){
   $policy=Get-SoknaArtifactPolicy;$sig=Get-SoknaProviderOptional $Params 'signature' $null;[int64]$max=[int64]$policy.max_artifact_bytes
   if($Operation-eq'acquire'){$st=Get-SoknaArtifactRootStatus;[int64]$available=[int64]$st.quota_remaining_bytes;$partial=Resolve-SoknaManagedArtifactPath -Path (Join-Path 'staging' ('.provider-'+$ArtifactId+'.partial')) -AllowMissing;if(Test-Path -LiteralPath $partial -PathType Leaf){$available+=[int64](Get-Item -LiteralPath $partial -Force).Length};$max=[Math]::Min($max,$available);if($max-le0){throw'ARTIFACT_ROOT_QUOTA_EXCEEDED'}}
   return [ordered]@{schema='sokna-artifact-provider-request-v1';operation=$Operation;provider=$Provider;artifact_root=(Get-SoknaArtifactRoot);artifact_id=$ArtifactId;source=(Get-SoknaProviderSource $Params $Provider);expected_sha256=[string](Get-SoknaProviderOptional $Params 'expected_sha256' '');max_bytes=$max;retries=[int]$script:SoknaProviderContext.retries;backoff_ms=[int]$script:SoknaProviderContext.backoff_ms;timeout_seconds=[int]$script:SoknaProviderContext.timeout_seconds;signature=$sig;workspace=[string](Get-SoknaProviderOptional $Params 'workspace' '');job_id=[string](Get-SoknaProviderOptional $Params 'job_id' '')}
 }
-function Get-SoknaProviderArtifactId($Params,[string]$Provider){$id=[string](Get-SoknaProviderOptional $Params 'artifact_id' '');if([string]::IsNullOrWhiteSpace($id)){$id=($Provider-replace'[^A-Za-z0-9._-]','_')+'-'+[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+'-'+[Guid]::NewGuid().ToString('N').Substring(0,8)};if(-not(Test-SoknaProviderId $id)){throw'ARTIFACT_ID_INVALID'};return$id}
+function Get-SoknaProviderArtifactId($Params,[string]$Provider){$id=[string](Get-SoknaProviderOptional $Params 'artifact_id' '');if([string]::IsNullOrWhiteSpace($id)){$id=($Provider-replace'[^A-Za-z0-9._-]','_')+'-'+[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+'-'+[Guid]::NewGuid().ToString('N').Substring(0,8)};if(-not(Test-SoknaProviderId $id)){throw'ARTIFACT_ID_INVALID'};return $id}
 function Invoke-SoknaArtifactProviderProbe([string]$Provider,$Params){
   if([string]::IsNullOrWhiteSpace($Provider)){$Provider=[string](Get-SoknaProviderOptional $Params 'provider' '')};$id=Get-SoknaProviderArtifactId $Params $Provider;$req=New-SoknaProviderRequest 'probe' $Provider $Params $id
   $null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.probe';phase='started';ok=$true;provider=$Provider;artifact_id=$id;workspace=[string]$req.workspace;job_id=[string]$req.job_id}) -Required
-  try{$r=Invoke-SoknaProviderRunner $req;$null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.probe';phase='completed';ok=$true;provider=$Provider;artifact_id=$id;source_ref=[string]$r.source_ref;resolved_ref=[string]$r.resolved_ref;size=[int64]$r.size;content_type=[string]$r.content_type}) -Required;return$r}catch{$null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.probe';phase='failed';ok=$false;provider=$Provider;artifact_id=$id;error=$_.Exception.Message});throw}
+  try{$r=Invoke-SoknaProviderRunner $req;$null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.probe';phase='completed';ok=$true;provider=$Provider;artifact_id=$id;source_ref=[string]$r.source_ref;resolved_ref=[string]$r.resolved_ref;size=[int64]$r.size;content_type=[string]$r.content_type}) -Required;return $r}catch{$null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.probe';phase='failed';ok=$false;provider=$Provider;artifact_id=$id;error=$_.Exception.Message});throw}
 }
 function Invoke-SoknaArtifactProviderAcquire([string]$Provider,$Params){
   if([string]::IsNullOrWhiteSpace($Provider)){$Provider=[string](Get-SoknaProviderOptional $Params 'provider' '')};$id=Get-SoknaProviderArtifactId $Params $Provider;$req=New-SoknaProviderRequest 'acquire' $Provider $Params $id;$metaPath=$null;$final=$null;$stage=$null;$finalOwned=$false;$metaOwned=$false
@@ -78,7 +78,7 @@ function Invoke-SoknaArtifactProviderVerify($Params){
   $path=[string](Get-SoknaProviderOptional $Params 'path' '');if([string]::IsNullOrWhiteSpace($path)){throw'ARTIFACT_PROVIDER_VERIFY_PATH_REQUIRED'};$full=Resolve-SoknaManagedArtifactPath -Path $path;if(-not(Test-Path -LiteralPath $full -PathType Leaf)){throw'ARTIFACT_PROVIDER_VERIFY_TARGET_MISSING'}
   $policy=Get-SoknaArtifactPolicy;$artifactId=[string](Get-SoknaProviderOptional $Params 'artifact_id' '');$req=[ordered]@{schema='sokna-artifact-provider-request-v1';operation='verify';provider='managed_artifact';artifact_root=(Get-SoknaArtifactRoot);artifact_id=$artifactId;managed_path=$path;source=@{};expected_sha256=[string](Get-SoknaProviderOptional $Params 'expected_sha256' '');max_bytes=[int64]$policy.max_artifact_bytes;signature=(Get-SoknaProviderOptional $Params 'signature' $null)}
   $null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.verify';phase='started';ok=$true;artifact_id=$artifactId;path=$path}) -Required
-  try{$r=Invoke-SoknaProviderRunner $req;$null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.verify';phase='completed';ok=$true;artifact_id=$artifactId;path=$path;size=[int64]$r.size;sha256=[string]$r.sha256;signature=[string]$r.signature;signature_ok=[bool]$r.signature_ok}) -Required;return$r}catch{$null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.verify';phase='failed';ok=$false;artifact_id=$artifactId;path=$path;error=$_.Exception.Message});throw}
+  try{$r=Invoke-SoknaProviderRunner $req;$null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.verify';phase='completed';ok=$true;artifact_id=$artifactId;path=$path;size=[int64]$r.size;sha256=[string]$r.sha256;signature=[string]$r.signature;signature_ok=[bool]$r.signature_ok}) -Required;return $r}catch{$null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.verify';phase='failed';ok=$false;artifact_id=$artifactId;path=$path;error=$_.Exception.Message});throw}
 }
 
 Export-ModuleMember -Function Initialize-SoknaArtifactProviders,Get-SoknaArtifactProviderStatus,Invoke-SoknaArtifactProviderProbe,Invoke-SoknaArtifactProviderAcquire,Invoke-SoknaArtifactProviderVerify

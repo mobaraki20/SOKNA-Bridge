@@ -221,3 +221,13 @@ Two gates remain: `CI -> LIVE`.
 - Until 3.10.6 is actually reloaded/re-armed, exact-RC CI MUST be submitted as a direct top-level `job.submit`; do not infer candidate runtime behavior from files on disk.
 - Large/full GitHub logs must be summarized on the endpoint by exact step, not dumped into chat. `gh run view --log-failed` is insufficient when independent steps use `continue-on-error`, because only the final diagnostic gate is formally failed.
 - RC6 publish plan is `tools/plans/publish-rc6.json`; it commits/tags/pushes only. CI submission is intentionally a separate direct top-level `job.submit` while live Extension remains 3.10.5.
+
+
+## 2026-09-24 RC6 quick CI + live 3.10.6 watcher -> RC7
+- RC6 canonical commit: `fe3180bfe5a9aa1e252338ec6fb37ded5c020ebe`; quick exact-RC run: `35951176227`.
+- Remaining Windows outcomes: `WINDOWS_COMPAT`, `WIN_ADVANCED_WORKSPACE`, `WIN_ARTIFACT_PROVIDER`.
+- `WINDOWS_COMPAT` + Provider are one PS5.1 lexical family: `return$Default`, `return$p.Value`, `return(...)` and similar compact return-expression forms are unsafe. RC7 sweeps the shipped runtime/release scripts and statically forbids compact return adjacency.
+- Advanced Workspace root cause is PowerShell pipeline pollution, not dictionary indexer semantics: `Assert-SoknaWorkspaceFullAccess` emitted `$true`, causing `ConvertTo-SoknaWorkspaceCompat` assignment to become `Object[]`. RC7 suppresses assertion output before returning the dictionary.
+- Extension 3.10.6 was actually reloaded/re-armed and health showed `runtimeVersion=3.10.6`, `jobWatchCount=1` for `rc6-watch-3106`; the job later reached terminal failure but no automatic terminal RESULT arrived. Registration PASS != delivery PASS.
+- Candidate Extension 3.10.7: durable terminal event is persisted before watch deletion; Result-First checks only the parent command; immediate delivery retry is awaited; Health exposes jobWatchIds, last poll/status/error, terminal queue and delivery outcome.
+- Home PC remains access/publish/acceptance only. All RC7 source fixes are development-workspace-only.

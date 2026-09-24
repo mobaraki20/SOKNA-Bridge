@@ -121,6 +121,6 @@ PC کاربر = Access / Publish / Activation / Acceptance endpoint.
 
 ## Nested durable-job watch compatibility
 - Extension 3.10.5 only auto-registers a durable watch when `job.submit` is the top-level command.
-- If the live Extension is 3.10.5, do not hide a CI `job.submit` inside `plan.run`/`job.batch` when automatic terminal posting is required; publish first, then issue one direct top-level `job.submit`.
-- Candidate Extension 3.10.6 recursively discovers successful nested `job.submit` results inside `plan.run`/`job.batch`, registers each watch, and preserves Result-First ordering for the terminal status event.
-- Extension source changes are not runtime-active until reload + page reload/re-arm; never claim nested watch behavior from disk files alone.
+- Extension 3.10.6 was live-tested after reload/re-arm: recursive watch registration works (`jobWatchCount=1`), but terminal auto-delivery did not complete reliably. Do not treat registration alone as autonomy PASS.
+- Candidate Extension 3.10.7 queues terminal events before removing watch state, scopes Result-First blocking to the parent command result, retries delivery immediately, and reports watch/poll/terminal diagnostics in Health.
+- Extension source changes are not runtime-active until reload + page reload/re-arm; never claim candidate watcher behavior from disk files alone.

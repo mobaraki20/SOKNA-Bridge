@@ -2,7 +2,7 @@ importScripts("protocol.js","agent_job_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.10.6";
+const VERSION="3.10.7";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -11,6 +11,7 @@ const MAX_SEEN=1500;
 const RETRY_ALARM="sokna-v3100-pending";
 const RETRY_TAB_PREFIX="sokna-v3100-pending-tab:";
 const JOB_WATCH_KEY="job_watches_v1";
+const JOB_WATCH_DIAG_KEY="job_watch_diag_v1";
 const JOB_ALARM_PREFIX="sokna-v3105-job:";
 const JOB_MAX_AGE_MS=2*60*60*1000;
 const V391_MIGRATION_CUTOFF=1789892342550;
@@ -46,6 +47,8 @@ async function setStatus(tabId,patch){
 async function clearStatus(tabId){const a=await statusAll();delete a[String(tabId)];await sset("session",{[STATUS_KEY]:a})}
 async function jobWatchesAll(){const d=await sget("local",[JOB_WATCH_KEY]);return d[JOB_WATCH_KEY]||{}}
 async function saveJobWatches(v){await sset("local",{[JOB_WATCH_KEY]:v})}
+async function jobWatchDiag(){const d=await sget("local",[JOB_WATCH_DIAG_KEY]);return d[JOB_WATCH_DIAG_KEY]||{}}
+async function saveJobWatchDiag(patch){const prev=await jobWatchDiag();const next={...prev,...patch};await sset("local",{[JOB_WATCH_DIAG_KEY]:next});return next}
 function badgeFor(s){
   if(s==="Working"||s==="Posting")return {t:"RUN",c:"#2563eb"};
   if(s==="Waiting")return {t:"WAIT",c:"#d97706"};
@@ -233,8 +236,9 @@ async function queueStatusEvent(tabId,conversationKey,key,parentCommandId,result
   let seen=await seenAll();
   if(!seen[id])seen[id]={state:"done",kind:"status-event",ts:now(),acceptedAt:now(),conversationKey:String(conversationKey||""),parentCommandId:String(parentCommandId||""),posted:false,result};
   await saveSeen(seen);
-  if(Number.isInteger(tabId))retryPending(tabId).catch(()=>{});
-  return {ok:true,queued:true};
+  let delivery={ok:false,reason:"no_tab"};
+  if(Number.isInteger(tabId)){try{delivery=await retryPending(tabId)||{ok:false,reason:"no_eligible"}}catch(e){delivery={ok:false,reason:"retry_error",error:String(e)}}}
+  return {ok:true,queued:true,id,delivery};
 }
 const jobAlarmName=id=>`${JOB_ALARM_PREFIX}${id}`;
 async function scheduleJobPoll(id,delay=5000){try{await chrome.alarms.create(jobAlarmName(id),{when:now()+Math.max(1000,delay)})}catch{}}
@@ -242,24 +246,26 @@ async function registerJobWatch(tabId,parentCommandId,result,conversationKey){
   const jobId=String(result?.job_id||"");if(!jobId)return;
   const watches=await jobWatchesAll();
   if(!watches[jobId])watches[jobId]={jobId,parentCommandId,tabId,conversationKey,createdAt:now(),attempts:0};
-  await saveJobWatches(watches);await scheduleJobPoll(jobId,4000);
+  await saveJobWatches(watches);await saveJobWatchDiag({lastRegisteredAt:now(),lastRegisteredJobId:jobId,lastWatchError:""});await scheduleJobPoll(jobId,4000);
 }
 async function pollJobWatch(jobId){
   const watches=await jobWatchesAll(),w=watches[jobId];if(!w)return;
+  await saveJobWatchDiag({lastPollAt:now(),lastPolledJobId:jobId});
   if(now()-Number(w.createdAt||0)>JOB_MAX_AGE_MS){
-    delete watches[jobId];await saveJobWatches(watches);
-    await queueStatusEvent(Number(w.tabId),w.conversationKey,`job:${jobId}`,w.parentCommandId,{kind:"job-terminal",commandId:w.parentCommandId,jobId,status:"watch_timeout",ok:false,error:"job watch timed out"});return;
+    const q=await queueStatusEvent(Number(w.tabId),w.conversationKey,`job:${jobId}`,w.parentCommandId,{kind:"job-terminal",commandId:w.parentCommandId,jobId,status:"watch_timeout",ok:false,error:"job watch timed out"});
+    delete watches[jobId];await saveJobWatches(watches);await saveJobWatchDiag({lastTerminalAt:now(),lastTerminalJobId:jobId,lastTerminalStatus:"watch_timeout",lastQueueAt:now(),lastQueueOk:!!q?.ok,lastQueueDeliveryOk:!!q?.delivery?.ok,lastWatchError:""});return;
   }
   try{
     const r=await agentExec({id:`job-watch-${now()}-${uid().slice(0,8)}`,action:"job.get",params:{id:jobId}});
-    if(JOBCORE.terminalJobStatus(r?.job?.status)){
+    const status=String(r?.job?.status||"");await saveJobWatchDiag({lastPollStatus:status,lastWatchError:""});
+    if(JOBCORE.terminalJobStatus(status)){
       const summary=JOBCORE.summarizeJob(r);summary.commandId=w.parentCommandId;
-      delete watches[jobId];await saveJobWatches(watches);
-      await queueStatusEvent(Number(w.tabId),w.conversationKey,`job:${jobId}`,w.parentCommandId,summary);return;
+      const q=await queueStatusEvent(Number(w.tabId),w.conversationKey,`job:${jobId}`,w.parentCommandId,summary);
+      delete watches[jobId];await saveJobWatches(watches);await saveJobWatchDiag({lastTerminalAt:now(),lastTerminalJobId:jobId,lastTerminalStatus:status,lastQueueAt:now(),lastQueueOk:!!q?.ok,lastQueueDeliveryOk:!!q?.delivery?.ok,lastWatchError:""});return;
     }
     w.attempts=0;watches[jobId]=w;await saveJobWatches(watches);await scheduleJobPoll(jobId,5000);
   }catch(e){
-    w.attempts=Number(w.attempts||0)+1;watches[jobId]=w;await saveJobWatches(watches);
+    w.attempts=Number(w.attempts||0)+1;watches[jobId]=w;await saveJobWatches(watches);await saveJobWatchDiag({lastWatchError:String(e),lastWatchErrorAt:now()});
     await scheduleJobPoll(jobId,Math.min(60000,5000*Math.pow(2,Math.min(4,w.attempts))));
   }
 }
@@ -314,10 +320,11 @@ function classifyPending(seen,registered,t=now(),force=false){
   return {retryEligible,deferred,stale,suppressed};
 }
 async function retryPending(tabId,force=false){
-  const a=await isArmed(tabId);if(!a.armed)return;
+  const a=await isArmed(tabId);if(!a.armed)return {ok:false,reason:"not_armed"};
   const seen=await seenAll(),c=classifyPending(seen,a.registered,now(),force);
   const p=c.retryEligible[0];
-  if(p)await postPending(tabId,p[0],p[1]);
+  if(p)return await postPending(tabId,p[0],p[1]);
+  return {ok:false,reason:c.deferred.length?c.deferred[0][2]:"no_eligible"};
 }
 
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
@@ -381,7 +388,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           }catch{}
         }
         const status=await getStatus(tabId);
-        const jobWatchCount=Object.keys(await jobWatchesAll()).length;
+        const jobWatches=await jobWatchesAll();const jobWatchIds=Object.keys(jobWatches);const jobWatchCount=jobWatchIds.length;const jobDiag=await jobWatchDiag();
         const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame);
         const activePostCount=status?.state==="Posting"&&status?.currentCommandId?1:0;
         const currentRec=(status?.currentCommandId&&seen[status.currentCommandId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||null;
@@ -398,7 +405,11 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           composerTextLen:Number(probe.composer?.textLen||0),composerKind:probe.composerKind||"",
           lastErrorCode:status?.lastError?"runtime_error":"",
           lastTransportDiagnosticCode:status?.lastTransportDiagnostic?.reason||status?.lastTransportDiagnostic?.kind||"",
-          pageAdapterState:top?(top.armed===a.armed?"ready":"arm_mismatch"):"unavailable",jobWatchCount
+          pageAdapterState:top?(top.armed===a.armed?"ready":"arm_mismatch"):"unavailable",jobWatchCount,jobWatchIds:jobWatchIds.slice(0,8),
+          lastJobWatchRegisteredAt:Number(jobDiag.lastRegisteredAt||0),lastJobWatchRegisteredId:String(jobDiag.lastRegisteredJobId||""),
+          lastJobPollAt:Number(jobDiag.lastPollAt||0),lastJobPollStatus:String(jobDiag.lastPollStatus||""),lastJobWatchError:String(jobDiag.lastWatchError||""),
+          lastTerminalEventAt:Number(jobDiag.lastTerminalAt||0),lastTerminalJobId:String(jobDiag.lastTerminalJobId||""),lastTerminalJobStatus:String(jobDiag.lastTerminalStatus||""),
+          lastTerminalQueueAt:Number(jobDiag.lastQueueAt||0),lastTerminalQueueOk:!!jobDiag.lastQueueOk,lastTerminalDeliveryOk:!!jobDiag.lastQueueDeliveryOk
         };
         return reply({ok:true,version:VERSION,armed:a.armed,registered:a.registered,status,
           pendingPostCount:health.pendingRetryEligibleCount,pendingRetryEligibleCount:health.pendingRetryEligibleCount,

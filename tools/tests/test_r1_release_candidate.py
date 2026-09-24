@@ -16,7 +16,7 @@ evidence=need(Path('tools/ci/Write-ExactRCEvidence.ps1'),'EXACT_RC_SOURCE_COMMIT
 status=need(Path('docs/status/R1_RELEASE_CANDIDATE_FREEZE.md'),'base Workspace Policy','job-scoped grant','exact source','CI','LIVE','2.5.7 R4','3.10.5')
 policy=json.loads((ROOT/'docs/status/R1_RELEASE_CANDIDATE_POLICY.json').read_text(encoding='utf-8'))
 assert policy['schema']=='sokna-r1-release-candidate-policy-v1' and policy['ci_expected_commit_required'] is True
-assert policy['home_pc_allowed_before_ci_pass'] is False and policy['candidate_ref']=='sokna-agent-2.6.0-rc6'
+assert policy['home_pc_allowed_before_ci_pass'] is False and policy['candidate_ref']=='sokna-agent-2.6.0-rc7'
 corr=json.loads((ROOT/'docs/status/R1_RC2_CORRECTION_MANIFEST.json').read_text(encoding='utf-8'))
 assert corr['schema']=='sokna-r1-rc2-correction-manifest-v1' and corr['candidate_ref']=='sokna-agent-2.6.0-rc2' and corr['windows_exact_rc_execution_claimed'] is False
 rc3=json.loads((ROOT/'docs/status/R1_RC3_SESSION_GATE_MANIFEST.json').read_text(encoding='utf-8'))
@@ -28,4 +28,8 @@ assert rc5['schema']=='sokna-r1-rc5-windows-autonomy-hardening-manifest-v1' and 
 
 rc6=json.loads((ROOT/'docs/status/R1_RC6_PS51_NESTED_JOB_MANIFEST.json').read_text(encoding='utf-8'))
 assert rc6['schema']=='sokna-r1-rc6-ps51-nested-job-hardening-manifest-v1' and rc6['candidate_ref']=='sokna-agent-2.6.0-rc6' and rc6['candidate_extension_version']=='3.10.6' and rc6['nested_job_watch_hardened'] is True
+
+rc7=json.loads((ROOT/'docs/status/R1_RC7_PS51_TERMINAL_DELIVERY_MANIFEST.json').read_text(encoding='utf-8'))
+assert rc7['schema']=='sokna-r1-rc7-ps51-terminal-delivery-hardening-manifest-v1' and rc7['candidate_ref']=='sokna-agent-2.6.0-rc7' and rc7['candidate_extension_version']=='3.10.7' and rc7['terminal_job_delivery_hardened'] is True
+
 print('R1_RELEASE_CANDIDATE_CONTRACTS_PASS')

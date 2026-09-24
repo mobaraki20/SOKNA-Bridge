@@ -169,7 +169,7 @@ function ConvertTo-SoknaWorkspaceCompat($w){
   $scopes=Normalize-SoknaWorkspaceScopes $root @($w.scopes)
   $tools=Normalize-SoknaWorkspaceTools @($w.tools)
   $view=[ordered]@{id=[string]$w.id;name=[string]$w.id;display_name=[string]$w.display_name;path=$root;kind=[string]$w.kind;scopes=$scopes;tools=$tools;expected_repo=[string](Get-SoknaOptionalProperty $w 'legacy_expected_repo' '');write_enabled=$false}
-  try{Assert-SoknaWorkspaceFullAccess -Workspace $view -Access 'write';$view.write_enabled=$true}catch{}
+  try{$null=Assert-SoknaWorkspaceFullAccess -Workspace $view -Access 'write';$view.write_enabled=$true}catch{}
   return $view
 }
 function Get-SoknaWorkspace([string]$Workspace){

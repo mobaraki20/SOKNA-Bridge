@@ -1,0 +1,26 @@
+{
+  "schema": "sokna-r1-rc7-ps51-terminal-delivery-hardening-manifest-v1",
+  "candidate_ref": "sokna-agent-2.6.0-rc7",
+  "candidate_extension_version": "3.10.7",
+  "accepted_live_extension_baseline": "3.10.5",
+  "observed_live_candidate_runtime": "3.10.6",
+  "base_canonical_commit": "fe3180bfe5a9aa1e252338ec6fb37ded5c020ebe",
+  "source_ci_run": "35951176227",
+  "quick_ci_failures": [
+    "WINDOWS_COMPAT",
+    "WIN_ADVANCED_WORKSPACE",
+    "WIN_ARTIFACT_PROVIDER"
+  ],
+  "root_cause_families": [
+    "PowerShell 5.1 lexical keyword adjacency return$ / return(...)",
+    "PowerShell function pipeline output polluted workspace compat return value",
+    "terminal job watcher queued/delivery event could be blocked by unrelated stale result and watch was removed before durable queue proof"
+  ],
+  "ps51_runtime_sweep": true,
+  "workspace_output_isolation": true,
+  "terminal_job_delivery_hardened": true,
+  "job_watch_health_diagnostics": true,
+  "publish_plan": "tools/plans/publish-rc7.json",
+  "home_pc_source_development": false,
+  "windows_exact_rc_execution_claimed": false
+}

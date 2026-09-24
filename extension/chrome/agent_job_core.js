@@ -46,8 +46,11 @@
 
   function shouldBlockStatusEvent(eventId,eventRec,seen,conversationKey){
     if(eventRec?.kind!=="status-event")return false;
-    const rAt=Number(eventRec.acceptedAt||eventRec.ts||0);
-    return Object.entries(seen||{}).some(([otherId,x])=>otherId!==eventId&&x?.state==="done"&&!x?.posted&&x?.conversationKey===conversationKey&&x?.kind!=="status-event"&&Number(x.acceptedAt||x.ts||0)<=rAt);
+    const parentId=String(eventRec?.parentCommandId||"");
+    if(!parentId)return false;
+    const parent=seen?.[parentId];
+    if(!parent)return false;
+    return parent.state==="done"&&!parent.posted&&!parent.suppressed&&parent.conversationKey===conversationKey&&!!parent.result;
   }
   function summarizeJob(resp){
     const j=resp?.job||resp||{},status=String(j.status||""),ci=findCiSummary(j.result);
@@ -65,5 +68,5 @@
       }:null
     };
   }
-  globalThis[G]=Object.freeze({version:1,clip,findCiSummary,summarizeJob,findSubmittedJobs,terminalJobStatus,shouldBlockStatusEvent});
+  globalThis[G]=Object.freeze({version:2,clip,findCiSummary,summarizeJob,findSubmittedJobs,terminalJobStatus,shouldBlockStatusEvent});
 })();

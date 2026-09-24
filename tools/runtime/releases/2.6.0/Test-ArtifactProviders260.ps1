@@ -1,7 +1,7 @@
 param([string]$RepoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 function Fail([string]$m){throw ('P4_PROVIDER_WINDOWS_ACCEPTANCE_FAILED: '+$m)}
-function Sha([string]$p){return(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
+function Sha([string]$p){return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
 $case=Join-Path ([IO.Path]::GetTempPath()) ('sokna-p4-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $case -Force|Out-Null
 try{
   $runner=Join-Path $case 'sokna-artifact-provider.exe';Push-Location (Join-Path $RepoRoot 'native\provider');try{& go test ./...;if($LASTEXITCODE-ne0){Fail 'native provider tests failed'};& go build -trimpath -o $runner .;if($LASTEXITCODE-ne0){Fail 'native provider build failed'}}finally{Pop-Location}

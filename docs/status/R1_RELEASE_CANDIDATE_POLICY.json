@@ -1,6 +1,6 @@
 {
   "schema": "sokna-r1-release-candidate-policy-v1",
-  "candidate_ref": "sokna-agent-2.6.0-rc6",
+  "candidate_ref": "sokna-agent-2.6.0-rc7",
   "candidate_agent_version": "2.6.0",
   "accepted_live_agent_baseline": "2.5.7-r4",
   "accepted_extension_version": "3.10.5",
@@ -43,7 +43,7 @@
     "record RC4 provider PASS and Workspace failure evidence in canonical KB",
     "ship a checked-in RC5 publish plan that commits/tags/pushes once and submits durable exact-RC CI after artifact apply"
   ],
-  "candidate_extension_version": "3.10.6",
+  "candidate_extension_version": "3.10.7",
   "rc5_status": "superseded_after_aggregated_windows_ci_runtime_strictmode_failures",
   "rc6_corrections": [
     "normalize PowerShell 5.1 return [ordered]@ lexical form across Agent 2.6.0 runtime modules",
@@ -52,5 +52,15 @@
     "discover nested successful job.submit results inside plan.run/job.batch and register durable Extension watches",
     "bump candidate Extension to 3.10.6; keep accepted live baseline 3.10.5 until CI PASS and explicit reload/re-arm",
     "publish RC6 without nested CI submission; submit exact-RC CI as a direct top-level job.submit so live 3.10.5 registers the watch"
-  ]
+  ],
+  "rc6_status": "superseded_after_exact_rc_quick_ci_ps51_lexical_workspace_pipeline_and_terminal_delivery_findings",
+  "rc7_corrections": [
+    "normalize all release/runtime PowerShell return keyword adjacency so Windows PowerShell 5.1 never receives return$..., return(...), or return[...] compact forms",
+    "suppress Assert-SoknaWorkspaceFullAccess output inside ConvertTo-SoknaWorkspaceCompat so the function returns one dictionary instead of an Object[] pipeline aggregate",
+    "queue terminal job events durably before deleting the watch and retry delivery synchronously once",
+    "scope Result-First terminal-event blocking to the actual parent command result instead of unrelated stale unposted records",
+    "add job-watch health diagnostics for registered id, last poll/status/error, terminal queue and delivery outcome",
+    "bump candidate Extension to 3.10.7; live 3.10.6 is an activated but unaccepted candidate runtime until RC7 acceptance"
+  ],
+  "current_live_extension_runtime": "3.10.6-candidate-unaccepted"
 }
