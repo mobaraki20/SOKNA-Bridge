@@ -163,6 +163,7 @@ try{
   if($null-eq$badExit){throw 'P3_UNSAFE_URL_VALIDATION_EXIT_MISSING'}
   if([int]$badExit -eq 0){throw 'P3_UNSAFE_URL_VALIDATION_BYPASSED'}
   if((($badOutput|Out-String).Trim()) -notmatch 'only http/https URLs are allowed'){throw 'P3_UNSAFE_URL_VALIDATION_DIAGNOSTIC_MISSING'}
+  $global:LASTEXITCODE=0
 
   [ordered]@{
     ok=$true

@@ -54,4 +54,6 @@ win=(ROOT/'tools/runtime/releases/2.6.0/Test-BrowserQA260.ps1').read_text(encodi
 for marker in ['P3_BROWSER_SECRET_LEAK','P3_BASELINE_CROSS_WORKSPACE_ALLOWED','P3_VISUAL_CHANGE_NOT_DETECTED','P3_UNSAFE_URL_VALIDATION_BYPASSED']:
     assert marker in win, f'Windows P3 acceptance missing {marker}'
 
+assert '$global:LASTEXITCODE=0' in win, 'negative native exit must be cleared after expected failure'
+
 print('P3_BROWSER_VISUAL_QA_CONTRACTS_PASS')
