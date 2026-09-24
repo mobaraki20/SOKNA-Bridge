@@ -64,6 +64,17 @@ func findBrowser(explicit string) (string, error) {
 }
 
 func launchBrowser(executable string, width, height int) (*browserProcess, error) {
+	var last error
+	for attempt := 0; attempt < 2; attempt++ {
+		bp, err := launchBrowserOnce(executable, width, height)
+		if err == nil { return bp, nil }
+		last = err
+		if !strings.Contains(err.Error(), "DevTools endpoint timeout") { return nil, err }
+		time.Sleep(time.Second)
+	}
+	return nil, fmt.Errorf("browser launch retry exhausted: %w", last)
+}
+func launchBrowserOnce(executable string, width, height int) (*browserProcess, error) {
 	dir, err := os.MkdirTemp("", "sokna-browserqa-")
 	if err != nil {
 		return nil, err
@@ -105,7 +116,7 @@ func launchBrowser(executable string, width, height int) (*browserProcess, error
 	}
 	go scan(stderr)
 	go scan(stdout)
-	deadline := time.After(15 * time.Second)
+	deadline := time.After(30 * time.Second)
 	for bp.wsURL == "" {
 		select {
 		case line := <-lines:
