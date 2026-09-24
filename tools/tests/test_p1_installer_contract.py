@@ -79,6 +79,8 @@ windows_acceptance = (ROOT / 'tools/installer/Test-P1Windows.ps1').read_text(enc
 for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime', 'PROCESS_TIMEOUT:', 'P1_PROCESS_START', 'P1_PROCESS_EXIT']:
     assert marker in windows_acceptance, f'Windows lifecycle acceptance missing {marker}'
 assert not re.search(r'(?im)(^|[;\s])(gci|gc|cp|mv|rm|kill|sleep|gfh)(?=\s|;|$)', windows_acceptance), 'forbidden PowerShell alias in Windows acceptance script'
+assert '$CommandArgs' in windows_acceptance
+assert '[string[]]$Args' not in windows_acceptance
 
 # P1 Core must remain project-agnostic. Repo module identity is allowed only in go.mod.
 for root in [ROOT / 'maintenance', ROOT / 'installer/windows', ROOT / 'tools/installer']:

@@ -39,8 +39,8 @@ function New-SyntheticPayload([string]$Source,[string]$Destination,[string]$Vers
   Write-Json $manifestPath $manifest
   return $manifestPath
 }
-function Invoke-Maint([string]$Exe,[string]$InstallRoot,[string[]]$Args,[int[]]$Allowed=@(0)){
-  return Invoke-ProcessChecked $Exe (@($Args)+@('--install-root',$InstallRoot)) $Allowed
+function Invoke-Maint([string]$Exe,[string]$InstallRoot,[string[]]$CommandArgs,[int[]]$Allowed=@(0)){
+  return Invoke-ProcessChecked $Exe (@($CommandArgs)+@('--install-root',$InstallRoot)) $Allowed
 }
 
 if([string]::IsNullOrWhiteSpace($SetupPath)){
