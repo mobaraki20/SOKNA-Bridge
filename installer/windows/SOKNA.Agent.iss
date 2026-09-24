@@ -42,7 +42,7 @@ Source: "{#PayloadRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdir
 [Icons]
 Name: "{group}\SOKNA Agent Status"; Filename: "{app}\{#MyExeName}"; Parameters: "status --install-root ""{app}"""; WorkingDir: "{app}"
 Name: "{group}\Create Support Bundle"; Filename: "{app}\{#MyExeName}"; Parameters: "support-bundle --install-root ""{app}"" --output ""{userdocs}\SOKNA-Agent-Support.zip"""; WorkingDir: "{app}"
-Name: "{group}\Extension Files"; Filename: "{app}\extension"; Flags: foldershortcut
+Name: "{group}\Extension Files"; Filename: "{app}\extension"
 Name: "{userdesktop}\SOKNA Agent Status"; Filename: "{app}\{#MyExeName}"; Parameters: "status --install-root ""{app}"""; Tasks: desktopicon; WorkingDir: "{app}"
 
 [Registry]

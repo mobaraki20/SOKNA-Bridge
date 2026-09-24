@@ -29,6 +29,7 @@ for marker in [
 ]:
     assert marker in iss, f'Inno contract missing {marker}'
 assert '{localappdata}\\SOKNA\\Bridge\\artifacts' in iss
+assert 'foldershortcut' not in iss, 'Inno 6.7.3 removed foldershortcut; folder shortcuts must use Filename directly'
 assert 'SoknaCafe' not in iss and 'mobaraki20' not in iss
 
 for project in [
