@@ -16,7 +16,7 @@ function Copy-Tree([string]$Source,[string]$Destination){if(Test-Path $Destinati
 Require-Command dotnet
 Require-Command go
 Require-Command git
-$sourceCommit=(& git -C $RepoRoot rev-parse HEAD).Trim()
+$sourceCommitOut=@(& git -C $RepoRoot rev-parse HEAD);if($LASTEXITCODE-ne0){throw 'GIT_HEAD_FAILED'};$sourceCommit=(($sourceCommitOut-join"`n").Trim())
 if(-not[string]::IsNullOrWhiteSpace($ExpectedSourceCommit)-and-not[string]::Equals($sourceCommit,$ExpectedSourceCommit.Trim(),[StringComparison]::OrdinalIgnoreCase)){throw ('SOURCE_COMMIT_MISMATCH: expected='+$ExpectedSourceCommit+' actual='+$sourceCommit)}
 $dirty=@(& git -C $RepoRoot status --porcelain --untracked-files=all)
 if($LASTEXITCODE-ne0){throw 'GIT_STATUS_FAILED'}

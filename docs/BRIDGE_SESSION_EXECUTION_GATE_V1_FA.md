@@ -84,6 +84,11 @@ PC کاربر = Access / Publish / Activation / Acceptance endpoint.
 - یک candidate کامل و validated => یک milestone commit/push.
 - exact commit => CI.
 - Windows-only build/runtime validation در clean Windows CI، نه با تجهیز PC کاربر به Node/Go/SDK/Inno.
+- اگر `job.submit` و `tools/plans/github-windows-ci-full.json` موجود است، **polling دستی chat-by-chat با `gh run view` ممنوع است**. یک durable job باید dispatch + wait + collect را انجام دهد و Extension فقط RESULT اولیه و terminal summary را به Chat برگرداند.
+- manual CI status probe فقط fallback است: وقتی durable job واقعاً unavailable/failed باشد و علت ثبت شود.
+- independent Windows diagnostics باید در یک CI run تا حد ممکن همگی اجرا شوند و در انتها یک diagnostic gate نتیجه‌ها را aggregate کند؛ fail-fast روی اولین تست مستقل ممنوع است.
+- بعد از یک Windows-only failure، قبل از ساخت RC بعدی باید کل failure-family و stepهای بعدی که قبلاً skip شده‌اند audit شوند؛ patch-one-line => RC-new به‌صورت پیش‌فرض ممنوع است.
+- اگر candidate یک publish plan معتبر در `tools/plans/` دارد، بعد از `artifact.inspect/apply` باید همان plan اجرا شود؛ commit/tag/push/CI نباید دوباره chat-by-chat بازسازی شوند.
 
 ## 7) Preferred command patterns
 

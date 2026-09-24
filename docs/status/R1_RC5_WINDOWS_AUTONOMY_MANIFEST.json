@@ -1,0 +1,16 @@
+{
+  "schema": "sokna-r1-rc5-windows-autonomy-hardening-manifest-v1",
+  "candidate_ref": "sokna-agent-2.6.0-rc5",
+  "base_canonical_commit": "86014574dcbb11fc662b79068ffdaee93f064062",
+  "source_ci_run": "35947423759",
+  "source_ci_provider_step_passed": true,
+  "source_ci_workspace_failure_observed": true,
+  "failure": "PowerShell 5.1 StrictMode collection cardinality assertion used $lw.tools.Count instead of @($lw.tools).Count",
+  "scope": "broad Windows/autonomy hardening, not a one-line RC",
+  "diagnostic_aggregation": true,
+  "durable_ci_job_required_when_available": true,
+  "home_pc_source_development": false,
+  "windows_exact_rc_execution_claimed": false,
+  "publish_plan": "tools/plans/publish-rc5-and-submit-ci.json",
+  "post_download_outer_commands_target": 1
+}

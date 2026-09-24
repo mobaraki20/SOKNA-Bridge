@@ -200,3 +200,14 @@ Two gates remain: `CI -> LIVE`.
 - Fix is development-workspace-only: walk every existing ancestor with `os.Lstat` and reject actual symlink/irregular reparse metadata; do not use canonicalized path-string inequality as a security signal. Added ordinary-temp-path and symlink-parent tests.
 - RC3 is superseded. RC4 is the next exact candidate. Home PC remains publish/access only; Agent 2.6.0 is not installed/activated there.
 - Next action: freeze RC4 off-PC, build/simulate a canonical delta from pushed RC3 commit `e394eda...`, transfer as one artifact, then use batch-first publish + exact-commit Windows CI.
+
+
+## 2026-09-24 RC4 Windows CI -> RC5 autonomy/diagnostic hardening
+- Canonical RC4 commit: `86014574dcbb11fc662b79068ffdaee93f064062`; exact-RC run `35947423759`.
+- RC4 Native Artifact Provider tests PASS, confirming the Windows 8.3/reparse fix.
+- Next failure: `Test-Workspace260.ps1` under Windows PowerShell 5.1 StrictMode at `$lw.tools.Count`; use `@($lw.tools).Count` for collection cardinality assertions.
+- Do not cut one RC per newly revealed Windows failure. RC5 adds a broad Windows sweep and a workflow diagnostic aggregator so independent Windows tests continue and report together before installer promotion.
+- `tools/ci/Test-WindowsAgentEnvironment.ps1` now parses tracked `.ps1` + `.psm1`, smoke-runs runtime 2.6.0 and copies the complete runtime module set.
+- `tools/ci/Invoke-GitHubWindowsCI.ps1` is exact-commit aware and the existing `tools/plans/github-windows-ci-full.json` MUST be submitted with `job.submit`; chat-by-chat `gh run view` polling is fallback-only. Extension 3.10.5 already watches terminal jobs and posts the terminal summary.
+- Current endpoint rule remains: user PC is publish/access/acceptance only; no source fixes or dev toolchain installs there.
+- RC5 ships `tools/plans/publish-rc5-and-submit-ci.json`: after one artifact inspect/apply, execute this plan instead of rebuilding commit/tag/push/CI steps in Chat.

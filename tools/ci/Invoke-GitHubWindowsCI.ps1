@@ -2,6 +2,7 @@ param(
   [string]$Workflow = 'windows-agent-validation.yml',
   [ValidateSet('quick','full')][string]$Profile = 'full',
   [string]$Ref = '',
+  [string]$ExpectedCommit = '',
   [int]$TimeoutSec = 900
 )
 $ErrorActionPreference = 'Stop'
@@ -9,10 +10,15 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Set-Location $repo
 
 if ([string]::IsNullOrWhiteSpace($Ref)) {
-  $Ref = (git branch --show-current).Trim()
+  $refOut = @(& git branch --show-current)
+  if ($LASTEXITCODE -ne 0) { throw 'git branch --show-current failed' }
+  $Ref = (($refOut -join "`n").Trim())
 }
-$head = (git rev-parse HEAD).Trim()
+$headOut = @(& git rev-parse HEAD)
 if ($LASTEXITCODE -ne 0) { throw 'git rev-parse failed' }
+$head = (($headOut -join "`n").Trim())
+if ([string]::IsNullOrWhiteSpace($ExpectedCommit)) { $ExpectedCommit = $head }
+if (-not [string]::Equals($head,$ExpectedCommit,[StringComparison]::OrdinalIgnoreCase)) { throw "CI_EXPECTED_COMMIT_LOCAL_MISMATCH expected=$ExpectedCommit actual=$head" }
 $requestId = 'ci-' + [guid]::NewGuid().ToString('N').Substring(0,16)
 
 function Invoke-GhJson([string[]]$GhArgs) {
@@ -45,7 +51,9 @@ if ($null -eq $run) {
     )
   } catch {}
 
-  $dispatch = & gh workflow run $Workflow --ref $Ref -f "profile=$Profile" -f "request_id=$requestId" 2>&1
+  $dispatchArgs = @('workflow','run',$Workflow,'--ref',$Ref,'-f',"profile=$Profile",'-f',"request_id=$requestId")
+  if ($Profile -eq 'full') { $dispatchArgs += @('-f',"expected_commit=$ExpectedCommit") }
+  $dispatch = & gh @dispatchArgs 2>&1
   if ($LASTEXITCODE -ne 0) { throw (($dispatch | Out-String).Trim()) }
 
   $resolveDeadline = [DateTime]::UtcNow.AddSeconds(60)
@@ -76,7 +84,7 @@ $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(30,$TimeoutSec))
 $view = $null
 while ([DateTime]::UtcNow -lt $deadline) {
   $view = Invoke-GhJson -GhArgs @('run','view',[string]$runId,'--json','status,conclusion,headSha,headBranch,workflowName,url,jobs,displayTitle')
-  if ([string]$view.headSha -ne $head) { throw "CI_SHA_MISMATCH expected=$head actual=$($view.headSha)" }
+  if ([string]$view.headSha -ne $ExpectedCommit) { throw "CI_SHA_MISMATCH expected=$ExpectedCommit actual=$($view.headSha)" }
   if ([string]$view.status -eq 'completed') { break }
   Start-Sleep -Seconds 5
 }
@@ -127,7 +135,7 @@ if ($summary.ok -and $Profile -eq 'full') {
   if (-not (Test-Path $ticketDir)) { New-Item -ItemType Directory -Path $ticketDir -Force | Out-Null }
   $ticket = [ordered]@{
     schema = 'sokna-autonomy-ci-ticket-v1'
-    commit = $head
+    commit = $ExpectedCommit
     ci_run_id = $runId
     ci_conclusion = 'success'
     profile = 'full'

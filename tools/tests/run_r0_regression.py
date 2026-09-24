@@ -11,7 +11,7 @@ for name in [
     'test_autonomy_bootstrap.py','test_artifact_root_contract.py','test_p1_installer_contract.py',
     'test_p2_workspace_permissions.py','test_p3_browser_visual_qa.py','test_p4_artifact_providers.py',
     'test_p5_advanced_workspaces.py','test_p6_component_automation.py','test_bridge_session_execution_gate.py',
-    'test_r0_whole_product.py']:
+    'test_windows_release_hardening.py','test_r0_whole_product.py']:
     run([sys.executable, str(ROOT/'tools/tests'/name)])
 for name in ['test_agent_job_core.mjs','test_transport_v3105.mjs']:
     run(['node',str(ROOT/'tools/tests'/name)])

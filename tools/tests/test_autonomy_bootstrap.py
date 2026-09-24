@@ -19,7 +19,7 @@ for x in ['windows-2025','request_id','run-name:','cancel-in-progress: true']: a
 for x in ['--json-b64 $v3B64','--json-b64 $v4B64','CARRIER_V3_GENERATOR_PROCESS_FAILED','CARRIER_V4_GENERATOR_PROCESS_FAILED']: assert x in wf,x
 assert "' | python tools/sokna_carrier_guard.py" not in wf
 ci=(root/'tools/ci/Invoke-GitHubWindowsCI.ps1').read_text(encoding='utf-8')
-for x in ['request_id=$requestId','--log-failed','CI_SHA_MISMATCH','displayTitle']: assert x in ci,x
+for x in ['request_id=$requestId','--log-failed','CI_SHA_MISMATCH','displayTitle','expected_commit=$ExpectedCommit','CI_EXPECTED_COMMIT_LOCAL_MISMATCH']: assert x in ci,x
 for p in ['quick','full']:
  obj=json.loads((root/f'tools/plans/github-windows-ci-{p}.json').read_text(encoding='utf-8'));assert obj['steps'][0]['action']=='process.run';assert obj['steps'][0]['params']['timeout_sec']==1200
 lessons=[json.loads(x) for x in (root/'docs/knowledge/agent-lessons.jsonl').read_text(encoding='utf-8').splitlines() if x.strip()]

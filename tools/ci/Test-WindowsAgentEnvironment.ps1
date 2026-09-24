@@ -1,6 +1,6 @@
-﻿param(
+param(
   [ValidateSet('quick','full')][string]$Profile = 'quick',
-  [string]$RuntimeVersion = '2.5.5'
+  [string]$RuntimeVersion = '2.6.0'
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -13,7 +13,7 @@ if (-not (Test-Path $agentSrc -PathType Leaf)) { throw "runtime missing: $agentS
 if (-not (Test-Path $capsSrc -PathType Leaf)) { throw "capabilities missing: $capsSrc" }
 
 $parseErrors = @()
-$psFiles = git -C $repo ls-files '*.ps1'
+$psFiles = @(& git -C $repo ls-files '*.ps1' '*.psm1')
 foreach ($rel in $psFiles) {
   $tokens = $null
   $errs = $null
@@ -30,11 +30,10 @@ $listener.Stop()
 $root = Join-Path $env:RUNNER_TEMP ('sokna-agent-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root -Force | Out-Null
 try {
-  Copy-Item $agentSrc (Join-Path $root 'agent.ps1') -Force
-  Copy-Item $capsSrc (Join-Path $root 'AGENT_CAPABILITIES.json') -Force
+  Copy-Item (Join-Path $runtime '*') $root -Recurse -Force
 
   $remote = ''
-  try { $remote = (git -C $repo remote get-url origin).Trim() } catch {}
+  try { $remoteOut=@(& git -C $repo remote get-url origin); if($LASTEXITCODE-eq0){$remote=(($remoteOut-join"`n").Trim())} } catch {}
   $expectedRepo = ''
   $owner = 'ci'
   if ($remote -match 'github\.com[/:](?<repo>[^\s]+?)(?:\.git)?$') {

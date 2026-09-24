@@ -1,0 +1,47 @@
+{
+  "id": "publish-rc5-and-submit-ci-v1",
+  "steps": [
+    {
+      "name": "working-diff-check",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {"exe": "git", "args": ["diff", "--check"], "mutating": false}
+    },
+    {
+      "name": "stage-rc5",
+      "action": "git.add",
+      "stop_on_error": true,
+      "params": {}
+    },
+    {
+      "name": "staged-diff-check",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {"exe": "git", "args": ["diff", "--cached", "--check"], "mutating": false}
+    },
+    {
+      "name": "commit-rc5",
+      "action": "git.commit",
+      "stop_on_error": true,
+      "params": {"message": "release: canonicalize SOKNA Agent 2.6.0-rc5"}
+    },
+    {
+      "name": "tag-rc5",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {"exe": "git", "args": ["tag", "sokna-agent-2.6.0-rc5"], "mutating": true}
+    },
+    {
+      "name": "push-rc5",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {"exe": "git", "args": ["push", "origin", "dev/bootstrap-v2.5", "sokna-agent-2.6.0-rc5"], "mutating": true, "timeout_sec": 300}
+    },
+    {
+      "name": "submit-exact-windows-ci",
+      "action": "job.submit",
+      "stop_on_error": true,
+      "params": {"path": "tools/plans/github-windows-ci-full.json"}
+    }
+  ]
+}

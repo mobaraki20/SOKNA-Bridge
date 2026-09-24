@@ -95,7 +95,7 @@ try{
   }catch{if($_.Exception.Message -notmatch 'BROWSER_RUN_WORKSPACE_MISMATCH'){throw}}
 
   $dry=Set-SoknaBrowserBaseline -Workspace 'p3-test' -RunId 'p3-first' -BaselineId 'baseline-a'
-  if(-not $dry.dry_run -or $dry.files.Count -lt 2){throw'P3_BASELINE_DRYRUN_INVALID'}
+  if(-not $dry.dry_run -or @($dry.files).Count -lt 2){throw'P3_BASELINE_DRYRUN_INVALID'}
   $promote=Set-SoknaBrowserBaseline -Workspace 'p3-test' -RunId 'p3-first' -BaselineId 'baseline-a' -Execute
   if(-not $promote.ok -or -not (Test-Path -LiteralPath (Join-Path $promote.path 'baseline.json'))){throw'P3_BASELINE_PROMOTE_FAILED'}
   try{

@@ -5,7 +5,7 @@ R1 freezes an **exact source candidate**. It is not a Windows PASS and does not 
 ## Candidate identity
 - candidate runtime: Agent `2.6.0` development RC source;
 - accepted live baseline remains Agent `2.5.7 R4` + Extension `3.10.5` until CI passes;
-- candidate ref: `sokna-agent-2.6.0-rc4`, created locally only after the clean R1 commit exists;
+- candidate ref: `sokna-agent-2.6.0-rc5`, created locally only after the clean R1 commit exists;
 - canonical source identity is the exact Git commit/tree recorded by the generated RC manifest, not a mutable branch name.
 
 
@@ -19,6 +19,10 @@ R1 freezes an **exact source candidate**. It is not a Windows PASS and does not 
 
 ## RC3 supersession after exact-RC Windows CI
 `rc3` was canonicalized and pushed as commit `e394eda68eec13b4fdf07856c06a2c973b7f44b0`; exact-RC Windows CI run `35946302187` passed source guards, Extension/transport/repository contracts, P0-C..P6/R0/R1 contracts, native Agent tests and Browser tests, then failed only at Native Artifact Provider tests. The failure was a Windows path-security false positive: `filepath.EvalSymlinks` expanded the runner's valid 8.3 alias (`RUNNER~1`) to a long path, and textual inequality was incorrectly treated as a reparse point. RC4 replaces textual canonicalization equality with ancestor filesystem-metadata checks, retains real symlink/junction fail-closed behavior, adds regression coverage, and records the CI evidence in KB. No Agent 2.6.0 install/activation occurred on the home PC.
+
+
+## RC4 supersession after broader exact-RC Windows CI
+`rc4` was canonicalized and pushed as commit `86014574dcbb11fc662b79068ffdaee93f064062`; exact-RC Windows CI run `35947423759` proved the RC4 Provider correction by passing Native Artifact Provider tests, then continued through Native Host and ArtifactRoot Windows tests before failing at `Workspace 2.6.0 Windows permission matrix`. The concrete failure was Windows PowerShell 5.1 StrictMode cardinality semantics on `$lw.tools.Count`, not a demonstrated Workspace permission bypass. Because later independent Windows steps were then skipped, RC5 is intentionally **not** a one-line patch: it sweeps sibling PowerShell collection/native-output hazards, adds a 2.6.0 PowerShell/runtime compatibility preflight, converts independent Windows diagnostics to continue-and-aggregate with one final gate, and promotes the already-existing `job.submit` GitHub CI plan to the mandatory no-manual-polling path. This is designed to surface the remaining Windows failure set in one CI run instead of one RC per first failure. No Agent 2.6.0 install/activation occurred on the home PC.
 
 ## Reproducible source bundle
 `tools/release/Build-R1SourceRC.py` reads blobs directly from the exact Git commit, rejects dirty source and non-HEAD commits, uses fixed ZIP metadata/order, and embeds `__SOKNA_RC__/SOURCE_MANIFEST.json` with every tracked path/mode/blob/hash. Two builds from the same commit/tool implementation must be byte-identical.

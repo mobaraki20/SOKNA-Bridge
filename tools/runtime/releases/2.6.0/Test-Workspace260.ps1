@@ -52,7 +52,7 @@ try {
   $null=Initialize-SoknaWorkspaceRegistry -Config $legacyCfg -ConfigPath $legacyCfgPath -RuntimeRoot $root
   $items=@(Get-SoknaWorkspaceList);if($items.Count-ne1){throw 'P2_LEGACY_COUNT_FAILED'}
   $lw=Get-SoknaWorkspace $items[0].id
-  if($lw.tools.Count-ne0){throw 'P2_LEGACY_TOOL_AUTO_GRANT'}
+  if(@($lw.tools).Count-ne0){throw 'P2_LEGACY_TOOL_AUTO_GRANT'}
   try{$null=Resolve-SoknaWorkspacePath $lw 'x.txt' -Access write -AllowMissing;throw 'P2_LEGACY_READONLY_BYPASSED'}catch{if($_.Exception.Message-notmatch'WORKSPACE_WRITE_NOT_GRANTED'){throw}}
   if(-not(Test-Path $legacyCfgPath)){throw 'P2_LEGACY_SOURCE_CONFIG_REMOVED'}
 
