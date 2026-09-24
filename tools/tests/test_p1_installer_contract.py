@@ -71,6 +71,9 @@ for marker in ['dotnet publish', 'go build', 'installed-manifest.json', "product
     assert marker in build, f'build marker missing {marker}'
 assert not re.search(r'(?im)(^|[;\s])(gci|gc|cp|mv|rm|kill|sleep|gfh)(?=\s|;|$)', build), 'forbidden PowerShell alias in release build script'
 
+workflow=(ROOT/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
+assert '$buildOutput=@(' in workflow and 'Select-Object -Last 1' in workflow
+
 windows_acceptance = (ROOT / 'tools/installer/Test-P1Windows.ps1').read_text(encoding='utf-8')
 for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime']:
     assert marker in windows_acceptance, f'Windows lifecycle acceptance missing {marker}'

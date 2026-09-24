@@ -296,7 +296,8 @@ jobs:
         shell: powershell
         run: |
           $iscc=(Get-Content .ci/inno-compiler-path.txt -Raw).Trim()
-          $result=./tools/installer/Build-P1Installer.ps1 -InnoCompiler $iscc -ExpectedSourceCommit '${{ inputs.expected_commit }}' | ConvertFrom-Json
+          $buildOutput=@(./tools/installer/Build-P1Installer.ps1 -InnoCompiler $iscc -ExpectedSourceCommit '${{ inputs.expected_commit }}')
+          $result=($buildOutput | Select-Object -Last 1) | ConvertFrom-Json
           if(-not $result.ok){ throw 'P1_INSTALLER_BUILD_FAILED' }
           $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Agent-Setup-*.exe' -File | Select-Object -First 1
           if(-not $setup){ throw 'P1_SETUP_EXE_MISSING' }
