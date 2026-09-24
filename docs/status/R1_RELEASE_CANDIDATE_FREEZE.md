@@ -4,8 +4,8 @@ R1 freezes an **exact source candidate**. It is not a Windows PASS and does not 
 
 ## Candidate identity
 - candidate runtime: Agent `2.6.0` development RC source;
-- accepted baseline remains Agent `2.5.7 R4` + Extension `3.10.5`; Extension `3.10.6` is currently loaded only as an unaccepted candidate runtime for watcher diagnostics;
-- candidate ref: `sokna-agent-2.6.0-rc7`, created locally only after the clean R1 commit exists;
+- accepted baseline remains Agent `2.5.7 R4` + Extension `3.10.5`; Extension `3.10.7` is currently loaded only as an unaccepted candidate runtime for watcher diagnostics;
+- candidate ref: `sokna-agent-2.6.0-rc8`, created locally only after the clean R1 commit exists;
 - canonical source identity is the exact Git commit/tree recorded by the generated RC manifest, not a mutable branch name.
 
 
@@ -44,3 +44,11 @@ Full workflow dispatch must provide `expected_commit`. CI rejects a mismatch, ge
 
 ## Boundary
 No .NET/Inno/PowerShell Windows execution is claimed by R1 locally. After the R1 freeze, only `CI -> LIVE` remain. After the 2026-09-24 pre-CI incident, no further source development/repair is permitted on the home PC before CI; it may be used only as the authenticated publish/access plane, and no Agent 2.6.0 install/activation is permitted before exact-RC CI passes.
+
+
+## RC7 supersession after exact-RC full Windows CI + live 3.10.7 watcher
+`rc7` was canonicalized and pushed as commit `a6672fe3301b75de4df1a84a84fa9e68b46833fe`; exact-RC full Windows CI run `35952911021` proved the RC7 PowerShell compatibility corrections: `WINDOWS_COMPAT` and `WIN_ADVANCED_WORKSPACE` both PASS. Remaining Windows failures were `WIN_ARTIFACT_PROVIDER`, `WIN_BROWSER`, and `WIN_COMPONENT`. Provider evidence showed the Go runner receiving BOM-prefixed JSON (`invalid character 'ï' looking for beginning of value`), so RC8 forces redirected UTF-8 without BOM and also defensively accepts one leading UTF-8 BOM in the provider decoder. Browser evidence showed StrictMode access to missing `hidden_capture`; RC8 makes the live-capture policy shape explicit with `hidden_capture=false` and `credential_export=false`. The Component failure is not assigned a separate root cause until the next exact-RC Windows run; its acceptance path begins with Artifact Provider acquisition, so RC8 treats Provider repair as a prerequisite rather than claiming an unobserved Component-specific fix.
+
+Live Extension `3.10.7` was explicitly reloaded/re-armed and successfully registered/polled durable job `rc7-ci-a6672fe`, but terminal auto-delivery again did not appear. Source review found a deterministic false-positive: terminal STATUS reused the parent `commandId`, and `resultVisibleInUserTurn()` found that same id in the already-visible initial `job.submit` ACK, returning `existing-bubble` without sending the terminal event. RC8 Extension `3.10.8` gives status events their own unique `eventId` and prioritizes that marker for duplicate detection. A dedicated Node regression reproduces the exact ACK-vs-terminal case.
+
+The mistyped diagnostic action `job.gget` also exposed another Windows PowerShell 5.1 lexical hazard: `throw"Unknown action: $action"` became a command token instead of a clean throw. RC8 normalizes adjacent `throw` string forms across shipped 2.6.0 runtime/acceptance PowerShell and statically rejects regression. Finally, `Invoke-GitHubWindowsCI.ps1` now reads the full Actions log once after failure, groups actual `##[error]` step blocks locally, stores the full evidence file, and returns only bounded root excerpts; `--log-failed` remains fallback-only.

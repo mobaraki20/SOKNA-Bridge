@@ -8,7 +8,7 @@ param(
 )
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 function Sha([string]$p){if(-not(Test-Path -LiteralPath $p -PathType Leaf)){throw "EVIDENCE_FILE_MISSING: $p"};return (Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash.ToLowerInvariant()}
-$headOut=@(& git rev-parse HEAD);if($LASTEXITCODE-ne0){throw'GIT_HEAD_FAILED'};$head=(($headOut-join"`n").Trim())
+$headOut=@(& git rev-parse HEAD);if($LASTEXITCODE-ne0){throw 'GIT_HEAD_FAILED'};$head=(($headOut-join"`n").Trim())
 $source=Get-Content -LiteralPath $SourceManifestPath -Raw -Encoding UTF8|ConvertFrom-Json
 if([string]$source.source_commit-ne$head){throw "EXACT_RC_SOURCE_COMMIT_MISMATCH: manifest=$($source.source_commit) head=$head"}
 $payload=Get-Content -LiteralPath $PayloadManifestPath -Raw -Encoding UTF8|ConvertFrom-Json

@@ -105,10 +105,50 @@ if ([string]$view.conclusion -ne 'success') {
   $dir = Join-Path $env:LOCALAPPDATA 'SOKNA\Bridge\ci-results'
   New-Item -ItemType Directory -Path $dir -Force | Out-Null
   $logPath = Join-Path $dir ("github-run-$runId-failed.log")
-  $lines = & gh run view $runId --log-failed 2>&1
+
+  # continue-on-error hides the original failing steps from --log-failed. Pull the
+  # full run once, persist it as evidence, and reduce it locally to the real failed
+  # step groups so chat never needs a second manual log-extraction round trip.
+  $lines = @(& gh run view $runId --log 2>&1)
+  if ($LASTEXITCODE -ne 0) { $lines = @(& gh run view $runId --log-failed 2>&1) }
   [IO.File]::WriteAllText($logPath,(($lines | Out-String)),[Text.UTF8Encoding]::new($false))
-  $excerpt = (($lines | Select-Object -Last 80 | Out-String).Trim())
-  if ($excerpt.Length -gt 4000) { $excerpt = $excerpt.Substring($excerpt.Length - 4000) }
+
+  $groups = @{}
+  foreach ($line in $lines) {
+    $parts = @(([string]$line) -split "`t",3)
+    if ($parts.Count -lt 3) { continue }
+    $key = ([string]$parts[0]) + "`t" + ([string]$parts[1])
+    if (-not $groups.ContainsKey($key)) { $groups[$key] = New-Object System.Collections.ArrayList }
+    [void]$groups[$key].Add([string]$line)
+  }
+
+  $detected = @()
+  foreach ($key in @($groups.Keys | Sort-Object)) {
+    $stepLines = @($groups[$key])
+    $hasError = $false
+    foreach ($line in $stepLines) {
+      if ([string]$line -match '##\[error\]') { $hasError = $true; break }
+    }
+    if (-not $hasError) { continue }
+    $pair = @(([string]$key) -split "`t",2)
+    $detected += [pscustomobject]@{job=[string]$pair[0];step=[string]$pair[1];conclusion='failure';lines=$stepLines}
+  }
+
+  $rootFailures = @($detected | Where-Object { [string]$_.step -ne 'Windows diagnostic gate' })
+  if ($rootFailures.Count -eq 0) { $rootFailures = @($detected) }
+  if ($rootFailures.Count -gt 0) {
+    $failed = @($rootFailures | ForEach-Object { @{job=[string]$_.job;step=[string]$_.step;conclusion='failure'} })
+    $chunks = @()
+    foreach ($item in $rootFailures) {
+      $tail = ((@($item.lines) | Select-Object -Last 24 | Out-String).Trim())
+      if ($tail.Length -gt 1200) { $tail = $tail.Substring($tail.Length - 1200) }
+      $chunks += ("=== " + [string]$item.step + " ===`r`n" + $tail)
+    }
+    $excerpt = (($chunks -join "`r`n") | Out-String).Trim()
+  } else {
+    $excerpt = (($lines | Select-Object -Last 80 | Out-String).Trim())
+  }
+  if ($excerpt.Length -gt 4000) { $excerpt = $excerpt.Substring(0,4000) }
 }
 
 $summary = [ordered]@{

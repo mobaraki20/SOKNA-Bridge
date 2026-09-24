@@ -1,6 +1,6 @@
 {
   "schema": "sokna-r1-release-candidate-policy-v1",
-  "candidate_ref": "sokna-agent-2.6.0-rc7",
+  "candidate_ref": "sokna-agent-2.6.0-rc8",
   "candidate_agent_version": "2.6.0",
   "accepted_live_agent_baseline": "2.5.7-r4",
   "accepted_extension_version": "3.10.5",
@@ -43,7 +43,7 @@
     "record RC4 provider PASS and Workspace failure evidence in canonical KB",
     "ship a checked-in RC5 publish plan that commits/tags/pushes once and submits durable exact-RC CI after artifact apply"
   ],
-  "candidate_extension_version": "3.10.7",
+  "candidate_extension_version": "3.10.8",
   "rc5_status": "superseded_after_aggregated_windows_ci_runtime_strictmode_failures",
   "rc6_corrections": [
     "normalize PowerShell 5.1 return [ordered]@ lexical form across Agent 2.6.0 runtime modules",
@@ -62,5 +62,14 @@
     "add job-watch health diagnostics for registered id, last poll/status/error, terminal queue and delivery outcome",
     "bump candidate Extension to 3.10.7; live 3.10.6 is an activated but unaccepted candidate runtime until RC7 acceptance"
   ],
-  "current_live_extension_runtime": "3.10.6-candidate-unaccepted"
+  "current_live_extension_runtime": "3.10.7-candidate-unaccepted",
+  "rc7_status": "superseded_after_exact_rc_full_ci_provider_bom_browser_policy_and_terminal_event_identity_findings",
+  "rc8_corrections": [
+    "force UTF-8 without BOM for Artifact Provider redirected stdin/stdout/stderr and defensively accept one leading UTF-8 BOM in the Go request decoder",
+    "make Browser live-capture policy expose explicit hidden_capture=false and credential_export=false under StrictMode",
+    "give queued status events a unique eventId and prefer it for existing-bubble detection so parent ACKs cannot suppress terminal delivery",
+    "normalize unsafe throw keyword adjacency across shipped 2.6.0 PowerShell/runtime acceptance code and statically reject regression",
+    "extract actual continue-on-error root failures from one full GitHub run log locally and return bounded per-step evidence",
+    "bump candidate Extension to 3.10.8; live 3.10.7 remains an activated but unaccepted candidate until RC8 exact-RC acceptance"
+  ]
 }

@@ -2,10 +2,10 @@ from pathlib import Path
 import re
 ROOT=Path(__file__).resolve().parents[2]
 import json
-publish_plan=json.loads((ROOT/'tools/plans/publish-rc7.json').read_text(encoding='utf-8'))
+publish_plan=json.loads((ROOT/'tools/plans/publish-rc8.json').read_text(encoding='utf-8'))
 actions=[x['action'] for x in publish_plan['steps']]
 assert actions==['process.run','git.add','process.run','git.commit','process.run','process.run','process.run','process.run']
-assert publish_plan['steps'][4]['params']['args']==['tag','sokna-agent-2.6.0-rc7']
+assert publish_plan['steps'][4]['params']['args']==['tag','sokna-agent-2.6.0-rc8']
 wf=(ROOT/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
 helper=(ROOT/'tools/ci/Invoke-GitHubWindowsCI.ps1').read_text(encoding='utf-8')
 preflight=(ROOT/'tools/ci/Test-WindowsAgentEnvironment.ps1').read_text(encoding='utf-8')
@@ -21,6 +21,8 @@ for ident in ['native_provider','win_workspace','win_advanced_workspace','win_ar
     assert f'id: {ident}' in wf,ident
     assert f'steps.{ident}.outcome' in wf,ident
 for x in ["[string]$ExpectedCommit = ''",'expected_commit=$ExpectedCommit','CI_EXPECTED_COMMIT_LOCAL_MISMATCH','--log-failed']:
+    assert x in helper,x
+for x in ['gh run view $runId --log','continue-on-error hides the original failing steps','Windows diagnostic gate','$rootFailures',r'##\[error\]']:
     assert x in helper,x
 assert "ls-files '*.ps1' '*.psm1'" in preflight
 assert "[string]$RuntimeVersion = '2.6.0'" in preflight
@@ -42,7 +44,7 @@ for ps in [*runtime.glob("*.ps1"), *runtime.glob("*.psm1")]:
     text = ps.read_text(encoding="utf-8")
     assert "return[ordered]@" not in text, f"PS5_RETURN_ORDERED_SPACING:{ps}"
     assert not re.search(r"\breturn(?=[\$\[\(\'\"])", text), f"PS5_RETURN_LEXICAL_SPACING:{ps}"
-    assert not re.search(r"\bthrow(?=\$)", text), f"PS5_THROW_LEXICAL_SPACING:{ps}"
+    assert not re.search(r"\bthrow(?=[\$'\"])", text), f"PS5_THROW_LEXICAL_SPACING:{ps}"
 workspace = (runtime / "Sokna.Workspace.psm1").read_text(encoding="utf-8")
 assert "$view['owner_job_id']" in workspace and "$view['expires_at']" in workspace, "PS5_ORDERED_DICTIONARY_DYNAMIC_KEY"
 assert "$null=Assert-SoknaWorkspaceFullAccess -Workspace $view -Access 'write'" in workspace, "PS5_WORKSPACE_PIPELINE_POLLUTION"
@@ -56,3 +58,6 @@ print('WINDOWS_RELEASE_HARDENING_PASS')
 assert 'JOB_WATCH_DIAG_KEY="job_watch_diag_v1"' in background, "JOB_WATCH_DIAGNOSTICS"
 assert 'const q=await queueStatusEvent' in background, "JOB_TERMINAL_QUEUE_BEFORE_WATCH_DELETE"
 assert 'lastTerminalDeliveryOk' in background and 'jobWatchIds' in background, "JOB_WATCH_HEALTH_DIAGNOSTICS"
+content = (ROOT / 'extension' / 'chrome' / 'content.js').read_text(encoding='utf-8')
+assert 'statusEnvelope({eventId:id,...rec.result})' in background, 'STATUS_EVENT_UNIQUE_EVENT_ID'
+assert 'p.match(/"eventId"' in content, 'STATUS_EVENT_EVENT_ID_DUPLICATE_CHECK'

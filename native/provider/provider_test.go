@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -24,6 +25,25 @@ func testReq(root, provider, id string) ProviderRequest {
 	return ProviderRequest{Schema: requestSchema, Operation: "acquire", Provider: provider, ArtifactRoot: root, ArtifactID: id, MaxBytes: 1 << 20, Retries: 3, BackoffMS: 1, TimeoutSeconds: 5}
 }
 func testEngine() *engine { return &engine{allowHTTP: true, sleep: func(time.Duration) {}} }
+
+func TestDecodeProviderRequestAcceptsUTF8BOM(t *testing.T) {
+	raw := "\xEF\xBB\xBF{\"schema\":\"sokna-artifact-provider-request-v1\",\"operation\":\"probe\",\"provider\":\"local_file\",\"artifact_root\":\"C:/tmp\",\"artifact_id\":\"bom-1\",\"source\":{\"path\":\"C:/tmp/x\"}}"
+	req, err := decodeProviderRequest(bufio.NewReader(strings.NewReader(raw)))
+	if err != nil {
+		t.Fatalf("BOM-prefixed request rejected: %v", err)
+	}
+	if req.ArtifactID != "bom-1" || req.Provider != "local_file" {
+		t.Fatalf("unexpected request: %+v", req)
+	}
+}
+
+func TestDecodeProviderRequestStillRejectsUnknownFields(t *testing.T) {
+	raw := "{\"schema\":\"sokna-artifact-provider-request-v1\",\"operation\":\"probe\",\"provider\":\"local_file\",\"artifact_root\":\"C:/tmp\",\"artifact_id\":\"bad-1\",\"source\":{},\"unexpected\":true}"
+	_, err := decodeProviderRequest(bufio.NewReader(strings.NewReader(raw)))
+	if err == nil {
+		t.Fatal("unknown field was accepted")
+	}
+}
 
 func TestLocalProviderAcquireAndVerify(t *testing.T) {
 	root := t.TempDir()

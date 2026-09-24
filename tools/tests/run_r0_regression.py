@@ -13,7 +13,7 @@ for name in [
     'test_p5_advanced_workspaces.py','test_p6_component_automation.py','test_bridge_session_execution_gate.py',
     'test_windows_release_hardening.py','test_r0_whole_product.py']:
     run([sys.executable, str(ROOT/'tools/tests'/name)])
-for name in ['test_agent_job_core.mjs','test_transport_v3105.mjs']:
+for name in ['test_agent_job_core.mjs','test_terminal_status_delivery.mjs','test_transport_v3105.mjs']:
     run(['node',str(ROOT/'tools/tests'/name)])
 for rel in ['native/agent','native/host','native/legacy/v2.5','native/browser','native/provider']:
     run(['go','test','./...'],ROOT/rel)

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -107,11 +109,20 @@ func runVerify(req ProviderRequest) (ProviderResult, error) {
 	return ProviderResult{OK: true, Schema: resultSchema, Operation: "verify", Provider: req.Provider, ArtifactID: req.ArtifactID, ManagedPath: filepath.ToSlash(filepath.Clean(req.ManagedPath)), Size: size, SHA256: sha, Signature: sig, SignatureOK: sigOK, VerifiedAt: verifiedAt()}, nil
 }
 
-func main() {
-	dec := json.NewDecoder(os.Stdin)
+func decodeProviderRequest(r *bufio.Reader) (ProviderRequest, error) {
+	if b, err := r.Peek(3); err == nil && bytes.Equal(b, []byte{0xEF, 0xBB, 0xBF}) {
+		_, _ = r.Discard(3)
+	}
+	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()
 	var req ProviderRequest
-	if err := dec.Decode(&req); err != nil {
+	err := dec.Decode(&req)
+	return req, err
+}
+
+func main() {
+	req, err := decodeProviderRequest(bufio.NewReader(os.Stdin))
+	if err != nil {
 		emitError("invalid_request", err)
 		os.Exit(2)
 	}

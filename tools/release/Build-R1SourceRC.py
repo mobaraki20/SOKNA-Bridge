@@ -49,7 +49,7 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--repo',default=str(Path(__file__).resolve().parents[2]))
     ap.add_argument('--commit',default='HEAD')
-    ap.add_argument('--candidate-ref',default='sokna-agent-2.6.0-rc7')
+    ap.add_argument('--candidate-ref',default='sokna-agent-2.6.0-rc8')
     ap.add_argument('--output',required=True)
     ap.add_argument('--manifest-output',required=True)
     ap.add_argument('--allow-dirty',action='store_true',help='development-only; forbidden for canonical R1 freeze')
@@ -76,7 +76,7 @@ def main():
         'source_commit_time':commit_time,
         'candidate_agent_version':'2.6.0',
         'accepted_live_agent_baseline':'2.5.7-r4',
-        'extension_version':'3.10.7',
+        'extension_version':'3.10.8',
         'windows_ci':{
             'workflow':'.github/workflows/windows-agent-validation.yml',
             'required_profile':'full',

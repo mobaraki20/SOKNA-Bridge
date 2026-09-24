@@ -555,12 +555,12 @@ function InvokeAction([string]$action,$p) {
     "git.diff" {$w=ResolveWorkspace $p;AssertWorkspaceReadable $w;AssertWorkspaceTool $w 'git';$a=@("diff","--no-ext-diff");if($p.cached){$a+=("--cached")};$r=RunProcess "git" $a $w.path 60;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=(Clip $r.stdout 32000);error=$r.stderr}}
     "git.log" {$w=ResolveWorkspace $p;AssertWorkspaceReadable $w;AssertWorkspaceTool $w 'git';$n=if($p.count){[Math]::Min([Math]::Max([int]$p.count,1),100)}else{20};$r=RunProcess "git" @("log","--oneline","--decorate","-$n") $w.path 60;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=$r.stdout;error=$r.stderr}}
     "git.fetch" {$w=ResolveWorkspace $p;AssertWorkspaceWritable $w;AssertWorkspaceTool $w 'git';VerifyWorkspaceRemote $w;$r=RunProcess "git" @("fetch","--prune","origin") $w.path 300;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=$r.stdout;error=$r.stderr}}
-    "git.switch" {$w=ResolveWorkspace $p;$sync=AssertFreshWritable $w;$name=[string]$p.name;if($name-notmatch'^[A-Za-z0-9._/-]+$'){throw"Invalid branch"};$r=RunProcess "git" @("switch",$name) $w.path 60;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=$r.stdout;error=$r.stderr;sync_guard=$sync}}
-    "git.branch.create" {$w=ResolveWorkspace $p;$sync=AssertFreshWritable $w;$name=[string]$p.name;if($name-notmatch'^[A-Za-z0-9._/-]+$'){throw"Invalid branch"};$r=RunProcess "git" @("switch","-c",$name) $w.path 60;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=$r.stdout;error=$r.stderr;sync_guard=$sync}}
-    "git.add.paths" {$w=ResolveWorkspace $p;$sync=AssertFreshWritable $w;$paths=@($p.paths);if($paths.Count-eq0){throw"paths required"};foreach($x in $paths){$rel=[string]$x;$null=SafePath $w $rel 'write' -AllowMissing;$r=RunProcess "git" @("add","--",$rel) $w.path 60;if($r.code-ne0){throw $r.stderr}};return @{ok=$true;workspace=$w.name;paths=$paths;sync_guard=$sync}}
+    "git.switch" {$w=ResolveWorkspace $p;$sync=AssertFreshWritable $w;$name=[string]$p.name;if($name-notmatch'^[A-Za-z0-9._/-]+$'){throw "Invalid branch"};$r=RunProcess "git" @("switch",$name) $w.path 60;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=$r.stdout;error=$r.stderr;sync_guard=$sync}}
+    "git.branch.create" {$w=ResolveWorkspace $p;$sync=AssertFreshWritable $w;$name=[string]$p.name;if($name-notmatch'^[A-Za-z0-9._/-]+$'){throw "Invalid branch"};$r=RunProcess "git" @("switch","-c",$name) $w.path 60;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=$r.stdout;error=$r.stderr;sync_guard=$sync}}
+    "git.add.paths" {$w=ResolveWorkspace $p;$sync=AssertFreshWritable $w;$paths=@($p.paths);if($paths.Count-eq0){throw "paths required"};foreach($x in $paths){$rel=[string]$x;$null=SafePath $w $rel 'write' -AllowMissing;$r=RunProcess "git" @("add","--",$rel) $w.path 60;if($r.code-ne0){throw $r.stderr}};return @{ok=$true;workspace=$w.name;paths=$paths;sync_guard=$sync}}
     "git.add" {$w=ResolveWorkspace $p;$sync=AssertFreshWritable $w;$r=RunProcess "git" @("add","-A") $w.path 60;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=$r.stdout;error=$r.stderr;sync_guard=$sync}}
-    "git.commit" {$w=ResolveWorkspace $p;$msg=[string]$p.message;if([string]::IsNullOrWhiteSpace($msg)){throw"message required"};$sync=AssertFreshWritable $w;$r=RunProcess "git" @("commit","-m",$msg) $w.path 120;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=$r.stdout;error=$r.stderr;sync_guard=$sync}}
-    "git.push" {$w=ResolveWorkspace $p;$sync=AssertFreshWritable $w;$b=(RunProcess "git" @("branch","--show-current") $w.path 60).stdout.Trim();if($b-in@("main","master","production")){throw"Direct push to protected branch blocked"};$r=RunProcess "git" @("push","-u","origin",$b) $w.path 300;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;branch=$b;output=$r.stdout;error=$r.stderr;sync_guard=$sync}}
+    "git.commit" {$w=ResolveWorkspace $p;$msg=[string]$p.message;if([string]::IsNullOrWhiteSpace($msg)){throw "message required"};$sync=AssertFreshWritable $w;$r=RunProcess "git" @("commit","-m",$msg) $w.path 120;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=$r.stdout;error=$r.stderr;sync_guard=$sync}}
+    "git.push" {$w=ResolveWorkspace $p;$sync=AssertFreshWritable $w;$b=(RunProcess "git" @("branch","--show-current") $w.path 60).stdout.Trim();if($b-in@("main","master","production")){throw "Direct push to protected branch blocked"};$r=RunProcess "git" @("push","-u","origin",$b) $w.path 300;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;branch=$b;output=$r.stdout;error=$r.stderr;sync_guard=$sync}}
     "gh.auth.status" {$w=ResolveWorkspace $p;AssertWorkspaceReadable $w;AssertWorkspaceTool $w 'gh';$r=RunProcess "gh" @("auth","status") $w.path 60;return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;output=$r.stdout;error=$r.stderr}}
     "github.repo.create" {
       $w=ResolveWorkspace $p;AssertWorkspaceReadable $w;AssertWorkspaceTool $w 'gh'
@@ -574,10 +574,10 @@ function InvokeAction([string]$action,$p) {
       return @{ok=($r.code-eq0);code=$r.code;stdout=$r.stdout;stderr=$r.stderr;repository="$owner/$name"}
     }
     "plan.stage" {$w=ResolveWorkspace $p;$r=[string]$p.path
-      if($r-notmatch'^tools[\/]+plans[\/]+[A-Za-z0-9._-]+\.json$'){throw"Invalid plan path"}
-      $f=SafePath $w $r 'write' -AllowMissing;$sync=GetOptionalFreshnessGuard $w;if((-not$p.reset)-and$p.expected_sha256-and((Sha256File $f)-ne([string]$p.expected_sha256).ToLowerInvariant())){throw"Stage SHA256 mismatch"};$b=[Convert]::FromBase64String([string]$p.data_b64);if($b.Length-gt512){throw"Chunk too large"}
+      if($r-notmatch'^tools[\/]+plans[\/]+[A-Za-z0-9._-]+\.json$'){throw "Invalid plan path"}
+      $f=SafePath $w $r 'write' -AllowMissing;$sync=GetOptionalFreshnessGuard $w;if((-not$p.reset)-and$p.expected_sha256-and((Sha256File $f)-ne([string]$p.expected_sha256).ToLowerInvariant())){throw "Stage SHA256 mismatch"};$b=[Convert]::FromBase64String([string]$p.data_b64);if($b.Length-gt512){throw "Chunk too large"}
       $d=Split-Path $f -Parent;if(-not(Test-Path $d)){New-Item -ItemType Directory -Path $d -Force|Out-Null}
-      if($p.reset){[IO.File]::WriteAllBytes($f,$b)}else{if(-not(Test-Path $f)){throw"Stage file missing"};$s=[IO.File]::Open($f,'Append');try{$s.Write($b,0,$b.Length)}finally{$s.Dispose()}}
+      if($p.reset){[IO.File]::WriteAllBytes($f,$b)}else{if(-not(Test-Path $f)){throw "Stage file missing"};$s=[IO.File]::Open($f,'Append');try{$s.Write($b,0,$b.Length)}finally{$s.Dispose()}}
       return @{ok=$true;path=$r;sha256=(Sha256File $f);size=(Get-Item $f).Length;sync_guard=$sync}
     }
     "plan.run" {
@@ -645,7 +645,7 @@ function InvokeAction([string]$action,$p) {
 
     "job.get" { $j=ReadJob ([string]$p.id); return @{ok=$true;job=$j} }
     "job.batch" {
-      $results=@();$steps=@($p.steps);if($steps.Count-gt30){throw"Max 30 steps"}
+      $results=@();$steps=@($p.steps);if($steps.Count-gt30){throw "Max 30 steps"}
       foreach($s in $steps){
         $sp=$s.params
         if($null-eq$sp){$sp=[pscustomobject]@{}}
@@ -657,11 +657,11 @@ function InvokeAction([string]$action,$p) {
       }
       $all=$true;foreach($x in $results){if(-not$x.result.ok){$all=$false}};return @{ok=$all;results=$results}
     }
-    default {throw"Unknown action: $action"}
+    default {throw "Unknown action: $action"}
   }
 }
 
-if(-not(Test-Path $ConfigPath)){throw"config.json missing. Re-run SOKNA Bridge Setup."}
+if(-not(Test-Path $ConfigPath)){throw "config.json missing. Re-run SOKNA Bridge Setup."}
 $script:cfg=Get-Content $ConfigPath -Raw -Encoding UTF8|ConvertFrom-Json
 $null=Initialize-SoknaArtifactRoot -Config $script:cfg -RuntimeRoot $PSScriptRoot
 $null=Initialize-SoknaWorkspaceRegistry -Config $script:cfg -ConfigPath $ConfigPath -RuntimeRoot $PSScriptRoot

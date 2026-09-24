@@ -231,3 +231,16 @@ Two gates remain: `CI -> LIVE`.
 - Extension 3.10.6 was actually reloaded/re-armed and health showed `runtimeVersion=3.10.6`, `jobWatchCount=1` for `rc6-watch-3106`; the job later reached terminal failure but no automatic terminal RESULT arrived. Registration PASS != delivery PASS.
 - Candidate Extension 3.10.7: durable terminal event is persisted before watch deletion; Result-First checks only the parent command; immediate delivery retry is awaited; Health exposes jobWatchIds, last poll/status/error, terminal queue and delivery outcome.
 - Home PC remains access/publish/acceptance only. All RC7 source fixes are development-workspace-only.
+
+
+## 2026-09-24 RC7 full CI + live 3.10.7 terminal-delivery finding -> RC8
+- RC7 canonical commit: `a6672fe3301b75de4df1a84a84fa9e68b46833fe`; exact-RC full run: `35952911021`.
+- RC7 proved `WINDOWS_COMPAT=success` and `WIN_ADVANCED_WORKSPACE=success`. Remaining outcomes: `WIN_ARTIFACT_PROVIDER`, `WIN_BROWSER`, `WIN_COMPONENT`.
+- Provider concrete failure: `invalid character 'ï' looking for beginning of value`; Windows redirected JSON can carry an UTF-8 BOM. RC8 sets `StandardInputEncoding` to UTF8-no-BOM when supported and the Go provider decoder accepts exactly one leading UTF-8 BOM while retaining `DisallowUnknownFields`.
+- Browser concrete failure: StrictMode could not find `hidden_capture` on `Get-SoknaBrowserLiveCapturePolicy`. RC8 exposes explicit `hidden_capture=false` and `credential_export=false` fields.
+- Component-specific root cause is intentionally unclaimed until exact-RC RC8 CI; its test begins with Artifact Provider acquisition, so Provider repair may remove the observed failure.
+- Live Extension 3.10.7 registered and polled `rc7-ci-a6672fe`, but terminal STATUS was falsely classified as already visible because duplicate detection matched its parent `commandId` against the earlier submit ACK. Candidate Extension 3.10.8 adds a unique `eventId` to STATUS envelopes and duplicate-detects that marker first.
+- A dedicated `test_terminal_status_delivery.mjs` reproduces the exact parent-ACK false-positive and passes only with event identity separation.
+- Mistyped `job.gget` exposed `throw"Unknown action..."` PowerShell 5.1 tokenization; RC8 sweeps shipped 2.6.0 `throw'...'` / `throw"..."` adjacency and extends static lexical guards.
+- CI helper now reads one full failed run log, identifies actual step groups by `##[error]`, excludes the aggregate diagnostic gate when root failures exist, saves full evidence, and returns bounded excerpts. No separate chat log-extraction command should be needed after RC8.
+- Home PC remains access/publish/acceptance only; RC8 source development occurred only in the development workspace.

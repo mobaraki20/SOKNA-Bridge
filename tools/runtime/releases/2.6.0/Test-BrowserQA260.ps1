@@ -23,9 +23,9 @@ try{
   Push-Location (Join-Path $RepoRoot 'native\browser')
   try{
     & go test ./...
-    if($LASTEXITCODE -ne 0){throw'P3_NATIVE_BROWSER_TEST_FAILED'}
+    if($LASTEXITCODE -ne 0){throw 'P3_NATIVE_BROWSER_TEST_FAILED'}
     & go build -trimpath -o $runner .
-    if($LASTEXITCODE -ne 0){throw'P3_NATIVE_BROWSER_BUILD_FAILED'}
+    if($LASTEXITCODE -ne 0){throw 'P3_NATIVE_BROWSER_BUILD_FAILED'}
   }finally{Pop-Location}
 
   $html=@'
@@ -50,9 +50,9 @@ try{
   }
   $null=Initialize-SoknaArtifactRoot -Config $cfg -RuntimeRoot $runtime
   $status=Initialize-SoknaBrowserQA -Config $cfg -RuntimeRoot $runtime
-  if(-not $status.runner_available){throw'P3_BROWSER_RUNNER_UNAVAILABLE'}
+  if(-not $status.runner_available){throw 'P3_BROWSER_RUNNER_UNAVAILABLE'}
   $policy=Get-SoknaBrowserLiveCapturePolicy
-  if($policy.implemented -or -not $policy.permission_required -or $policy.hidden_capture -or $policy.credential_export){throw'P3_LIVE_CAPTURE_BOUNDARY_BROKEN'}
+  if($policy.implemented -or -not $policy.permission_required -or $policy.hidden_capture -or $policy.credential_export){throw 'P3_LIVE_CAPTURE_BOUNDARY_BROKEN'}
 
   $env:P3_QA_SECRET='hidden-secret-987654'
   $recipePath=Join-Path $recipeDir 'recipe.json'
@@ -84,30 +84,30 @@ try{
   $first=Invoke-SoknaBrowserRecipe -RecipePath $recipePath -Workspace 'p3-test' -RunId 'p3-first'
   if(-not $first.ok){throw('P3_FIRST_RUN_FAILED: '+(($first.findings|ConvertTo-Json -Compress)-join''))}
   $report1=Get-Content -LiteralPath (Join-Path $first.run_path 'report.json') -Raw -Encoding UTF8|ConvertFrom-Json
-  if([string]$report1.status -ne 'PASS'){throw'P3_REPORT_PASS_STATUS_MISSING'}
+  if([string]$report1.status -ne 'PASS'){throw 'P3_REPORT_PASS_STATUS_MISSING'}
   $browserText=(Get-ChildItem -LiteralPath $first.run_path -File -Recurse|Where-Object{$_.Extension -in @('.json','.html')}|ForEach-Object{Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8})-join"`n"
-  if($browserText.Contains('supersecret123') -or $browserText.Contains($env:P3_QA_SECRET)){throw'P3_BROWSER_SECRET_LEAK'}
-  if(-not $browserText.Contains('[REDACTED]')){throw'P3_REDACTION_EVIDENCE_MISSING'}
+  if($browserText.Contains('supersecret123') -or $browserText.Contains($env:P3_QA_SECRET)){throw 'P3_BROWSER_SECRET_LEAK'}
+  if(-not $browserText.Contains('[REDACTED]')){throw 'P3_REDACTION_EVIDENCE_MISSING'}
 
   try{
     $null=Set-SoknaBrowserBaseline -Workspace 'p3-other' -RunId 'p3-first' -BaselineId 'baseline-cross'
-    throw'P3_BASELINE_CROSS_WORKSPACE_ALLOWED'
+    throw 'P3_BASELINE_CROSS_WORKSPACE_ALLOWED'
   }catch{if($_.Exception.Message -notmatch 'BROWSER_RUN_WORKSPACE_MISMATCH'){throw}}
 
   $dry=Set-SoknaBrowserBaseline -Workspace 'p3-test' -RunId 'p3-first' -BaselineId 'baseline-a'
-  if(-not $dry.dry_run -or @($dry.files).Count -lt 2){throw'P3_BASELINE_DRYRUN_INVALID'}
+  if(-not $dry.dry_run -or @($dry.files).Count -lt 2){throw 'P3_BASELINE_DRYRUN_INVALID'}
   $promote=Set-SoknaBrowserBaseline -Workspace 'p3-test' -RunId 'p3-first' -BaselineId 'baseline-a' -Execute
-  if(-not $promote.ok -or -not (Test-Path -LiteralPath (Join-Path $promote.path 'baseline.json'))){throw'P3_BASELINE_PROMOTE_FAILED'}
+  if(-not $promote.ok -or -not (Test-Path -LiteralPath (Join-Path $promote.path 'baseline.json'))){throw 'P3_BASELINE_PROMOTE_FAILED'}
   try{
     $null=Set-SoknaBrowserBaseline -Workspace 'p3-test' -RunId 'p3-first' -BaselineId 'baseline-a' -Execute
-    throw'P3_BASELINE_OVERWRITE_ALLOWED'
+    throw 'P3_BASELINE_OVERWRITE_ALLOWED'
   }catch{if($_.Exception.Message -notmatch 'BROWSER_BASELINE_ALREADY_EXISTS'){throw}}
 
   try{
     $null=Invoke-SoknaBrowserRecipe -RecipePath $recipePath -Workspace 'p3-other' -BaselineId 'baseline-a' -RunId 'p3-cross'
-    throw'P3_BASELINE_CROSS_WORKSPACE_ALLOWED'
+    throw 'P3_BASELINE_CROSS_WORKSPACE_ALLOWED'
   }catch{if($_.Exception.Message -notmatch 'BROWSER_BASELINE_WORKSPACE_MISMATCH'){throw}}
-  if(Test-Path -LiteralPath (Get-SoknaBrowserRunPath 'p3-cross' -AllowMissing)){throw'P3_CROSS_WORKSPACE_LEFT_ORPHAN_RUN'}
+  if(Test-Path -LiteralPath (Get-SoknaBrowserRunPath 'p3-cross' -AllowMissing)){throw 'P3_CROSS_WORKSPACE_LEFT_ORPHAN_RUN'}
 
   $recipe.visual.enabled=$true
   $recipe.assertions+=@{type='visual_changed_ratio_max';max_ratio=0.005;required=$true}
@@ -118,19 +118,19 @@ try{
   $changed=$html.Replace('background:#e8e8e8','background:#111;color:#fff').Replace('width:240px','width:330px')
   Write-Utf8NoBom (Join-Path $site 'index.html') $changed
   $changedRun=Invoke-SoknaBrowserRecipe -RecipePath $recipePath -Workspace 'p3-test' -BaselineId 'baseline-a' -RunId 'p3-changed'
-  if($changedRun.ok){throw'P3_VISUAL_CHANGE_NOT_DETECTED'}
+  if($changedRun.ok){throw 'P3_VISUAL_CHANGE_NOT_DETECTED'}
   $reportChanged=Get-Content -LiteralPath (Join-Path $changedRun.run_path 'report.json') -Raw -Encoding UTF8|ConvertFrom-Json
-  if([string]$reportChanged.status -ne 'FAIL'){throw'P3_REPORT_FAIL_STATUS_MISSING'}
+  if([string]$reportChanged.status -ne 'FAIL'){throw 'P3_REPORT_FAIL_STATUS_MISSING'}
   $diffs=@(Get-ChildItem -LiteralPath $changedRun.run_path -Filter 'visual-diff.png' -File -Recurse)
-  if($diffs.Count -lt 1){throw'P3_VISUAL_DIFF_EVIDENCE_MISSING'}
+  if($diffs.Count -lt 1){throw 'P3_VISUAL_DIFF_EVIDENCE_MISSING'}
   $findingWithoutEvidence=@($reportChanged.findings|Where-Object{$_.severity -eq 'error' -and [string]::IsNullOrWhiteSpace([string]$_.evidence_artifact_id)})
-  if($findingWithoutEvidence.Count -gt 0){throw'P3_FAILURE_EVIDENCE_ID_MISSING'}
+  if($findingWithoutEvidence.Count -gt 0){throw 'P3_FAILURE_EVIDENCE_ID_MISSING'}
 
   $badPath=Join-Path $recipeDir 'bad.json'
   $bad=[ordered]@{schema='sokna-browser-recipe-v1';scenario_id='bad';url='file:///C:/Windows/win.ini';viewports=@(@{id='d';width=800;height=600});captures=@{screenshot=$true}}
   Write-Utf8NoBom $badPath ($bad|ConvertTo-Json -Depth 8)
   & $runner validate --recipe $badPath *> $null
-  if($LASTEXITCODE -eq 0){throw'P3_UNSAFE_URL_VALIDATION_BYPASSED'}
+  if($LASTEXITCODE -eq 0){throw 'P3_UNSAFE_URL_VALIDATION_BYPASSED'}
 
   [ordered]@{
     ok=$true

@@ -340,12 +340,12 @@ try{
   const invalidOuter=envelopeV4(v4cmd).replace(`SOKNA4CMD:${v4cmd.i}:`,`SOKNA4CMD:<command-id>:`);
   if(parseV4(invalidOuter).length!==0)throw new Error("V4 invalid outer id accepted");
   say("   V4 outer-id/correlated-NACK/cross-pair guard PASS");
-  say("V3.10.7: guarded primary carrier uses SOKNA4-CMD:<id>:<base64url>:SOKNA4-END (non-executable notation); V3 remains backward-compatible.");
-  say("V3.10.7: long commands are validated through fragmented V3 reassembly.");
-  say("V3.10.7: candidate and stream diagnostics are deduplicated.");
+  say("V3.10.8: guarded primary carrier uses SOKNA4-CMD:<id>:<base64url>:SOKNA4-END (non-executable notation); V3 remains backward-compatible.");
+  say("V3.10.8: long commands are validated through fragmented V3 reassembly.");
+  say("V3.10.8: candidate and stream diagnostics are deduplicated.");
 
   status.textContent=
-    "PASS - V3.10.7 reliable transport self-test completed";
+    "PASS - V3.10.8 reliable transport self-test completed";
   status.style.color="green";
 
 }catch(e){

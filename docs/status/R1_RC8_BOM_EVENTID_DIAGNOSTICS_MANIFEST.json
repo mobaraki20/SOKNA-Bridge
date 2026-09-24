@@ -1,0 +1,35 @@
+{
+  "schema": "sokna-r1-rc8-bom-eventid-diagnostics-hardening-manifest-v1",
+  "candidate_ref": "sokna-agent-2.6.0-rc8",
+  "candidate_extension_version": "3.10.8",
+  "accepted_live_extension_baseline": "3.10.5",
+  "observed_live_candidate_runtime": "3.10.7",
+  "base_canonical_commit": "a6672fe3301b75de4df1a84a84fa9e68b46833fe",
+  "source_ci_run": "35952911021",
+  "full_ci_passes": [
+    "WINDOWS_COMPAT",
+    "WIN_ADVANCED_WORKSPACE"
+  ],
+  "full_ci_failures": [
+    "WIN_ARTIFACT_PROVIDER",
+    "WIN_BROWSER",
+    "WIN_COMPONENT"
+  ],
+  "confirmed_root_causes": [
+    "Artifact Provider request JSON can arrive at the Go runner with an UTF-8 BOM on Windows PowerShell redirected stdin; encoding is now explicitly no-BOM and the provider defensively accepts one leading UTF-8 BOM",
+    "Browser live-capture policy omitted explicit hidden_capture and credential_export fields while the StrictMode acceptance expected them",
+    "terminal status duplicate detection reused parent commandId, so the initial job.submit ACK falsely satisfied existing-bubble detection; status events now carry a unique eventId",
+    "PowerShell throw keyword adjacency such as throw\"Unknown action...\" is unsafe under Windows PowerShell 5.1 and is normalized/static-guarded",
+    "gh --log-failed hides continue-on-error root steps; CI helper now reads one full log, groups failed step logs locally, stores full evidence, and returns bounded root excerpts"
+  ],
+  "component_failure_root_cause_confirmed": false,
+  "component_note": "RC7 full CI component failure occurs after provider-dependent setup; RC8 does not claim a separate component root cause until exact-RC Windows CI validates it.",
+  "provider_bom_hardened": true,
+  "browser_policy_shape_hardened": true,
+  "terminal_event_unique_id_hardened": true,
+  "ps51_throw_lexical_sweep": true,
+  "ci_root_failure_extraction_hardened": true,
+  "publish_plan": "tools/plans/publish-rc8.json",
+  "home_pc_source_development": false,
+  "windows_exact_rc_execution_claimed": false
+}

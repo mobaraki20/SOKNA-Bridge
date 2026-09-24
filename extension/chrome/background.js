@@ -2,7 +2,7 @@ importScripts("protocol.js","agent_job_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.10.7";
+const VERSION="3.10.8";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -162,7 +162,7 @@ async function postPendingInner(tabId,id,rec){
   }
   if(rec.nextPostAt&&rec.nextPostAt>now()){await scheduleRetryAlarm(tabId,rec.nextPostAt);return {ok:false,waiting:true,reason:"backoff"}};
   const isStatusEvent=rec.kind==="transport-nack"||rec.kind==="status-event";
-  const env=isStatusEvent?statusEnvelope(rec.result):resultEnvelope({id,...rec.result});
+  const env=isStatusEvent?statusEnvelope({eventId:id,...rec.result}):resultEnvelope({id,...rec.result});
   await setStatus(tabId,{state:"Posting",detail:`Sending ${id}`,currentCommandId:id,actionRequired:false});
   let p;try{p=await chrome.tabs.sendMessage(tabId,{type:"POST_RESULT",envelope:env},{frameId:0})}catch(e){p={ok:false,waiting:true,reason:"page_unavailable",error:String(e)}}
   const seen=await seenAll();

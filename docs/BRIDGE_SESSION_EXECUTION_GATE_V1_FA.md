@@ -123,4 +123,5 @@ PC کاربر = Access / Publish / Activation / Acceptance endpoint.
 - Extension 3.10.5 only auto-registers a durable watch when `job.submit` is the top-level command.
 - Extension 3.10.6 was live-tested after reload/re-arm: recursive watch registration works (`jobWatchCount=1`), but terminal auto-delivery did not complete reliably. Do not treat registration alone as autonomy PASS.
 - Candidate Extension 3.10.7 queues terminal events before removing watch state, scopes Result-First blocking to the parent command result, retries delivery immediately, and reports watch/poll/terminal diagnostics in Health.
+- Candidate Extension 3.10.8 gives every queued STATUS a unique `eventId`; existing-bubble detection MUST prefer `eventId` over the parent `commandId`, otherwise the initial job ACK can falsely suppress the later terminal event. Provider stdin is UTF-8-no-BOM with one-BOM defensive decode, and failed GitHub continue-on-error steps are summarized from one full log locally.
 - Extension source changes are not runtime-active until reload + page reload/re-arm; never claim candidate watcher behavior from disk files alone.

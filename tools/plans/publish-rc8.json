@@ -1,0 +1,102 @@
+{
+  "id": "publish-rc8-v1",
+  "workspace": "SOKNA-Bridge",
+  "steps": [
+    {
+      "name": "working-diff-check",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "diff",
+          "--check"
+        ],
+        "mutating": false
+      }
+    },
+    {
+      "name": "stage-rc8",
+      "action": "git.add",
+      "stop_on_error": true,
+      "params": {}
+    },
+    {
+      "name": "staged-diff-check",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "diff",
+          "--cached",
+          "--check"
+        ],
+        "mutating": false
+      }
+    },
+    {
+      "name": "commit-rc8",
+      "action": "git.commit",
+      "stop_on_error": true,
+      "params": {
+        "message": "release: canonicalize SOKNA Agent 2.6.0-rc8"
+      }
+    },
+    {
+      "name": "tag-rc8",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "tag",
+          "sokna-agent-2.6.0-rc8"
+        ],
+        "mutating": true
+      }
+    },
+    {
+      "name": "push-rc8",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "push",
+          "origin",
+          "dev/bootstrap-v2.5",
+          "sokna-agent-2.6.0-rc8"
+        ],
+        "mutating": true,
+        "timeout_sec": 300
+      }
+    },
+    {
+      "name": "head",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "rev-parse",
+          "HEAD"
+        ],
+        "mutating": false
+      }
+    },
+    {
+      "name": "tree",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "rev-parse",
+          "HEAD^{tree}"
+        ],
+        "mutating": false
+      }
+    }
+  ]
+}

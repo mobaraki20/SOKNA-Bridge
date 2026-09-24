@@ -26,7 +26,7 @@ const STREAM_END=":SOKNA3END";
 const V4_START="SOKNA4CMD:";
 const V4_END=":SOKNA4END";
 const MAX_V3_CARRIER_CHARS=PROTO.maxCarrierChars,MAX_V3_PAYLOAD_BYTES=PROTO.maxPayloadBytes;
-const VERSION="3.10.7",DETECTOR="v3.10.7-core-wire";
+const VERSION="3.10.8",DETECTOR="v3.10.8-core-wire";
 const rejectedV3Bodies=new Set();
 const laneBuffers=new Map();
 const laneTouched=new Map();
@@ -645,7 +645,7 @@ async function enterAttempt(el,payload){
 function resultVisibleInUserTurn(payload){
   try{
     const p=''+(payload||'');
-    const m=p.match(/"id"\s*:\s*"([^"]+)"/)||p.match(/"commandId"\s*:\s*"([^"]+)"/);
+    const m=p.match(/"eventId"\s*:\s*"([^"]+)"/)||p.match(/"id"\s*:\s*"([^"]+)"/)||p.match(/"commandId"\s*:\s*"([^"]+)"/);
     const id=m&&m[1]?m[1]:'';
 
     if(!id)return false;
@@ -655,9 +655,10 @@ function resultVisibleInUserTurn(payload){
 
     const s=b['inner\u0054ext']||b['text\u0043ontent']||'';
 
-    const hit=
-      s.includes('"id":"'+id+'"')||
-      s.includes('"id": "'+id+'"')||s.includes('"commandId":"'+id+'"')||s.includes('"commandId": "'+id+'"');
+    const isEventId=p.includes('"eventId"');
+    const hit=isEventId
+      ?(s.includes('"eventId":"'+id+'"')||s.includes('"eventId": "'+id+'"'))
+      :(s.includes('"id":"'+id+'"')||s.includes('"id": "'+id+'"')||s.includes('"commandId":"'+id+'"')||s.includes('"commandId": "'+id+'"'));
 
     if(!hit)return false;
 

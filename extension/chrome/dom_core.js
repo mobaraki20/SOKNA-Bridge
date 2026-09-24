@@ -306,7 +306,7 @@
   }
 
   globalThis[G]={
-    version:"3.10.7",LINK_PREFIX,
+    version:"3.10.8",LINK_PREFIX,
     b64urlToUtf8,parseEncoded,parseTextCarriers,parseV4Carriers,parseLinkCarriers,
     shadowOf,collectRoots,scanAll,composer,textOf,sendButton,submitEnvelope
   };
