@@ -31,7 +31,7 @@ try{
   $a1=Invoke-SoknaArtifactProviderAcquire -Provider 'local_file' -Params ([pscustomobject]@{artifact_id='p6-v1';source_path=$zip1;expected_sha256=(Sha $zip1)})
   $a2=Invoke-SoknaArtifactProviderAcquire -Provider 'local_file' -Params ([pscustomobject]@{artifact_id='p6-v2';source_path=$zip2;expected_sha256=(Sha $zip2)})
 
-  $null=Register-SoknaComponent -Id 'worker' -DisplayName 'Worker' -Type 'process' -ReleaseChannel 'stable' -EntryPoint 'worker.exe' -Args @() -ServiceName '' -HealthPath '' -Dependencies @()
+  $null=Register-SoknaComponent -Id 'worker' -DisplayName 'Worker' -Type 'process' -ReleaseChannel 'stable' -EntryPoint 'worker.exe' -CommandArgs @() -ServiceName '' -HealthPath '' -Dependencies @()
   $v1=Invoke-SoknaArtifactProviderVerify -Params ([pscustomobject]@{path=$a1.path;expected_sha256=$a1.sha256});$i1=Install-SoknaComponentRelease -Id 'worker' -Version '1.0.0' -ArtifactAbsolutePath (Resolve-SoknaManagedArtifactPath -Path $a1.path) -ArtifactPath $a1.path -Sha256 $v1.sha256;$act1=Activate-SoknaComponentRelease -Id 'worker' -Version '1.0.0';if(-not$act1.ok){Fail 'v1 activation'}
   $c=Get-SoknaComponent 'worker';if($c.active_version-ne'1.0.0'-or$c.health-ne'healthy'){Fail 'v1 state'}
 

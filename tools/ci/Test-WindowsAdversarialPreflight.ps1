@@ -20,8 +20,9 @@ $psFiles=@(& git -C $RepoRoot ls-files '*.ps1' '*.psm1')
 if($LASTEXITCODE-ne0){Fail 'WIN_ADV_GIT_LSFILES_FAILED'}
 foreach($rel in $psFiles){
   $tokens=$null;$errs=$null
-  [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $RepoRoot $rel),[ref]$tokens,[ref]$errs)
+  $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $RepoRoot $rel),[ref]$tokens,[ref]$errs)
   foreach($e in @($errs)){$parseErrors+=($rel+' :: '+$e.Message)}
+  $ast.FindAll({param($n)$n -is [Management.Automation.Language.ParameterAst] -and $n.Name.VariablePath.UserPath -ieq 'args'},$true)|%{$parseErrors+=($rel+' :: automatic parameter collision: $args')}
 }
 if(@($parseErrors).Count-gt0){Fail 'WIN_ADV_PS51_PARSE' (($parseErrors|Select-Object -First 12)-join' | ')}
 

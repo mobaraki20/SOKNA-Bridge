@@ -41,8 +41,8 @@ public class Adapter { public static void Main(){ var x=Console.In.ReadLine(); C
 '@
   Add-Type -TypeDefinition $src -OutputAssembly $adapterExe -OutputType ConsoleApplication
   $rv=Get-SoknaWorkspaceEffectiveView -WorkspaceId 'remote1' -GrantId 'rg' -JobId 'jobR'
-  $rr=Invoke-SoknaRemoteWorkspaceAdapter -Workspace $rv -GrantId 'rg' -JobId 'jobR' -Path 'docs/readme.md' -Operation 'read' -Args @();if(-not$rr.ok){throw 'P5_REMOTE_ADAPTER_FAILED'}
-  try{$null=Invoke-SoknaRemoteWorkspaceAdapter -Workspace $rv -GrantId 'rg' -JobId 'jobR' -Path '..\escape' -Operation 'read' -Args @();throw 'P5_REMOTE_PATH_ESCAPE'}catch{if($_.Exception.Message-notmatch'REMOTE_PATH_ESCAPE'){throw}}
+  $rr=Invoke-SoknaRemoteWorkspaceAdapter -Workspace $rv -GrantId 'rg' -JobId 'jobR' -Path 'docs/readme.md' -Operation 'read' -CommandArgs @();if(-not$rr.ok){throw 'P5_REMOTE_ADAPTER_FAILED'}
+  try{$null=Invoke-SoknaRemoteWorkspaceAdapter -Workspace $rv -GrantId 'rg' -JobId 'jobR' -Path '..\escape' -Operation 'read' -CommandArgs @();throw 'P5_REMOTE_PATH_ESCAPE'}catch{if($_.Exception.Message-notmatch'REMOTE_PATH_ESCAPE'){throw}}
   try{$null=Register-SoknaRemoteWorkspace -Id 'remoteBad' -DisplayName 'Bad' -Adapter 'fake' -EndpointRef 'user@host' -RootRef 'srv' -CredentialRef '' -Scopes @([pscustomobject]@{path='.';access='read'}) -Tools @();throw 'P5_REMOTE_CREDENTIAL_ENDPOINT'}catch{if($_.Exception.Message-notmatch'REMOTE_ENDPOINT_CREDENTIAL'){throw}}
 
   $orphan=New-SoknaWorkspaceGrant -Id 'orphan' -WorkspaceId 'main' -JobId 'missingJob' -Issuer 'ci' -Scopes @([pscustomobject]@{path='.';access='read'}) -Tools @() -TtlSeconds 600

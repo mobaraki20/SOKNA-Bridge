@@ -349,7 +349,7 @@ function InvokeAction([string]$action,$p) {
     "component.inspect" { return @{ok=$true;component=(Get-SoknaComponent ([string]$p.id))} }
     "component.register" {
       $display=if($null-ne$p.psobject.Properties['display_name']){[string]$p.display_name}else{[string]$p.id};$channel=if($null-ne$p.psobject.Properties['release_channel']){[string]$p.release_channel}else{'stable'};$entry=if($null-ne$p.psobject.Properties['entrypoint']){[string]$p.entrypoint}else{''};$args=if($null-ne$p.psobject.Properties['args']){@($p.args)}else{@()};$service=if($null-ne$p.psobject.Properties['service_name']){[string]$p.service_name}else{''};$health=if($null-ne$p.psobject.Properties['health_path']){[string]$p.health_path}else{''};$deps=if($null-ne$p.psobject.Properties['dependencies']){@($p.dependencies)}else{@()}
-      $c=Register-SoknaComponent -Id ([string]$p.id) -DisplayName $display -Type ([string]$p.type) -ReleaseChannel $channel -EntryPoint $entry -Args $args -ServiceName $service -HealthPath $health -Dependencies $deps;return @{ok=$true;component=$c}
+      $c=Register-SoknaComponent -Id ([string]$p.id) -DisplayName $display -Type ([string]$p.type) -ReleaseChannel $channel -EntryPoint $entry -CommandArgs $args -ServiceName $service -HealthPath $health -Dependencies $deps;return @{ok=$true;component=$c}
     }
     "component.channel.set" { return @{ok=$true;component=(Set-SoknaComponentReleaseChannel -Id ([string]$p.id) -Channel ([string]$p.channel))} }
     "component.dependency.acquire" {
@@ -462,7 +462,7 @@ function InvokeAction([string]$action,$p) {
     "workspace.remote.exec" {
       $w=ResolveWorkspace $p
       $remoteArgs=if($null-ne$p.psobject.Properties['args']){@($p.args)}else{@()}
-      return (Invoke-SoknaRemoteWorkspaceAdapter -Workspace $w -GrantId ([string]$p.grant_id) -JobId ([string]$p.job_id) -Path ([string]$p.path) -Operation ([string]$p.operation) -Args $remoteArgs)
+      return (Invoke-SoknaRemoteWorkspaceAdapter -Workspace $w -GrantId ([string]$p.grant_id) -JobId ([string]$p.job_id) -Path ([string]$p.path) -Operation ([string]$p.operation) -CommandArgs $remoteArgs)
     }
     "workspace.ephemeral.checkout" {
       $source=ResolveWorkspace $p
