@@ -6,10 +6,14 @@ $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 
 function Invoke-ProcessChecked([string]$FilePath,[string[]]$Arguments,[int[]]$AllowedExitCodes=@(0)){
-  Write-Host ('P1_PROCESS_START '+$FilePath)
-  $p=Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -WindowStyle Hidden
+  Write-Host ('P1_PROCESS_START '+$FilePath+' '+($Arguments -join ' '))
+  $o=[IO.Path]::GetTempFileName();$e=[IO.Path]::GetTempFileName()
+  $p=Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $o -RedirectStandardError $e
   if(-not $p.WaitForExit(180000)){try{$p.Kill()}catch{};throw ('PROCESS_TIMEOUT: '+$FilePath)}
   Write-Host ('P1_PROCESS_EXIT '+$FilePath+' '+$p.ExitCode)
+  $so=Get-Content -Raw -LiteralPath $o -ErrorAction SilentlyContinue;$se=Get-Content -Raw -LiteralPath $e -ErrorAction SilentlyContinue
+  if($so){Write-Host ('P1_STDOUT '+$so)};if($se){Write-Host ('P1_STDERR '+$se)}
+  Remove-Item -LiteralPath $o,$e -Force -ErrorAction SilentlyContinue
   if($AllowedExitCodes -notcontains $p.ExitCode){throw "PROCESS_FAILED: $FilePath exit=$($p.ExitCode)"}
   return $p.ExitCode
 }
