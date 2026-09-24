@@ -1,0 +1,137 @@
+{
+  "id": "validate-and-promote-rc9-v1",
+  "workspace": "SOKNA-Bridge",
+  "steps": [
+    {
+      "name": "working-diff-check",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "diff",
+          "--check"
+        ],
+        "mutating": false
+      }
+    },
+    {
+      "name": "stage-rc9-candidate",
+      "action": "git.add",
+      "stop_on_error": true,
+      "params": {}
+    },
+    {
+      "name": "staged-diff-check",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "diff",
+          "--cached",
+          "--check"
+        ],
+        "mutating": false
+      }
+    },
+    {
+      "name": "commit-rc9-validation-checkpoint",
+      "action": "git.commit",
+      "stop_on_error": true,
+      "params": {
+        "message": "candidate: SOKNA Agent 2.6.0-rc9 validation checkpoint"
+      }
+    },
+    {
+      "name": "push-validation-checkpoint",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "push",
+          "origin",
+          "dev/bootstrap-v2.5"
+        ],
+        "mutating": true,
+        "timeout_sec": 300
+      }
+    },
+    {
+      "name": "exact-commit-full-windows-ci",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "tools/ci/Invoke-GitHubWindowsCI.ps1",
+          "-Profile",
+          "full",
+          "-TimeoutSec",
+          "900"
+        ],
+        "mutating": false,
+        "timeout_sec": 1200
+      }
+    },
+    {
+      "name": "tag-rc9-only-after-ci-pass",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "tag",
+          "sokna-agent-2.6.0-rc9"
+        ],
+        "mutating": true
+      }
+    },
+    {
+      "name": "push-rc9-tag",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "push",
+          "origin",
+          "sokna-agent-2.6.0-rc9"
+        ],
+        "mutating": true,
+        "timeout_sec": 300
+      }
+    },
+    {
+      "name": "head",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "rev-parse",
+          "HEAD"
+        ],
+        "mutating": false
+      }
+    },
+    {
+      "name": "tree",
+      "action": "process.run",
+      "stop_on_error": true,
+      "params": {
+        "exe": "git",
+        "args": [
+          "rev-parse",
+          "HEAD^{tree}"
+        ],
+        "mutating": false
+      }
+    }
+  ]
+}

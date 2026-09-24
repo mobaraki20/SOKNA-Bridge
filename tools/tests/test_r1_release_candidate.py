@@ -16,7 +16,7 @@ evidence=need(Path('tools/ci/Write-ExactRCEvidence.ps1'),'EXACT_RC_SOURCE_COMMIT
 status=need(Path('docs/status/R1_RELEASE_CANDIDATE_FREEZE.md'),'base Workspace Policy','job-scoped grant','exact source','CI','LIVE','2.5.7 R4','3.10.5')
 policy=json.loads((ROOT/'docs/status/R1_RELEASE_CANDIDATE_POLICY.json').read_text(encoding='utf-8'))
 assert policy['schema']=='sokna-r1-release-candidate-policy-v1' and policy['ci_expected_commit_required'] is True
-assert policy['home_pc_allowed_before_ci_pass'] is False and policy['candidate_ref']=='sokna-agent-2.6.0-rc8'
+assert policy['home_pc_allowed_before_ci_pass'] is False and policy['candidate_ref']=='sokna-agent-2.6.0-rc9'
 corr=json.loads((ROOT/'docs/status/R1_RC2_CORRECTION_MANIFEST.json').read_text(encoding='utf-8'))
 assert corr['schema']=='sokna-r1-rc2-correction-manifest-v1' and corr['candidate_ref']=='sokna-agent-2.6.0-rc2' and corr['windows_exact_rc_execution_claimed'] is False
 rc3=json.loads((ROOT/'docs/status/R1_RC3_SESSION_GATE_MANIFEST.json').read_text(encoding='utf-8'))
@@ -34,5 +34,11 @@ assert rc7['schema']=='sokna-r1-rc7-ps51-terminal-delivery-hardening-manifest-v1
 
 rc8=json.loads((ROOT/'docs/status/R1_RC8_BOM_EVENTID_DIAGNOSTICS_MANIFEST.json').read_text(encoding='utf-8'))
 assert rc8['schema']=='sokna-r1-rc8-bom-eventid-diagnostics-hardening-manifest-v1' and rc8['candidate_ref']=='sokna-agent-2.6.0-rc8' and rc8['candidate_extension_version']=='3.10.8' and rc8['terminal_event_unique_id_hardened'] is True
+
+
+rc9=json.loads((ROOT/'docs/status/R1_RC9_WINDOWS_ADVERSARIAL_GATE_MANIFEST.json').read_text(encoding='utf-8'))
+assert rc9['schema']=='sokna-r1-rc9-windows-adversarial-gate-manifest-v1' and rc9['candidate_ref']=='sokna-agent-2.6.0-rc9' and rc9['candidate_extension_version']=='3.10.8'
+assert rc9['rc_tag_created_only_after_exact_commit_full_windows_ci_pass'] is True and rc9['failed_validation_checkpoint_does_not_consume_next_rc_number'] is True
+assert policy['tag_after_exact_commit_full_ci_pass'] is True and policy['failed_checkpoint_consumes_new_rc_number'] is False
 
 print('R1_RELEASE_CANDIDATE_CONTRACTS_PASS')

@@ -37,6 +37,19 @@ func TestDecodeProviderRequestAcceptsUTF8BOM(t *testing.T) {
 	}
 }
 
+func TestProviderResultZeroOptionalFieldsAreOmitted(t *testing.T) {
+	b, err := json.Marshal(ProviderResult{OK: true, Schema: resultSchema, Operation: "probe", Provider: "local_file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+	for _, field := range []string{"resumed_bytes", "attempts", "signature", "signature_ok", "content_type", "managed_path"} {
+		if strings.Contains(text, `"`+field+`"`) {
+			t.Fatalf("zero optional field %s unexpectedly serialized: %s", field, text)
+		}
+	}
+}
+
 func TestDecodeProviderRequestStillRejectsUnknownFields(t *testing.T) {
 	raw := "{\"schema\":\"sokna-artifact-provider-request-v1\",\"operation\":\"probe\",\"provider\":\"local_file\",\"artifact_root\":\"C:/tmp\",\"artifact_id\":\"bad-1\",\"source\":{},\"unexpected\":true}"
 	_, err := decodeProviderRequest(bufio.NewReader(strings.NewReader(raw)))

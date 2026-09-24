@@ -20,4 +20,4 @@ gate=(root/'docs/BRIDGE_SESSION_EXECUTION_GATE_V1_FA.md').read_text(encoding='ut
 assert 'Extension 3.10.5 only auto-registers' in gate
 assert 'Extension 3.10.6 was live-tested' in gate
 assert 'Candidate Extension 3.10.7' in gate
-assert 'Candidate Extension 3.10.8' in gate
+assert 'Extension 3.10.8 gives' in gate

@@ -68,9 +68,14 @@ jobs:
           if(@(& git status --porcelain --untracked-files=all).Count -gt 0){ throw 'EXACT_RC_DIRTY_CHECKOUT' }
           $rcDir=Join-Path $env:RUNNER_TEMP 'sokna-r1'
           New-Item -ItemType Directory -Path $rcDir -Force | Out-Null
-          python tools/release/Build-R1SourceRC.py --commit $head --output (Join-Path $rcDir 'SOKNA-Agent-2.6.0-rc8-source.zip') --manifest-output (Join-Path $rcDir 'source-manifest.json')
+          python tools/release/Build-R1SourceRC.py --commit $head --output (Join-Path $rcDir 'SOKNA-Agent-2.6.0-rc9-source.zip') --manifest-output (Join-Path $rcDir 'source-manifest.json')
           if($LASTEXITCODE -ne 0){ throw 'R1_SOURCE_BUNDLE_BUILD_FAILED' }
           "SOKNA_R1_DIR=$rcDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Windows adversarial preflight
+        id: windows_adversarial
+        continue-on-error: true
+        shell: powershell
+        run: ./tools/ci/Test-WindowsAdversarialPreflight.ps1 -RuntimeVersion 2.6.0
       - name: Windows PowerShell/runtime compatibility preflight
         id: windows_compat
         continue-on-error: true
@@ -236,6 +241,7 @@ jobs:
         if: always()
         shell: powershell
         env:
+          WINDOWS_ADVERSARIAL: ${{ steps.windows_adversarial.outcome }}
           WINDOWS_COMPAT: ${{ steps.windows_compat.outcome }}
           EXT_CONTRACTS: ${{ steps.ext_contracts.outcome }}
           TRANSPORT: ${{ steps.transport.outcome }}
@@ -264,7 +270,7 @@ jobs:
           ENV_HELPERS: ${{ steps.env_helpers.outcome }}
         run: |
           $failed=@()
-          $required=@('WINDOWS_COMPAT','EXT_CONTRACTS','TRANSPORT','REPO_CONTRACTS','P0_CONTRACTS','P1_CONTRACTS','P2_CONTRACTS','P3_CONTRACTS','P4_CONTRACTS','P5_CONTRACTS','P6_CONTRACTS','BRIDGE_GATE','R0_CONTRACTS','R1_CONTRACTS','NATIVE_AGENT','NATIVE_BROWSER','NATIVE_PROVIDER','NATIVE_HOST','WIN_ARTIFACT_ROOT','WIN_WORKSPACE','WIN_ADVANCED_WORKSPACE','WIN_ARTIFACT_PROVIDER','CARRIER','ENV_HELPERS')
+          $required=@('WINDOWS_ADVERSARIAL','WINDOWS_COMPAT','EXT_CONTRACTS','TRANSPORT','REPO_CONTRACTS','P0_CONTRACTS','P1_CONTRACTS','P2_CONTRACTS','P3_CONTRACTS','P4_CONTRACTS','P5_CONTRACTS','P6_CONTRACTS','BRIDGE_GATE','R0_CONTRACTS','R1_CONTRACTS','NATIVE_AGENT','NATIVE_BROWSER','NATIVE_PROVIDER','NATIVE_HOST','WIN_ARTIFACT_ROOT','WIN_WORKSPACE','WIN_ADVANCED_WORKSPACE','WIN_ARTIFACT_PROVIDER','CARRIER','ENV_HELPERS')
           if($env:SOKNA_VALIDATION_PROFILE-eq'full'){$required+=@('WIN_BROWSER','WIN_COMPONENT')}
           foreach($name in $required){
             $value=[Environment]::GetEnvironmentVariable($name)
@@ -309,7 +315,7 @@ jobs:
           if(-not $setup){ throw 'P1_SETUP_EXE_MISSING_FOR_EVIDENCE' }
           ./tools/ci/Write-ExactRCEvidence.ps1 `
             -SourceManifestPath (Join-Path $env:SOKNA_R1_DIR 'source-manifest.json') `
-            -SourceBundlePath (Join-Path $env:SOKNA_R1_DIR 'SOKNA-Agent-2.6.0-rc8-source.zip') `
+            -SourceBundlePath (Join-Path $env:SOKNA_R1_DIR 'SOKNA-Agent-2.6.0-rc9-source.zip') `
             -SetupPath $setup.FullName `
             -PayloadManifestPath 'artifacts/windows/installer-payload/manifests/installed-manifest.json' `
             -AcceptanceStatus passed `
@@ -318,11 +324,11 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
         uses: actions/upload-artifact@v4
         with:
-          name: SOKNA-Agent-2.6.0-rc8-${{ github.sha }}
+          name: SOKNA-Agent-2.6.0-rc9-${{ github.sha }}
           if-no-files-found: error
           retention-days: 30
           path: |
-            ${{ runner.temp }}\sokna-r1\SOKNA-Agent-2.6.0-rc8-source.zip
+            ${{ runner.temp }}\sokna-r1\SOKNA-Agent-2.6.0-rc9-source.zip
             ${{ runner.temp }}\sokna-r1\source-manifest.json
             ${{ runner.temp }}\sokna-r1\windows-exact-rc-evidence.json
             artifacts/windows/setup/SOKNA-Agent-Setup-*.exe

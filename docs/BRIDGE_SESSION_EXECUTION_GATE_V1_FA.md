@@ -123,5 +123,26 @@ PC کاربر = Access / Publish / Activation / Acceptance endpoint.
 - Extension 3.10.5 only auto-registers a durable watch when `job.submit` is the top-level command.
 - Extension 3.10.6 was live-tested after reload/re-arm: recursive watch registration works (`jobWatchCount=1`), but terminal auto-delivery did not complete reliably. Do not treat registration alone as autonomy PASS.
 - Candidate Extension 3.10.7 queues terminal events before removing watch state, scopes Result-First blocking to the parent command result, retries delivery immediately, and reports watch/poll/terminal diagnostics in Health.
-- Candidate Extension 3.10.8 gives every queued STATUS a unique `eventId`; existing-bubble detection MUST prefer `eventId` over the parent `commandId`, otherwise the initial job ACK can falsely suppress the later terminal event. Provider stdin is UTF-8-no-BOM with one-BOM defensive decode, and failed GitHub continue-on-error steps are summarized from one full log locally.
+- Extension 3.10.8 gives every queued STATUS a unique `eventId`; existing-bubble detection MUST prefer `eventId` over the parent `commandId`. This path is live-proven: job `rc8-ci-91ad9b3` posted its terminal STATUS automatically. This proves terminal delivery only; it does not imply Agent 2.6.0 Windows acceptance.
 - Extension source changes are not runtime-active until reload + page reload/re-arm; never claim candidate watcher behavior from disk files alone.
+
+## 11) Windows Adversarial Release Gate — MANDATORY
+
+از این پس **Local PASS مساوی RC-ready نیست**. Local regression فقط اجازه می‌دهد یک **candidate checkpoint** ساخته شود.
+
+ترتیب اجباری release:
+1. `Local regression` و static producer/consumer contracts در development workspace؛
+2. push یک **untagged candidate checkpoint** از همان exact tree؛
+3. `Windows Adversarial Preflight` به‌عنوان gate واقعی Windows PowerShell روی همان exact commit؛
+4. ادامه‌ی همان `exact-commit Windows full CI` با aggregate diagnostics تا همه failure-familyهای مستقل در همان run دیده شوند؛
+5. فقط پس از PASS کامل مرحله 4، ساخت/push کردن **RC tag** و ادعای acceptance.
+
+قواعد Windows Adversarial Preflight:
+- تمام `ps1/psm1`ها با parser همان Windows PowerShell parse شوند؛
+- lexical hazards شناخته‌شده (`return$...`, `return(...)`, `throw"..."` و هم‌خانواده‌ها) fail-closed باشند؛
+- قرارداد producer/consumer برای JSON خارجی بررسی شود؛ به‌خصوص fieldهای `omitempty` نباید تحت StrictMode مستقیم خوانده شوند؛
+- ماتریس‌های خالص Windows برای ArtifactRoot/Workspace/Advanced Workspace قبل از full CI اجرا شوند؛
+- fixture مرورگر باید implicit resourceها را deterministic کند، server readiness را اثبات کند، و اولین failure شامل URL/status/console diagnostic محدود باشد؛
+- هر failure جدید Windows قبل از candidate بعدی باید به regression دائمی + KB rule تبدیل شود.
+
+**RC tag قبل از exact-commit Windows full PASS ممنوع است.** Candidate commit/tag acceptance از هم جدا هستند.

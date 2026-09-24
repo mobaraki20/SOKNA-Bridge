@@ -1,0 +1,21 @@
+{
+  "schema": "sokna-r1-rc9-windows-adversarial-gate-manifest-v1",
+  "candidate_ref": "sokna-agent-2.6.0-rc9",
+  "candidate_agent_version": "2.6.0",
+  "candidate_extension_version": "3.10.8",
+  "base_canonical_commit": "91ad9b3adca6ee954833575a2858788da866d5af",
+  "rc8_exact_windows_run": 35956279729,
+  "rc8_terminal_autodelivery_live_proven": true,
+  "windows_adversarial_preflight": "tools/ci/Test-WindowsAdversarialPreflight.ps1",
+  "producer_consumer_optional_json_contract": true,
+  "provider_optional_fields_must_use_safe_accessor": true,
+  "browser_fixture_http_readiness_required": true,
+  "browser_fixture_implicit_resources_served": true,
+  "browser_first_failure_bounded_diagnostics": true,
+  "rc_tag_created_only_after_exact_commit_full_windows_ci_pass": true,
+  "failed_validation_checkpoint_does_not_consume_next_rc_number": true,
+  "publish_plan": "tools/plans/validate-and-promote-rc9.json",
+  "home_pc_source_development": false,
+  "windows_exact_rc_execution_claimed": false,
+  "windows_adversarial_runs_on_exact_pushed_candidate": true
+}

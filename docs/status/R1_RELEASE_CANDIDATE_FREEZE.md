@@ -4,8 +4,8 @@ R1 freezes an **exact source candidate**. It is not a Windows PASS and does not 
 
 ## Candidate identity
 - candidate runtime: Agent `2.6.0` development RC source;
-- accepted baseline remains Agent `2.5.7 R4` + Extension `3.10.5`; Extension `3.10.7` is currently loaded only as an unaccepted candidate runtime for watcher diagnostics;
-- candidate ref: `sokna-agent-2.6.0-rc8`, created locally only after the clean R1 commit exists;
+- accepted baseline remains Agent `2.5.7 R4` + Extension `3.10.5`; Extension `3.10.8` is currently loaded as an unaccepted candidate runtime; terminal auto-delivery is live-proven, but Agent 2.6.0 Windows acceptance is not yet complete;
+- candidate label: `sokna-agent-2.6.0-rc9`; its Git tag is intentionally **not created** until the exact candidate commit passes full Windows CI;
 - canonical source identity is the exact Git commit/tree recorded by the generated RC manifest, not a mutable branch name.
 
 
@@ -52,3 +52,9 @@ No .NET/Inno/PowerShell Windows execution is claimed by R1 locally. After the R1
 Live Extension `3.10.7` was explicitly reloaded/re-armed and successfully registered/polled durable job `rc7-ci-a6672fe`, but terminal auto-delivery again did not appear. Source review found a deterministic false-positive: terminal STATUS reused the parent `commandId`, and `resultVisibleInUserTurn()` found that same id in the already-visible initial `job.submit` ACK, returning `existing-bubble` without sending the terminal event. RC8 Extension `3.10.8` gives status events their own unique `eventId` and prioritizes that marker for duplicate detection. A dedicated Node regression reproduces the exact ACK-vs-terminal case.
 
 The mistyped diagnostic action `job.gget` also exposed another Windows PowerShell 5.1 lexical hazard: `throw"Unknown action: $action"` became a command token instead of a clean throw. RC8 normalizes adjacent `throw` string forms across shipped 2.6.0 runtime/acceptance PowerShell and statically rejects regression. Finally, `Invoke-GitHubWindowsCI.ps1` now reads the full Actions log once after failure, groups actual `##[error]` step blocks locally, stores the full evidence file, and returns only bounded root excerpts; `--log-failed` remains fallback-only.
+
+
+## RC8 supersession after terminal auto-delivery PASS + exact-RC Windows CI
+`rc8` canonical commit `91ad9b3adca6ee954833575a2858788da866d5af` ran full exact-commit Windows CI as run `35956279729`. Extension `3.10.8` terminal auto-delivery PASSed live: durable job `rc8-ci-91ad9b3` posted its terminal `[SOKNA-V2-STATUS]` automatically, proving the full watch/detect/eventId/queue/post path. Windows CI still failed Artifact Provider, Browser QA and Component. Provider + Component shared one producer/consumer shape defect: Go `omitempty` removed `resumed_bytes` when zero, while PowerShell StrictMode accessed it directly. Browser reached real runtime assertions but reported one console error and one network failure, so the fixture itself must be deterministic and self-diagnosing.
+
+RC9 changes the release process, not just those lines. Local PASS is candidate-only. A mandatory **Windows Adversarial Preflight** runs on actual Windows PowerShell before milestone push. The validation checkpoint is pushed without an RC tag; exact-commit full Windows CI then runs. The `sokna-agent-2.6.0-rc9` tag is created/pushed only if that exact commit passes. If the checkpoint fails, fixes continue under the same rc9 candidate number rather than incrementing RC solely to discover the next Windows issue.

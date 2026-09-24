@@ -4,6 +4,23 @@ Set-StrictMode -Version 2.0
 
 function Write-Utf8NoBom([string]$Path,[string]$Text){[IO.File]::WriteAllText($Path,$Text,[Text.UTF8Encoding]::new($false))}
 function Require-Command([string]$Name){if(-not (Get-Command $Name -ErrorAction SilentlyContinue)){throw('P3_MISSING_TOOL: '+$Name)}}
+function Get-JsonOptional($Object,[string]$Name,$Default=$null){if($null-eq$Object){return $Default};try{$p=$Object.PSObject.Properties[$Name];if($null-ne$p-and$null-ne$p.Value){return $p.Value}}catch{};return $Default}
+function Wait-HttpReady([string]$Url,[int]$TimeoutMs=6000){
+  $deadline=[DateTime]::UtcNow.AddMilliseconds($TimeoutMs);$last=''
+  while([DateTime]::UtcNow-lt$deadline){try{$r=Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2;if([int]$r.StatusCode-lt500){return}}catch{$last=$_.Exception.Message};Start-Sleep -Milliseconds 150}
+  throw('P3_FIXTURE_SERVER_NOT_READY: '+$last)
+}
+function Get-BrowserFailureDiagnostic([string]$RunPath){
+  if([string]::IsNullOrWhiteSpace($RunPath)-or-not(Test-Path -LiteralPath $RunPath)){return ''}
+  $items=@()
+  foreach($f in @(Get-ChildItem -LiteralPath $RunPath -Filter 'network.json' -File -Recurse -ErrorAction SilentlyContinue)){
+    try{foreach($n in @((Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8)|ConvertFrom-Json)){if([bool](Get-JsonOptional $n 'failed' $false) -or [int](Get-JsonOptional $n 'status' 0) -ge 400){$items+=([ordered]@{kind='network';url=[string](Get-JsonOptional $n 'url' '');status=[int](Get-JsonOptional $n 'status' 0);failed=[bool](Get-JsonOptional $n 'failed' $false);error=[string](Get-JsonOptional $n 'error_text' '')})}}}catch{}
+  }
+  foreach($f in @(Get-ChildItem -LiteralPath $RunPath -Filter 'console.json' -File -Recurse -ErrorAction SilentlyContinue)){
+    try{foreach($c in @((Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8)|ConvertFrom-Json)){if([string](Get-JsonOptional $c 'level' '') -in @('error','assert')){$items+=([ordered]@{kind='console';level=[string](Get-JsonOptional $c 'level' '');text=[string](Get-JsonOptional $c 'text' '');url=[string](Get-JsonOptional $c 'url' '')})}}}catch{}
+  }
+  if(@($items).Count-eq0){return ''};return (($items|Select-Object -First 8)|ConvertTo-Json -Depth 5 -Compress)
+}
 Require-Command go
 Require-Command python
 
@@ -29,13 +46,14 @@ try{
   }finally{Pop-Location}
 
   $html=@'
-<!doctype html><html><head><meta charset="utf-8"><title>P3 Fixture</title><style>html,body{margin:0;padding:0}body{font-family:Arial,sans-serif}.card{width:240px;height:100px;margin:24px;background:#e8e8e8;padding:12px;box-sizing:border-box}</style></head><body><label>Name <input id="name"></label><select id="kind"><option value="a">A</option><option value="b">B</option></select><button id="apply">Apply</button><div id="result" class="card">ready</div><script>console.log('token=supersecret123');const hidden=localStorage.getItem('qa_secret');if(hidden)console.log(hidden);document.querySelector('#apply').onclick=()=>{document.querySelector('#result').textContent=document.querySelector('#name').value+'-'+document.querySelector('#kind').value};fetch('/api.json?token=supersecret123').catch(()=>{});</script></body></html>
+<!doctype html><html><head><meta charset="utf-8"><link rel="icon" type="image/png" href="/favicon.png"><title>P3 Fixture</title><style>html,body{margin:0;padding:0}body{font-family:Arial,sans-serif}.card{width:240px;height:100px;margin:24px;background:#e8e8e8;padding:12px;box-sizing:border-box}</style></head><body><label>Name <input id="name"></label><select id="kind"><option value="a">A</option><option value="b">B</option></select><button id="apply">Apply</button><div id="result" class="card">ready</div><script>console.log('token=supersecret123');const hidden=localStorage.getItem('qa_secret');if(hidden)console.log(hidden);document.querySelector('#apply').onclick=()=>{document.querySelector('#result').textContent=document.querySelector('#name').value+'-'+document.querySelector('#kind').value};fetch('/api.json?token=supersecret123').catch(()=>{});</script></body></html>
 '@
   Write-Utf8NoBom (Join-Path $site 'index.html') $html
   Write-Utf8NoBom (Join-Path $site 'api.json') '{"ok":true}'
-  $port=18771
+  [IO.File]::WriteAllBytes((Join-Path $site 'favicon.png'),[Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zqf8AAAAASUVORK5CYII='))
+  $listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$listener.Start();$port=([Net.IPEndPoint]$listener.LocalEndpoint).Port;$listener.Stop()
   $server=Start-Process python -ArgumentList @('-m','http.server',[string]$port,'--bind','127.0.0.1','--directory',$site) -WindowStyle Hidden -PassThru
-  Start-Sleep -Milliseconds 700
+  Wait-HttpReady -Url ('http://127.0.0.1:'+ $port +'/index.html')
 
   Import-Module (Join-Path $runtime 'Sokna.ArtifactRoot.psm1') -Force
   Import-Module (Join-Path $runtime 'Sokna.Browser.psm1') -Force
@@ -82,7 +100,7 @@ try{
   Write-Utf8NoBom $recipePath ($recipe|ConvertTo-Json -Depth 15)
 
   $first=Invoke-SoknaBrowserRecipe -RecipePath $recipePath -Workspace 'p3-test' -RunId 'p3-first'
-  if(-not $first.ok){throw('P3_FIRST_RUN_FAILED: '+(($first.findings|ConvertTo-Json -Compress)-join''))}
+  if(-not $first.ok){$diag=Get-BrowserFailureDiagnostic -RunPath ([string]$first.run_path);throw('P3_FIRST_RUN_FAILED: '+(($first.findings|ConvertTo-Json -Compress)-join'')+' diagnostics='+$diag)}
   $report1=Get-Content -LiteralPath (Join-Path $first.run_path 'report.json') -Raw -Encoding UTF8|ConvertFrom-Json
   if([string]$report1.status -ne 'PASS'){throw 'P3_REPORT_PASS_STATUS_MISSING'}
   $browserText=(Get-ChildItem -LiteralPath $first.run_path -File -Recurse|Where-Object{$_.Extension -in @('.json','.html')}|ForEach-Object{Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8})-join"`n"
