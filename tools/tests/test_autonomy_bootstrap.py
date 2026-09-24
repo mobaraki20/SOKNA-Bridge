@@ -20,8 +20,8 @@ for x in ['--json-b64 $v3B64','--json-b64 $v4B64','CARRIER_V3_GENERATOR_PROCESS_
 assert "' | python tools/sokna_carrier_guard.py" not in wf
 ci=(root/'tools/ci/Invoke-GitHubWindowsCI.ps1').read_text(encoding='utf-8')
 for x in ['request_id=$requestId','--log-failed','CI_SHA_MISMATCH','displayTitle','expected_commit=$ExpectedCommit','CI_EXPECTED_COMMIT_LOCAL_MISMATCH']: assert x in ci,x
-for p in ['quick','full']:
- obj=json.loads((root/f'tools/plans/github-windows-ci-{p}.json').read_text(encoding='utf-8'));assert obj['steps'][0]['action']=='process.run';assert obj['steps'][0]['params']['timeout_sec']==1200
+expected={'quick':(900,1200),'full':(1800,2100)};for p,(inner,outer) in expected.items():
+ obj=json.loads((root/f'tools/plans/github-windows-ci-{p}.json').read_text(encoding='utf-8'));q=obj['steps'][0]['params'];assert obj['steps'][0]['action']=='process.run';assert q['timeout_sec']==outer;i=q['args'].index('-TimeoutSec');assert q['args'][i+1]==str(inner)
 lessons=[json.loads(x) for x in (root/'docs/knowledge/agent-lessons.jsonl').read_text(encoding='utf-8').splitlines() if x.strip()]
 ids={x['id'] for x in lessons}
 for need in ['KB-CTRL-001','KB-RUNTIME-001','KB-DEV-001','KB-DEV-002','KB-PS-001','KB-PS-002','KB-CI-001','KB-CI-002','KB-ASYNC-001','KB-CTRL-002','KB-SRC-001','KB-ROUTE-001','KB-ROUTE-002','KB-CTRL-003','KB-PC-001','github-windows-python-stdin-explicit-json','KB-ART-CHAT-001']: assert need in ids,need
