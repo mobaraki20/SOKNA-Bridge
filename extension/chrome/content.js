@@ -26,7 +26,7 @@ const STREAM_END=":SOKNA3END";
 const V4_START="SOKNA4CMD:";
 const V4_END=":SOKNA4END";
 const MAX_V3_CARRIER_CHARS=PROTO.maxCarrierChars,MAX_V3_PAYLOAD_BYTES=PROTO.maxPayloadBytes;
-const VERSION="3.10.8",DETECTOR="v3.10.8-core-wire";
+const VERSION="3.10.9",DETECTOR="v3.10.9-core-wire";
 const rejectedV3Bodies=new Set();
 const laneBuffers=new Map();
 const laneTouched=new Map();
@@ -564,6 +564,35 @@ function composer(){
   }
   try{return Core.composer()}catch{return null}
 }
+const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
+function chatArtifactNodes(){
+  if(window.top!==window)return [];
+  const selectors=['a[href]','a[download]','[role="link"]','button[data-testid*="download" i]','button[aria-label*="download" i]'];
+  const els=[];const seenEls=new Set();
+  for(const q of selectors){
+    let found=[];try{found=[...document.querySelectorAll(q)]}catch{}
+    for(const el of found){if(seenEls.has(el)||!vis(el))continue;seenEls.add(el);els.push(el)}
+  }
+  return els.map((el,index)=>({el,desc:{
+    index,tag:String(el.tagName||""),href:String(el.href||el.getAttribute?.("href")||""),download:String(el.getAttribute?.("download")||""),
+    text:String((el.innerText||el.textContent||"").trim()),ariaLabel:String(el.getAttribute?.("aria-label")||""),title:String(el.getAttribute?.("title")||""),
+    authorRole:String(el.closest?.('[data-message-author-role]')?.getAttribute?.('data-message-author-role')||""),visible:true
+  }}));
+}
+function findChatArtifact(filename){
+  if(!CHATART)return {ok:false,reason:"chat_artifact_core_unavailable"};
+  const nodes=chatArtifactNodes(),sel=CHATART.selectCandidate(nodes.map(x=>x.desc),filename);
+  if(!sel.ok)return sel;
+  const node=nodes.find(x=>x.desc.index===sel.candidate.index);if(!node)return {ok:false,reason:"attachment_race"};
+  return {ok:true,candidate:node.desc};
+}
+function clickChatArtifact(filename){
+  if(!CHATART)return {ok:false,reason:"chat_artifact_core_unavailable"};
+  const nodes=chatArtifactNodes(),sel=CHATART.selectCandidate(nodes.map(x=>x.desc),filename);
+  if(!sel.ok)return sel;
+  const node=nodes.find(x=>x.desc.index===sel.candidate.index);if(!node)return {ok:false,reason:"attachment_race"};
+  try{node.el.click();return {ok:true,candidate:node.desc,clicked:true}}catch(e){return {ok:false,reason:"attachment_click_failed",error:String(e)}}
+}
 function textOf(el){
   if(!el)return "";
   if(el instanceof HTMLTextAreaElement||el instanceof HTMLInputElement)return el.value||"";
@@ -929,6 +958,8 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
     },frameHref:location.href});
     return;
   }
+  if(m?.type==="FIND_CHAT_ARTIFACT"){if(window.top!==window){reply({ok:false,reason:"top_frame_required"});return}reply(findChatArtifact(String(m.filename||"")));return}
+  if(m?.type==="CLICK_CHAT_ARTIFACT"){if(window.top!==window){reply({ok:false,reason:"top_frame_required"});return}reply(clickChatArtifact(String(m.filename||"")));return}
   if(m?.type==="POST_RESULT"){
     if(window.top!==window){reply({ok:false,error:"POST_RESULT must target top frame"});return}
     post(String(m.envelope||"")).then(r=>{

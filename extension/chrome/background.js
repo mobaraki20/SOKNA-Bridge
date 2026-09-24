@@ -1,8 +1,9 @@
-importScripts("protocol.js","agent_job_core.js");
+importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
+const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.10.8";
+const VERSION="3.10.9";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -14,6 +15,10 @@ const JOB_WATCH_KEY="job_watches_v1";
 const JOB_WATCH_DIAG_KEY="job_watch_diag_v1";
 const JOB_ALARM_PREFIX="sokna-v3105-job:";
 const JOB_MAX_AGE_MS=2*60*60*1000;
+const CHAT_TRANSFER_KEY="chat_artifact_transfers_v1";
+const CHAT_TRANSFER_DIAG_KEY="chat_artifact_transfer_diag_v1";
+const CHAT_TRANSFER_ALARM="sokna-v3109-chat-transfer";
+const CHAT_TRANSFER_MAX_AGE_MS=30*60*1000;
 const V391_MIGRATION_CUTOFF=1789892342550;
 const RETRY_BASE_MS=3000,RETRY_MAX_MS=60000,MAX_POST_ATTEMPTS=8;
 
@@ -49,6 +54,10 @@ async function jobWatchesAll(){const d=await sget("local",[JOB_WATCH_KEY]);retur
 async function saveJobWatches(v){await sset("local",{[JOB_WATCH_KEY]:v})}
 async function jobWatchDiag(){const d=await sget("local",[JOB_WATCH_DIAG_KEY]);return d[JOB_WATCH_DIAG_KEY]||{}}
 async function saveJobWatchDiag(patch){const prev=await jobWatchDiag();const next={...prev,...patch};await sset("local",{[JOB_WATCH_DIAG_KEY]:next});return next}
+async function chatTransfersAll(){const d=await sget("local",[CHAT_TRANSFER_KEY]);return d[CHAT_TRANSFER_KEY]||{}}
+async function saveChatTransfers(v){await sset("local",{[CHAT_TRANSFER_KEY]:v})}
+async function chatTransferDiag(){const d=await sget("local",[CHAT_TRANSFER_DIAG_KEY]);return d[CHAT_TRANSFER_DIAG_KEY]||{}}
+async function saveChatTransferDiag(patch){const prev=await chatTransferDiag();const next={...prev,...patch};await sset("local",{[CHAT_TRANSFER_DIAG_KEY]:next});return next}
 function badgeFor(s){
   if(s==="Working"||s==="Posting")return {t:"RUN",c:"#2563eb"};
   if(s==="Waiting")return {t:"WAIT",c:"#d97706"};
@@ -271,6 +280,76 @@ async function pollJobWatch(jobId){
 }
 async function resumeJobWatches(){const watches=await jobWatchesAll();for(const id of Object.keys(watches))await scheduleJobPoll(id,1500)}
 
+const chatTransferFinalizing=new Set();
+const chatTransferAlarmName=id=>`${CHAT_TRANSFER_ALARM}:${id}`;
+async function scheduleChatTransferPoll(id,delay=2000){try{await chrome.alarms.create(chatTransferAlarmName(id),{when:now()+Math.max(1000,delay)})}catch{}}
+async function findChatArtifactWithRetry(tabId,filename,timeoutMs=15000){
+  const deadline=now()+timeoutMs;let last={ok:false,reason:"attachment_not_found"};
+  while(now()<deadline){
+    try{last=await messageFrame(tabId,0,{type:"FIND_CHAT_ARTIFACT",filename});if(last?.ok)return last}catch(e){last={ok:false,reason:"page_unavailable",error:String(e)}}
+    await new Promise(r=>setTimeout(r,400));
+  }
+  return last;
+}
+function compactArtifactApply(r){
+  return {ok:!!r?.ok,artifact_id:String(r?.artifact_id||""),artifact_sha256:String(r?.artifact_sha256||""),payload_sha256:String(r?.payload_sha256||""),base_head:String(r?.base_head||""),branch:String(r?.branch||""),applied:!!r?.applied,files:Array.isArray(r?.files)?r.files.slice(0,80):[]};
+}
+function chatAgentIs26(ping){return /^2\.6(?:\.|$)/.test(String(ping?.version||ping?.agent||""))}
+async function registerChatArtifactApply(tabId,command,conversationKey){
+  const p=command?.params||{},filename=String(p.filename||""),sha=CHATART.normalizeSha(p.expected_sha256),workspace=String(p.workspace||"");
+  if(!CHATART.safeFilename(filename)||!filename.toLowerCase().endsWith(".zip"))throw new Error("CHAT_ARTIFACT_FILENAME_INVALID");
+  if(!sha)throw new Error("CHAT_ARTIFACT_EXPECTED_SHA256_REQUIRED");
+  if(!workspace)throw new Error("CHAT_ARTIFACT_WORKSPACE_REQUIRED");
+  const found=await findChatArtifactWithRetry(tabId,filename);if(!found?.ok)throw new Error(`CHAT_ARTIFACT_${String(found?.reason||"NOT_FOUND").toUpperCase()}`);
+  const transferId=`chat-${command.id}`,transfers=await chatTransfersAll(),clickIssuedAt=now();
+  transfers[transferId]={transferId,parentCommandId:command.id,tabId,conversationKey,filename,expectedSha256:sha,workspace,createdAt:clickIssuedAt,clickIssuedAt,status:"starting",artifactId:String(p.artifact_id||"")};
+  await saveChatTransfers(transfers);await saveChatTransferDiag({lastRegisteredAt:now(),lastRegisteredTransferId:transferId,lastTransferError:""});
+  const clicked=await messageFrame(tabId,0,{type:"CLICK_CHAT_ARTIFACT",filename});
+  if(!clicked?.ok){const cur=await chatTransfersAll();delete cur[transferId];await saveChatTransfers(cur);throw new Error(`CHAT_ARTIFACT_CLICK_FAILED:${clicked?.reason||clicked?.error||"unknown"}`)}
+  const cur=await chatTransfersAll();if(cur[transferId]){cur[transferId].status="waiting_download";cur[transferId].clickedAt=now();await saveChatTransfers(cur)}await scheduleChatTransferPoll(transferId,1500);
+  return {ok:true,status:"queued",transfer_id:transferId,filename,expected_sha256:sha,transport:"chat-page-click+agent-verified"};
+}
+async function terminalizeChatTransfer(t,ok,error="",apply=null){
+  const summary=CHATART.terminalSummary(t,ok,error,apply?compactArtifactApply(apply):null);
+  const q=await queueStatusEvent(Number(t.tabId),t.conversationKey,`artifact:${t.transferId}`,t.parentCommandId,summary);
+  if(q?.ok){const transfers=await chatTransfersAll();delete transfers[t.transferId];await saveChatTransfers(transfers);try{await chrome.alarms.clear(chatTransferAlarmName(t.transferId))}catch{}}
+  await saveChatTransferDiag({lastTerminalAt:now(),lastTerminalTransferId:t.transferId,lastTerminalStatus:ok?"applied":"failed",lastTransferError:String(error||""),lastQueueAt:now(),lastQueueOk:!!q?.ok,lastQueueDeliveryOk:!!q?.delivery?.ok});
+  return q;
+}
+function isWaitingArtifactError(e){const s=String(e||"");return /ARTIFACT_NOT_FOUND|CHAT_ARTIFACT_DOWNLOAD_NOT_READY|SOURCE_NOT_FOUND/i.test(s)}
+async function pollChatTransfer(transferId){
+  if(chatTransferFinalizing.has(transferId))return;chatTransferFinalizing.add(transferId);
+  try{
+    const transfers=await chatTransfersAll(),t=transfers[transferId];if(!t)return;
+    if(now()-Number(t.createdAt||0)>CHAT_TRANSFER_MAX_AGE_MS){await terminalizeChatTransfer(t,false,"chat artifact transfer timed out");return}
+    let artifactPath=String(t.artifactPath||"");
+    try{
+      if(!artifactPath){
+        const ping=await agentExec({id:`chat-ping-${uid().slice(0,12)}`,action:"ping",params:{}});t.agent26=chatAgentIs26(ping);transfers[transferId]=t;await saveChatTransfers(transfers);
+        if(t.agent26){
+          const imported=await agentExec({id:`chat-import-${uid().slice(0,12)}`,action:"artifact.chat.import.download",params:{workspace:t.workspace,filename:t.filename,expected_sha256:t.expectedSha256,artifact_id:t.artifactId||undefined,cleanup_source:true}});
+          artifactPath=String(imported?.path||"");if(!artifactPath)throw new Error("CHAT_ARTIFACT_IMPORT_PATH_MISSING");
+          t.artifactPath=artifactPath;t.status="downloaded";transfers[transferId]=t;await saveChatTransfers(transfers);await saveChatTransferDiag({lastCompletedDownloadAt:now(),lastCompletedTransferId:transferId,lastTransferError:""});
+        }else{
+          const inspect=await agentExec({id:`chat-inspect-${uid().slice(0,12)}`,action:"artifact.inspect",params:{workspace:t.workspace,path:t.filename,expected_sha256:t.expectedSha256}});
+          if(!inspect?.ok)throw new Error("CHAT_ARTIFACT_INSPECT_FAILED");artifactPath=t.filename;t.artifactPath=artifactPath;t.status="downloaded";transfers[transferId]=t;await saveChatTransfers(transfers);await saveChatTransferDiag({lastCompletedDownloadAt:now(),lastCompletedTransferId:transferId,lastTransferError:""});
+        }
+      }else if(typeof t.agent26!=="boolean"){
+        const ping=await agentExec({id:`chat-ping-resume-${uid().slice(0,10)}`,action:"ping",params:{}});t.agent26=chatAgentIs26(ping);transfers[transferId]=t;await saveChatTransfers(transfers);
+      }
+      if(t.agent26){
+        const inspect=await agentExec({id:`chat-inspect2-${uid().slice(0,12)}`,action:"artifact.inspect",params:{workspace:t.workspace,path:artifactPath,expected_sha256:t.expectedSha256}});if(!inspect?.ok)throw new Error("CHAT_ARTIFACT_INSPECT_FAILED");
+      }
+      const apply=await agentExec({id:`chat-apply-${uid().slice(0,12)}`,action:"artifact.apply",params:{workspace:t.workspace,path:artifactPath,expected_sha256:t.expectedSha256}});
+      if(!apply?.ok)throw new Error("CHAT_ARTIFACT_APPLY_FAILED");await terminalizeChatTransfer(t,true,"",apply);
+    }catch(e){
+      if(isWaitingArtifactError(e)){t.status="waiting_download";t.lastWaitAt=now();transfers[transferId]=t;await saveChatTransfers(transfers);await saveChatTransferDiag({lastPollAt:now(),lastPolledTransferId:transferId,lastTransferError:""});await scheduleChatTransferPoll(transferId,2000);return}
+      await terminalizeChatTransfer(t,false,String(e));
+    }
+  }finally{chatTransferFinalizing.delete(transferId)}
+}
+async function resumeChatTransfers(){const transfers=await chatTransfersAll();for(const id of Object.keys(transfers))await scheduleChatTransferPoll(id,1200)}
+
 async function queueTransportNack(t,d){
   const a=await isArmed(t);if(!a.armed)return{ok:false,ignored:true};
   const cid=String(d.commandId||"");
@@ -297,7 +376,10 @@ async function handleCommandInner(tabId,command){
   const acceptedAt=now();seen[command.id]={state:"running",ts:acceptedAt,acceptedAt,ackAt:acceptedAt,conversationKey:a.registered.conversationKey,sessionId:a.registered.conversationKey,sequence:acceptedAt,action:command.action,posted:false};await saveSeen(seen);
   await setStatus(tabId,{state:"Working",detail:`Executing ${command.action}`,currentCommandId:command.id,etaMs:null,etaConfidence:"unknown"});
   let result;
-  try{result=await agentExec(command)}catch(e){result={ok:false,error:String(e)}}
+  try{
+    if(command.action==="artifact.chat.apply")result=await registerChatArtifactApply(tabId,command,a.registered.conversationKey);
+    else result=await agentExec(command);
+  }catch(e){result={ok:false,error:String(e)}}
   for(const submitted of JOBCORE.findSubmittedJobs(command.action,result)){try{await registerJobWatch(tabId,command.id,submitted,a.registered.conversationKey)}catch{}}
   seen=await seenAll();seen[command.id]={...(seen[command.id]||{}),state:"done",completedAt:now(),result,posted:false};await saveSeen(seen);
   return await postPending(tabId,command.id,seen[command.id]);
@@ -389,6 +471,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         }
         const status=await getStatus(tabId);
         const jobWatches=await jobWatchesAll();const jobWatchIds=Object.keys(jobWatches);const jobWatchCount=jobWatchIds.length;const jobDiag=await jobWatchDiag();
+        const chatTransfers=await chatTransfersAll();const chatTransferIds=Object.keys(chatTransfers);const chatDiag=await chatTransferDiag();
         const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame);
         const activePostCount=status?.state==="Posting"&&status?.currentCommandId?1:0;
         const currentRec=(status?.currentCommandId&&seen[status.currentCommandId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||null;
@@ -409,7 +492,12 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           lastJobWatchRegisteredAt:Number(jobDiag.lastRegisteredAt||0),lastJobWatchRegisteredId:String(jobDiag.lastRegisteredJobId||""),
           lastJobPollAt:Number(jobDiag.lastPollAt||0),lastJobPollStatus:String(jobDiag.lastPollStatus||""),lastJobWatchError:String(jobDiag.lastWatchError||""),
           lastTerminalEventAt:Number(jobDiag.lastTerminalAt||0),lastTerminalJobId:String(jobDiag.lastTerminalJobId||""),lastTerminalJobStatus:String(jobDiag.lastTerminalStatus||""),
-          lastTerminalQueueAt:Number(jobDiag.lastQueueAt||0),lastTerminalQueueOk:!!jobDiag.lastQueueOk,lastTerminalDeliveryOk:!!jobDiag.lastQueueDeliveryOk
+          lastTerminalQueueAt:Number(jobDiag.lastQueueAt||0),lastTerminalQueueOk:!!jobDiag.lastQueueOk,lastTerminalDeliveryOk:!!jobDiag.lastQueueDeliveryOk,
+          chatArtifactTransferCount:chatTransferIds.length,chatArtifactTransferIds:chatTransferIds.slice(0,8),
+          lastChatArtifactRegisteredAt:Number(chatDiag.lastRegisteredAt||0),lastChatArtifactTransferId:String(chatDiag.lastRegisteredTransferId||""),
+          lastChatArtifactCompletedAt:Number(chatDiag.lastCompletedDownloadAt||0),
+          lastChatArtifactTerminalAt:Number(chatDiag.lastTerminalAt||0),lastChatArtifactTerminalStatus:String(chatDiag.lastTerminalStatus||""),
+          lastChatArtifactError:String(chatDiag.lastTransferError||""),lastChatArtifactDeliveryOk:!!chatDiag.lastQueueDeliveryOk
         };
         return reply({ok:true,version:VERSION,armed:a.armed,registered:a.registered,status,
           pendingPostCount:health.pendingRetryEligibleCount,pendingRetryEligibleCount:health.pendingRetryEligibleCount,
@@ -438,11 +526,14 @@ chrome.alarms.onAlarm.addListener(a=>{
   }
   if(a?.name?.startsWith(JOB_ALARM_PREFIX)){
     const jobId=a.name.slice(JOB_ALARM_PREFIX.length);if(jobId)pollJobWatch(jobId).catch(()=>{});
+    return;
   }
+  if(a?.name?.startsWith(CHAT_TRANSFER_ALARM+":")){const id=a.name.slice((CHAT_TRANSFER_ALARM+":").length);if(id)pollChatTransfer(id).catch(()=>{});}
 });
-chrome.runtime.onStartup.addListener(()=>{ensureRetryAlarm().catch(()=>{});resumeJobWatches().catch(()=>{})});
-chrome.runtime.onInstalled.addListener(()=>{ensureRetryAlarm().catch(()=>{});resumeJobWatches().catch(()=>{})});
+chrome.runtime.onStartup.addListener(()=>{ensureRetryAlarm().catch(()=>{});resumeJobWatches().catch(()=>{});resumeChatTransfers().catch(()=>{})});
+chrome.runtime.onInstalled.addListener(()=>{ensureRetryAlarm().catch(()=>{});resumeJobWatches().catch(()=>{});resumeChatTransfers().catch(()=>{})});
 suppressLegacyPending().catch(()=>{});
 ensureRetryAlarm().catch(()=>{});
 resumeJobWatches().catch(()=>{});
+resumeChatTransfers().catch(()=>{});
 chrome.tabs.onRemoved.addListener(tabId=>{disarm(tabId).catch(()=>{})});

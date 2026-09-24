@@ -147,8 +147,22 @@ try{
   $badPath=Join-Path $recipeDir 'bad.json'
   $bad=[ordered]@{schema='sokna-browser-recipe-v1';scenario_id='bad';url='file:///C:/Windows/win.ini';viewports=@(@{id='d';width=800;height=600});captures=@{screenshot=$true}}
   Write-Utf8NoBom $badPath ($bad|ConvertTo-Json -Depth 8)
-  & $runner validate --recipe $badPath *> $null
-  if($LASTEXITCODE -eq 0){throw 'P3_UNSAFE_URL_VALIDATION_BYPASSED'}
+  # Expected native validation failure: Windows PowerShell 5.1 maps native stderr
+  # to ErrorRecord objects. With ErrorActionPreference=Stop that can throw before
+  # LASTEXITCODE is asserted, so isolate the negative-path invocation explicitly.
+  $savedErrorActionPreference=$ErrorActionPreference
+  $badExit=$null
+  $badOutput=@()
+  try{
+    $ErrorActionPreference='Continue'
+    $badOutput=@(& $runner validate --recipe $badPath 2>&1)
+    $badExit=$LASTEXITCODE
+  }finally{
+    $ErrorActionPreference=$savedErrorActionPreference
+  }
+  if($null-eq$badExit){throw 'P3_UNSAFE_URL_VALIDATION_EXIT_MISSING'}
+  if([int]$badExit -eq 0){throw 'P3_UNSAFE_URL_VALIDATION_BYPASSED'}
+  if((($badOutput|Out-String).Trim()) -notmatch 'only http/https URLs are allowed'){throw 'P3_UNSAFE_URL_VALIDATION_DIAGNOSTIC_MISSING'}
 
   [ordered]@{
     ok=$true

@@ -252,3 +252,20 @@ Two gates remain: `CI -> LIVE`.
 - Browser acceptance fixture is being made deterministic: explicit served favicon, HTTP readiness wait, and bounded console/network failure diagnostics on first failure.
 - New mandatory `tools/ci/Test-WindowsAdversarialPreflight.ps1` is added. It runs on actual Windows PowerShell, parses shipped scripts, rejects known lexical traps, cross-checks Go `ProviderResult` omitempty fields against PowerShell direct access, exercises missing/null/zero/false shape semantics, and executes pure Windows ArtifactRoot/Workspace/Advanced Workspace matrices.
 - New process rule: Local PASS means candidate-only. The exact candidate is pushed untagged; Windows Adversarial Preflight runs on that exact commit inside the Windows workflow, and full Windows CI must PASS before an RC tag is created/pushed. This is intended to stop RC-number-per-Windows-bug iteration.
+
+## 2026-09-24 RC9 validation checkpoint 1 — Browser negative-test harness
+- Untagged RC9 validation checkpoint canonical commit: `ff1205eea4251c6425f9be97be3554869f602d62`; full Windows run: `35958766449`. No `sokna-agent-2.6.0-rc9` tag was created because the conditional promote plan stopped on CI failure.
+- All Windows steps except `Browser QA 2.6.0 Windows acceptance` passed. The failure was not a browser/product defect: the test intentionally invoked an invalid `file://` recipe and expected nonzero exit, but Windows PowerShell 5.1 surfaced native stderr as `NativeCommandError` under `$ErrorActionPreference='Stop'` before `$LASTEXITCODE` could be asserted.
+- RC9 candidate is retained; do NOT advance to RC10. Negative native-command tests must temporarily isolate `$ErrorActionPreference='Continue'`, capture `2>&1` and `$LASTEXITCODE` immediately, restore the previous preference in `finally`, and assert both nonzero exit and the expected diagnostic.
+- `Windows Adversarial Preflight` now includes a real `cmd.exe` stderr + exit=7 probe so this PowerShell 5.1 harness semantic is checked before Browser QA. KB rule: `KB-PS-010`.
+- This checkpoint-2 correction changes only tests/gate/docs, not Agent/Extension runtime code; no Extension reload or Agent activation is needed. Home PC remains publish/access/acceptance only.
+
+
+## RC9 Chat Artifact Auto-Pull candidate (3.10.9)
+- User requested removal of the manual artifact-download relay. Candidate Extension 3.10.9 introduces `artifact.chat.apply`.
+- Contract: exact unique filename + expected SHA-256; one visible attachment candidate in the currently Armed conversation; no inline Base64 payload; ambiguous/missing candidates fail closed.
+- Extension persists transfer state and polls the Agent rather than keeping a long fragile page promise.
+- Agent 2.5.7 compatibility path: its ArtifactRoot is Downloads, so the Extension waits until `artifact.inspect` on the exact filename passes SHA/ZIP/manifest checks, then applies.
+- Agent 2.6 path: new `artifact.chat.import.download` validates basename/path/reparse, imports via local_file provider into ArtifactRoot with SHA verification, optionally deletes the browser source after import, then inspect/apply proceeds.
+- No new Chrome `downloads` permission was added, avoiding a permission-approval prompt. Page click is constrained to the exact unique candidate.
+- This is NOT live-accepted yet. One final bootstrap artifact/reload from current live 3.10.8 is required; after activation, the first live test must prove attachment -> verified apply -> terminal STATUS without user download action.

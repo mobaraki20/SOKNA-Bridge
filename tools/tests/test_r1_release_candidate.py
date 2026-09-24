@@ -37,7 +37,7 @@ assert rc8['schema']=='sokna-r1-rc8-bom-eventid-diagnostics-hardening-manifest-v
 
 
 rc9=json.loads((ROOT/'docs/status/R1_RC9_WINDOWS_ADVERSARIAL_GATE_MANIFEST.json').read_text(encoding='utf-8'))
-assert rc9['schema']=='sokna-r1-rc9-windows-adversarial-gate-manifest-v1' and rc9['candidate_ref']=='sokna-agent-2.6.0-rc9' and rc9['candidate_extension_version']=='3.10.8'
+assert rc9['schema']=='sokna-r1-rc9-windows-adversarial-gate-manifest-v1' and rc9['candidate_ref']=='sokna-agent-2.6.0-rc9' and rc9['candidate_extension_version']=='3.10.9'
 assert rc9['rc_tag_created_only_after_exact_commit_full_windows_ci_pass'] is True and rc9['failed_validation_checkpoint_does_not_consume_next_rc_number'] is True
 assert policy['tag_after_exact_commit_full_ci_pass'] is True and policy['failed_checkpoint_consumes_new_rc_number'] is False
 

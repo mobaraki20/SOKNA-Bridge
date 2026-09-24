@@ -5,7 +5,7 @@ policy=json.loads((root/'docs/contracts/ARTIFACT_PROVIDER_POLICY_V1.json').read_
 assert policy['core_provider_dependency'] is None
 for p in ['local_file','managed_folder','https','github_release_asset','object_storage','google_drive','onedrive']:
     assert p in policy['providers'],p
-assert policy['providers']['chat_attachment']['status']=='feasibility-only'
+assert policy['providers']['chat_attachment']['status']=='candidate-rc9'
 assert policy['providers']['google_drive']['oauth_in_core'] is False
 assert policy['provider_contract']['network']['raw_credential_query_forbidden'] is True
 assert policy['provider_contract']['signature']['required_means_fail_closed'] is True
@@ -32,7 +32,7 @@ agent=(root/'native/runtime/v2.6.0/agent.ps1').read_text(encoding='utf-8')
 caps=json.loads((root/'native/runtime/v2.6.0/AGENT_CAPABILITIES.json').read_text(encoding='utf-8'))
 for x in ['Initialize-SoknaArtifactProviders','Invoke-SoknaArtifactProviderProbe','Invoke-SoknaArtifactProviderAcquire','Invoke-SoknaArtifactProviderVerify','auto_execute=$false','quota_remaining_bytes','managed_folders','url_env','$finalOwned=$false','$metaOwned=$false','ARTIFACT_PROVIDER_METADATA_EXISTS',"phase='started'","phase='failed'"]:
     assert x in ps,x
-for action in ['artifact.provider.status','artifact.provider.probe','artifact.provider.acquire','artifact.provider.verify']:
+for action in ['artifact.provider.status','artifact.provider.probe','artifact.provider.acquire','artifact.provider.verify','artifact.chat.import.download']:
     assert action in agent and action in caps['actions'],action
 assert "artifact.import.local\" { return (Invoke-SoknaArtifactProviderAcquire -Provider 'local_file'" in agent
 assert 'Import-SoknaLocalArtifact -SourcePath' not in agent

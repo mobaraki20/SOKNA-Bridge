@@ -29,8 +29,17 @@
 - `google_drive` و `onedrive`: Core مستقیماً OAuth/token lifecycle را مالک نمی‌شود. v1 فقط URL موقت/پیش‌امضا شده را از `url_env` که توسط boundary خارجی/Plugin فراهم شده می‌پذیرد.
 - provider-specific credentials هرگز داخل metadata، audit، CLI args یا source_ref ذخیره نمی‌شوند.
 
+### Chat attachment boundary — RC9 candidate
+- `chat_attachment` دیگر inline/Base64 carrier نیست و همچنان حق انتقال بایت داخل command را ندارد.
+- Extension فقط وقتی مجاز به شروع دریافت است که فرمان `artifact.chat.apply` شامل **نام فایل exact و SHA-256 مورد انتظار** باشد، همان conversation Armed باشد، و دقیقاً یک attachment قابل‌مشاهده با همان نام در DOM پیدا شود. zero/ambiguous match باید fail-closed باشد.
+- click فقط روی همان candidate exact مجاز است؛ hidden/arbitrary click یا جست‌وجوی کلی دکمه‌های دانلود ممنوع است.
+- در Agent 2.5.7، Browser download در ArtifactRoot=Downloads با `artifact.inspect/apply` و expected SHA کنترل می‌شود.
+- در Agent 2.6.0، `artifact.chat.import.download` فقط basename امن `.zip` را از Known Downloads می‌پذیرد، reparse/path escape را رد می‌کند، با `local_file` provider به ArtifactRoot import می‌کند، SHA را قبل از register تأیید می‌کند و سپس inspect/apply انجام می‌شود.
+- filename هر artifact باید unique باشد تا conflict/uniquify مرورگر به فایل اشتباه منجر نشود.
+- transfer state در Extension durable است و terminal نتیجه از Result Plane به همان چت برمی‌گردد. auto-download به‌تنهایی auto-execute نیست؛ apply فقط به‌دلیل فرمان صریح `artifact.chat.apply` و پس از hash/manifest/base-head checks انجام می‌شود.
+- این قابلیت تا live acceptance نسخه 3.10.9 `candidate` است؛ accepted شدن آن نیازمند bootstrap reload یک‌باره و سپس تست واقعی attachment→apply است.
+
 ### خارج از P4 runtime
-- `chat_attachment`: همچنان feasibility-only. منبع `sandbox:`/DOM hidden-click انتقال بایت نیست و نباید اضافه شود مگر evidence و قرارداد جداگانه وجود داشته باشد.
 - `github_actions_artifact`: فقط evidence اختیاری CI است و Result Plane روی آن ساخته نمی‌شود.
 
 ## Network / credential policy

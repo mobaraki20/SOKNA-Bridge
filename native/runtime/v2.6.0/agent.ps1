@@ -339,6 +339,7 @@ function InvokeAction([string]$action,$p) {
   switch($action) {
     "artifact.root.status" { return (Get-SoknaArtifactRootStatus) }
     "artifact.import.local" { return (Invoke-SoknaArtifactProviderAcquire -Provider 'local_file' -Params $p) }
+    "artifact.chat.import.download" { return (Invoke-SoknaChatArtifactImportDownload -Params $p) }
     "artifact.provider.status" { return (Get-SoknaArtifactProviderStatus) }
     "artifact.provider.probe" { return (Invoke-SoknaArtifactProviderProbe -Provider ([string]$p.provider) -Params $p) }
     "artifact.provider.acquire" { return (Invoke-SoknaArtifactProviderAcquire -Provider ([string]$p.provider) -Params $p) }

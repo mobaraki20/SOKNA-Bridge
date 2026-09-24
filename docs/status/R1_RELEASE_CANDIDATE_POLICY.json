@@ -43,7 +43,7 @@
     "record RC4 provider PASS and Workspace failure evidence in canonical KB",
     "ship a checked-in RC5 publish plan that commits/tags/pushes once and submits durable exact-RC CI after artifact apply"
   ],
-  "candidate_extension_version": "3.10.8",
+  "candidate_extension_version": "3.10.9",
   "rc5_status": "superseded_after_aggregated_windows_ci_runtime_strictmode_failures",
   "rc6_corrections": [
     "normalize PowerShell 5.1 return [ordered]@ lexical form across Agent 2.6.0 runtime modules",
@@ -80,7 +80,10 @@
     "add mandatory Windows Adversarial Preflight on actual Windows PowerShell with parser, lexical, producer-consumer shape, ArtifactRoot, Workspace and Advanced Workspace matrices",
     "treat local regression as candidate-only evidence; do not claim RC readiness from local PASS",
     "push an untagged validation checkpoint, run exact-commit full Windows CI, and create/push rc9 tag only after CI PASS",
-    "failed validation checkpoints retain the rc9 candidate number instead of consuming a new numbered RC"
+    "failed validation checkpoints retain the rc9 candidate number instead of consuming a new numbered RC",
+    "add chat attachment Auto-Pull as explicit artifact.chat.apply with exact unique filename + expected SHA-256 and durable transfer state",
+    "keep inline/Base64 artifact bytes forbidden and fail closed on missing/ambiguous DOM candidates",
+    "add Agent 2.6 safe Downloads import boundary for post-upgrade ArtifactRoot compatibility without Chrome downloads permission"
   ],
   "tag_after_exact_commit_full_ci_pass": true,
   "candidate_checkpoint_may_be_untagged": true,

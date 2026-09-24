@@ -70,7 +70,20 @@ try{
   if([int]$shape.missing -ne 77 -or [int]$shape.nullv -ne 88 -or [int]$shape.zero -ne 0 -or [bool]$shape.falsev -ne $false -or [string]$shape.empty -ne ''){Fail 'WIN_ADV_PROVIDER_HELPER_SEMANTICS' ($shape|ConvertTo-Json -Compress)}
 }finally{Remove-Module Sokna.ArtifactProvider -ErrorAction SilentlyContinue}
 
-# 4) Re-run the pure PowerShell Windows matrices that previously exposed PS5.1 shape/path bugs.
+# 4) Prove expected native failures can be observed under Windows PowerShell 5.1
+# without ErrorActionPreference=Stop converting stderr into an early test-harness failure.
+$nativeProbeExe=(Get-Command cmd.exe -ErrorAction Stop).Source
+$savedEap=$ErrorActionPreference
+$probeExit=$null;$probeOutput=@()
+try{
+  $ErrorActionPreference='Continue'
+  $probeOutput=@(& $nativeProbeExe /d /c "echo EXPECTED_NATIVE_STDERR 1>&2 & exit /b 7" 2>&1)
+  $probeExit=$LASTEXITCODE
+}finally{$ErrorActionPreference=$savedEap}
+if([int]$probeExit-ne7){Fail 'WIN_ADV_EXPECTED_NATIVE_FAILURE_EXIT' ([string]$probeExit)}
+if((($probeOutput|Out-String).Trim())-notmatch 'EXPECTED_NATIVE_STDERR'){Fail 'WIN_ADV_EXPECTED_NATIVE_FAILURE_STDERR'}
+
+# 5) Re-run the pure PowerShell Windows matrices that previously exposed PS5.1 shape/path bugs.
 foreach($rel in @(
   'tools\runtime\releases\2.6.0\Test-ArtifactRoot260.ps1',
   'tools\runtime\releases\2.6.0\Test-Workspace260.ps1',
@@ -87,6 +100,7 @@ foreach($rel in @(
   runtime=$RuntimeVersion
   parsed_files=@($psFiles).Count
   provider_optional_fields=@($optional).Count
+  expected_native_failure_probe=$true
   pure_windows_matrices=3
   powershell=$PSVersionTable.PSVersion.ToString()
 }|ConvertTo-Json -Compress

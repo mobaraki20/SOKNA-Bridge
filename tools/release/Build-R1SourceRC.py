@@ -76,7 +76,7 @@ def main():
         'source_commit_time':commit_time,
         'candidate_agent_version':'2.6.0',
         'accepted_live_agent_baseline':'2.5.7-r4',
-        'extension_version':'3.10.8',
+        'extension_version':'3.10.9',
         'windows_ci':{
             'workflow':'.github/workflows/windows-agent-validation.yml',
             'required_profile':'full',

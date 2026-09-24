@@ -46,5 +46,16 @@ try{
   $sigMissing=[pscustomobject]@{artifact_id='sig-required';source_path=$local;expected_sha256=(Sha $local);signature=[pscustomobject]@{required=$true;algorithm='ed25519-sha256'}}
   try{$null=Invoke-SoknaArtifactProviderAcquire -Provider 'local_file' -Params $sigMissing;Fail 'required signature missing accepted'}catch{if($_.Exception.Message-notmatch'signature material missing'){throw}}
 
-  [ordered]@{ok=$true;schema='sokna-p4-provider-windows-acceptance-v1';runner=$runner;local=$true;managed_folder=$true;verify=$true;hash_mismatch_fail_closed=$true;raw_credential_url_redacted=$true;cloud_boundary=$true;required_signature_fail_closed=$true;collision_preserves_existing=$true;source_preserved=$true}|ConvertTo-Json -Compress
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $downloadRoot=Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads';New-Item -ItemType Directory -Path $downloadRoot -Force|Out-Null
+  $chatName=('sokna-chat-'+[Guid]::NewGuid().ToString('N')+'.zip');$chatPath=Join-Path $downloadRoot $chatName
+  $chatStage=Join-Path $case 'chat-stage';New-Item -ItemType Directory -Path $chatStage -Force|Out-Null;[IO.File]::WriteAllText((Join-Path $chatStage 'payload.txt'),'chat-artifact',[Text.UTF8Encoding]::new($false));[IO.Compression.ZipFile]::CreateFromDirectory($chatStage,$chatPath)
+  try{
+    $chat=Invoke-SoknaChatArtifactImportDownload -Params ([pscustomobject]@{artifact_id='win-chat';filename=$chatName;expected_sha256=(Sha $chatPath);workspace='w1';cleanup_source=$true})
+    if(-not$chat.ok-or-not(Test-Path -LiteralPath $chat.absolute_path -PathType Leaf)){Fail 'chat attachment import failed'}
+    if(Test-Path -LiteralPath $chatPath -PathType Leaf){Fail 'chat attachment source cleanup failed'}
+    try{$null=Invoke-SoknaChatArtifactImportDownload -Params ([pscustomobject]@{filename='../escape.zip';expected_sha256=('a'*64)});Fail 'chat attachment filename traversal accepted'}catch{if($_.Exception.Message-notmatch'CHAT_ARTIFACT_FILENAME_INVALID'){throw}}
+  }finally{Remove-Item -LiteralPath $chatPath -Force -ErrorAction SilentlyContinue}
+
+  [ordered]@{ok=$true;schema='sokna-p4-provider-windows-acceptance-v1';runner=$runner;local=$true;managed_folder=$true;verify=$true;hash_mismatch_fail_closed=$true;raw_credential_url_redacted=$true;cloud_boundary=$true;required_signature_fail_closed=$true;collision_preserves_existing=$true;source_preserved=$true;chat_attachment_import=$true}|ConvertTo-Json -Compress
 }finally{Remove-Item -LiteralPath $case -Recurse -Force -ErrorAction SilentlyContinue}

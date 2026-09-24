@@ -5,6 +5,7 @@ ROOT=Path(__file__).resolve().parents[2]
 MODEL=(ROOT/'native/provider/model.go').read_text(encoding='utf-8')
 PROVIDER=(ROOT/'native/runtime/v2.6.0/Sokna.ArtifactProvider.psm1').read_text(encoding='utf-8')
 BROWSER=(ROOT/'tools/runtime/releases/2.6.0/Test-BrowserQA260.ps1').read_text(encoding='utf-8')
+PROVIDER_WIN=(ROOT/'tools/runtime/releases/2.6.0/Test-ArtifactProviders260.ps1').read_text(encoding='utf-8')
 PREFLIGHT=(ROOT/'tools/ci/Test-WindowsAdversarialPreflight.ps1').read_text(encoding='utf-8')
 WORKFLOW=(ROOT/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
 GATE=(ROOT/'docs/BRIDGE_SESSION_EXECUTION_GATE_V1_FA.md').read_text(encoding='utf-8')
@@ -54,6 +55,23 @@ for marker in [
 ]:
     assert marker in BROWSER, marker
 assert 'href="data:,"' not in BROWSER
+assert 'Invoke-SoknaChatArtifactImportDownload' in PROVIDER_WIN
+assert 'chat_attachment_import=$true' in PROVIDER_WIN
+assert 'chat attachment filename traversal accepted' in PROVIDER_WIN
+
+
+# Negative native-command tests on Windows PowerShell 5.1 must not run under
+# ErrorActionPreference=Stop without isolating stderr, or expected stderr becomes
+# NativeCommandError and aborts before LASTEXITCODE assertions execute.
+for marker in [
+    "$savedErrorActionPreference=$ErrorActionPreference",
+    "$ErrorActionPreference='Continue'",
+    "$badOutput=@(& $runner validate --recipe $badPath 2>&1)",
+    "$badExit=$LASTEXITCODE",
+    "P3_UNSAFE_URL_VALIDATION_DIAGNOSTIC_MISSING",
+]:
+    assert marker in BROWSER, marker
+assert '& $runner validate --recipe $badPath *> $null' not in BROWSER
 
 # Process rules are durable, not conversational-only.
 for marker in ['Windows Adversarial Preflight','Local PASS','exact-commit Windows','RC tag']:

@@ -125,6 +125,8 @@ PC کاربر = Access / Publish / Activation / Acceptance endpoint.
 - Candidate Extension 3.10.7 queues terminal events before removing watch state, scopes Result-First blocking to the parent command result, retries delivery immediately, and reports watch/poll/terminal diagnostics in Health.
 - Extension 3.10.8 gives every queued STATUS a unique `eventId`; existing-bubble detection MUST prefer `eventId` over the parent `commandId`. This path is live-proven: job `rc8-ci-91ad9b3` posted its terminal STATUS automatically. This proves terminal delivery only; it does not imply Agent 2.6.0 Windows acceptance.
 - Extension source changes are not runtime-active until reload + page reload/re-arm; never claim candidate watcher behavior from disk files alone.
+- Candidate Extension 3.10.9 adds `artifact.chat.apply`: attachment acquisition is allowed only by exact unique filename + expected SHA-256 in the Armed conversation. The Extension clicks only the uniquely matched visible attachment, persists transfer state, and the Agent must hash/inspect before apply. Ambiguous/missing attachment, hash mismatch, path escape, or reparse must fail closed. Inline/Base64 artifact payloads remain forbidden.
+- Auto-Pull acceptance requires a one-time Code-Activation reload from 3.10.8 to 3.10.9, then one live `attachment -> download -> verify -> apply -> terminal STATUS` test. After that, routine artifact delivery must not require the user to click/download or report "downloaded".
 
 ## 11) Windows Adversarial Release Gate — MANDATORY
 
@@ -146,3 +148,5 @@ PC کاربر = Access / Publish / Activation / Acceptance endpoint.
 - هر failure جدید Windows قبل از candidate بعدی باید به regression دائمی + KB rule تبدیل شود.
 
 **RC tag قبل از exact-commit Windows full PASS ممنوع است.** Candidate commit/tag acceptance از هم جدا هستند.
+
+- تست منفی native روی Windows PowerShell 5.1 باید stderr و exit code را با ErrorActionPreference موقتاً Continue ایزوله کند؛ expected stderr زیر Stop نباید به عنوان failure خود test harness تفسیر شود. این الگو باید با probe واقعی Windows در Windows Adversarial Preflight محافظت شود.

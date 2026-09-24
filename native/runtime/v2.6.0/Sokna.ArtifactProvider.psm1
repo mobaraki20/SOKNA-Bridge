@@ -94,6 +94,21 @@ function Invoke-SoknaArtifactProviderAcquire([string]$Provider,$Params){
     return [ordered]@{ok=$true;schema='sokna-artifact-provider-acquire-v1';artifact_id=$id;provider=$Provider;source_ref=$sourceRef;resolved_ref=$resolvedRef;path=$rel;absolute_path=$final;size=$resultSize;sha256=$sha;content_type=$contentType;attempts=$attempts;resumed_bytes=$resumedBytes;signature=$signature;signature_ok=$signatureOk;provider_boundary=$providerBoundary;auto_execute=$false;artifact_root=(Get-SoknaArtifactRoot)}
   }catch{if($metaOwned-and$metaPath){Remove-Item -LiteralPath $metaPath -Force -ErrorAction SilentlyContinue};if($finalOwned-and$final){Remove-Item -LiteralPath $final -Force -ErrorAction SilentlyContinue};if($stage-and(Test-Path -LiteralPath $stage -PathType Leaf)){Remove-Item -LiteralPath $stage -Force -ErrorAction SilentlyContinue};$null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.acquire';phase='failed';ok=$false;provider=$Provider;artifact_id=$id;error=$_.Exception.Message;workspace=[string]$req.workspace;job_id=[string]$req.job_id});throw}
 }
+function Invoke-SoknaChatArtifactImportDownload($Params){
+  $filename=[string](Get-SoknaProviderOptional $Params 'filename' '')
+  if([string]::IsNullOrWhiteSpace($filename)-or[IO.Path]::GetFileName($filename)-ne$filename-or$filename-match'[\\/:*?"<>|\x00-\x1F]' -or -not $filename.ToLowerInvariant().EndsWith('.zip')){throw 'CHAT_ARTIFACT_FILENAME_INVALID'}
+  $expected=[string](Get-SoknaProviderOptional $Params 'expected_sha256' '');if($expected-notmatch'^[a-fA-F0-9]{64}$'){throw 'CHAT_ARTIFACT_EXPECTED_SHA256_REQUIRED'}
+  $home=[Environment]::GetFolderPath('UserProfile');if([string]::IsNullOrWhiteSpace($home)){$home=$env:USERPROFILE};if([string]::IsNullOrWhiteSpace($home)){throw 'CHAT_ARTIFACT_USERPROFILE_MISSING'}
+  $downloads=[IO.Path]::GetFullPath((Join-Path $home 'Downloads'));$source=[IO.Path]::GetFullPath((Join-Path $downloads $filename));$prefix=$downloads.TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
+  if(-not$source.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw 'CHAT_ARTIFACT_DOWNLOAD_PATH_ESCAPE'}
+  if(-not(Test-Path -LiteralPath $source -PathType Leaf)){throw 'CHAT_ARTIFACT_DOWNLOAD_NOT_READY'}
+  $item=Get-Item -LiteralPath $source -Force;if(($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne0){throw 'CHAT_ARTIFACT_DOWNLOAD_REPARSE_BLOCKED'}
+  $req=[ordered]@{source_path=$source;expected_sha256=$expected;workspace=[string](Get-SoknaProviderOptional $Params 'workspace' '');job_id=''}
+  $artifactId=[string](Get-SoknaProviderOptional $Params 'artifact_id' '');if(-not[string]::IsNullOrWhiteSpace($artifactId)){$req.artifact_id=$artifactId}
+  $acq=Invoke-SoknaArtifactProviderAcquire -Provider 'local_file' -Params ([pscustomobject]$req)
+  if([bool](Get-SoknaProviderOptional $Params 'cleanup_source' $false)){Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue}
+  return $acq
+}
 function Invoke-SoknaArtifactProviderVerify($Params){
   $path=[string](Get-SoknaProviderOptional $Params 'path' '');if([string]::IsNullOrWhiteSpace($path)){throw 'ARTIFACT_PROVIDER_VERIFY_PATH_REQUIRED'};$full=Resolve-SoknaManagedArtifactPath -Path $path;if(-not(Test-Path -LiteralPath $full -PathType Leaf)){throw 'ARTIFACT_PROVIDER_VERIFY_TARGET_MISSING'}
   $policy=Get-SoknaArtifactPolicy;$artifactId=[string](Get-SoknaProviderOptional $Params 'artifact_id' '');$req=[ordered]@{schema='sokna-artifact-provider-request-v1';operation='verify';provider='managed_artifact';artifact_root=(Get-SoknaArtifactRoot);artifact_id=$artifactId;managed_path=$path;source=@{};expected_sha256=[string](Get-SoknaProviderOptional $Params 'expected_sha256' '');max_bytes=[int64]$policy.max_artifact_bytes;signature=(Get-SoknaProviderOptional $Params 'signature' $null)}
@@ -105,4 +120,4 @@ function Invoke-SoknaArtifactProviderVerify($Params){
   }catch{$null=Write-SoknaArtifactAudit -Event ([ordered]@{action='artifact.provider.verify';phase='failed';ok=$false;artifact_id=$artifactId;path=$path;error=$_.Exception.Message});throw}
 }
 
-Export-ModuleMember -Function Initialize-SoknaArtifactProviders,Get-SoknaArtifactProviderStatus,Invoke-SoknaArtifactProviderProbe,Invoke-SoknaArtifactProviderAcquire,Invoke-SoknaArtifactProviderVerify
+Export-ModuleMember -Function Initialize-SoknaArtifactProviders,Get-SoknaArtifactProviderStatus,Invoke-SoknaArtifactProviderProbe,Invoke-SoknaArtifactProviderAcquire,Invoke-SoknaArtifactProviderVerify,Invoke-SoknaChatArtifactImportDownload
