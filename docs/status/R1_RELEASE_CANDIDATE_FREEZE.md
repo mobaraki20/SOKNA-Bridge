@@ -5,7 +5,7 @@ R1 freezes an **exact source candidate**. It is not a Windows PASS and does not 
 ## Candidate identity
 - candidate runtime: Agent `2.6.0` development RC source;
 - accepted live baseline remains Agent `2.5.7 R4` + Extension `3.10.5` until CI passes;
-- candidate ref: `sokna-agent-2.6.0-rc3`, created locally only after the clean R1 commit exists;
+- candidate ref: `sokna-agent-2.6.0-rc4`, created locally only after the clean R1 commit exists;
 - canonical source identity is the exact Git commit/tree recorded by the generated RC manifest, not a mutable branch name.
 
 
@@ -15,6 +15,10 @@ R1 freezes an **exact source candidate**. It is not a Windows PASS and does not 
 
 ## RC2 supersession before push
 `rc2` was inspected/applied as an uncommitted overlay on the publish endpoint but was not committed, pushed, CI-dispatched, installed or activated. During that session the user correctly identified repeated control-plane round trips and manual-carrier regressions. The existing contracts already required batch-first routing and programmatic carrier generation, but those rules were not enforced as a mandatory per-session gate. RC3 adds only operational anti-regression hardening: `BRIDGE_SESSION_EXECUTION_GATE_V1_FA.md`, canonical KB entries, READ-FIRST linkage, and regression/CI coverage. No additional runtime authority is introduced. The endpoint must not be patched to add these files; publish uses one complete RC3 artifact generated off-PC.
+
+
+## RC3 supersession after exact-RC Windows CI
+`rc3` was canonicalized and pushed as commit `e394eda68eec13b4fdf07856c06a2c973b7f44b0`; exact-RC Windows CI run `35946302187` passed source guards, Extension/transport/repository contracts, P0-C..P6/R0/R1 contracts, native Agent tests and Browser tests, then failed only at Native Artifact Provider tests. The failure was a Windows path-security false positive: `filepath.EvalSymlinks` expanded the runner's valid 8.3 alias (`RUNNER~1`) to a long path, and textual inequality was incorrectly treated as a reparse point. RC4 replaces textual canonicalization equality with ancestor filesystem-metadata checks, retains real symlink/junction fail-closed behavior, adds regression coverage, and records the CI evidence in KB. No Agent 2.6.0 install/activation occurred on the home PC.
 
 ## Reproducible source bundle
 `tools/release/Build-R1SourceRC.py` reads blobs directly from the exact Git commit, rejects dirty source and non-HEAD commits, uses fixed ZIP metadata/order, and embeds `__SOKNA_RC__/SOURCE_MANIFEST.json` with every tracked path/mode/blob/hash. Two builds from the same commit/tool implementation must be byte-identical.

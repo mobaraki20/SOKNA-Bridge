@@ -1,6 +1,6 @@
 {
   "schema": "sokna-r1-release-candidate-policy-v1",
-  "candidate_ref": "sokna-agent-2.6.0-rc3",
+  "candidate_ref": "sokna-agent-2.6.0-rc4",
   "candidate_agent_version": "2.6.0",
   "accepted_live_agent_baseline": "2.5.7-r4",
   "accepted_extension_version": "3.10.5",
@@ -24,5 +24,12 @@
     "canonical batch-first vs Result-First knowledge rule",
     "R0/Windows CI contract test for Bridge session gate",
     "no runtime/product authority expansion; operational anti-regression only"
+  ],
+  "rc3_status": "superseded_after_exact_rc_windows_ci_provider_path_false_positive",
+  "rc4_corrections": [
+    "replace textual EvalSymlinks path-equality guard with ancestor filesystem-metadata reparse checks",
+    "preserve traversal and real symlink/junction fail-closed behavior",
+    "add ordinary-temp-path and symlink-parent native regression coverage",
+    "record exact-RC CI run 35946302187 provider failure evidence"
   ]
 }

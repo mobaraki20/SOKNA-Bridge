@@ -47,6 +47,35 @@ func TestLocalProviderAcquireAndVerify(t *testing.T) {
 	}
 }
 
+func TestOrdinaryTempPathsAreNotRejectedAsReparse(t *testing.T) {
+	d := t.TempDir()
+	f := filepath.Join(d, "ordinary.bin")
+	if err := os.WriteFile(f, []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := assertExistingPathNoSymlink(d); err != nil {
+		t.Fatalf("ordinary temp directory rejected: %v", err)
+	}
+	if err := assertExistingPathNoSymlink(f); err != nil {
+		t.Fatalf("ordinary temp file rejected: %v", err)
+	}
+}
+
+func TestSymlinkParentBlocked(t *testing.T) {
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "x.bin"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	base := t.TempDir()
+	linkDir := filepath.Join(base, "linked")
+	if err := os.Symlink(outside, linkDir); err != nil {
+		t.Skipf("symlink unavailable on this platform: %v", err)
+	}
+	if err := assertExistingPathNoSymlink(filepath.Join(linkDir, "x.bin")); err == nil {
+		t.Fatal("expected symlink parent rejection")
+	}
+}
+
 func TestManagedFolderTraversalAndSymlinkBlocked(t *testing.T) {
 	managed := t.TempDir()
 	root := t.TempDir()

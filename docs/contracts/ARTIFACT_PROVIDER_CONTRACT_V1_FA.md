@@ -19,6 +19,7 @@
 ## Providerها
 ### Core providers
 - `local_file`: import فایل regular و non-symlink از مسیر local.
+- امنیت path باید بر metadata واقعی filesystem تکیه کند، نه بر برابری متنی path پس از canonicalization؛ Windows 8.3/long-name alias به‌تنهایی reparse نیست. هر symlink/junction/reparse واقعی در خود path یا ancestor همچنان fail-closed است.
 - `managed_folder`: مسیر relative داخل root از قبل configured؛ مناسب LAN/share. traversal/reparse/symlink fail-closed.
 - `https`: direct HTTPS download.
 - `github_release_asset`: resolve عمومی Release Asset با `repository/tag/asset` یا direct HTTPS؛ token اختیاری فقط با `credential_env`.

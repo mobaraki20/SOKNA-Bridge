@@ -49,7 +49,7 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--repo',default=str(Path(__file__).resolve().parents[2]))
     ap.add_argument('--commit',default='HEAD')
-    ap.add_argument('--candidate-ref',default='sokna-agent-2.6.0-rc3')
+    ap.add_argument('--candidate-ref',default='sokna-agent-2.6.0-rc4')
     ap.add_argument('--output',required=True)
     ap.add_argument('--manifest-output',required=True)
     ap.add_argument('--allow-dirty',action='store_true',help='development-only; forbidden for canonical R1 freeze')

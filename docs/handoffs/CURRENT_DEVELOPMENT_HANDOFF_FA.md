@@ -192,3 +192,11 @@ Two gates remain: `CI -> LIVE`.
 - Endpoint history: temporary RC1 overlay/source fixes were removed from the active tracked tree and preserved in stash evidence; baseline re-check showed Extension 3.10.5, HEAD `402eae1`, tracked diff empty.
 - Then `SOKNA-RC2-to-canonical-402e-bridge-artifact.zip` was inspected and `artifact.apply` returned `applied=true`. The user stopped immediately afterward; **no post-apply repo status, commit, push, CI dispatch, Agent 2.6 install or activation has occurred yet**. Unknown pre-existing untracked files remain intentionally preserved.
 - Because this Bridge-session gate/KB hardening is being added after RC2, do not treat RC2 as the final publish candidate until the new development checkpoint is frozen and a complete replacement artifact is built off-PC. Do not patch the endpoint to add these docs.
+
+## RC3 exact-RC Windows CI result / RC4 correction — 2026-09-24
+- RC3 canonical commit `e394eda68eec13b4fdf07856c06a2c973b7f44b0` and tag `sokna-agent-2.6.0-rc3` were pushed. Windows CI run `35946302187` used that exact head SHA.
+- Steps through Native Browser QA passed. The first and only failure was `Native artifact provider tests`; all later Windows acceptance/build steps were skipped by fail-fast.
+- Failure evidence: ordinary Windows temp paths containing the valid 8.3 alias `RUNNER~1` were rejected as reparse/symlink. Root cause is textual comparison of `filepath.EvalSymlinks` output versus input path, not an actual reparse point.
+- Fix is development-workspace-only: walk every existing ancestor with `os.Lstat` and reject actual symlink/irregular reparse metadata; do not use canonicalized path-string inequality as a security signal. Added ordinary-temp-path and symlink-parent tests.
+- RC3 is superseded. RC4 is the next exact candidate. Home PC remains publish/access only; Agent 2.6.0 is not installed/activated there.
+- Next action: freeze RC4 off-PC, build/simulate a canonical delta from pushed RC3 commit `e394eda...`, transfer as one artifact, then use batch-first publish + exact-commit Windows CI.

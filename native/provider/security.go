@@ -92,16 +92,19 @@ func assertExistingPathNoSymlink(path string) error {
 	if err != nil {
 		return err
 	}
-	resolved, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return err
-	}
-	resolvedAbs, err := cleanAbs(resolved)
-	if err != nil {
-		return err
-	}
-	if !samePath(abs, resolvedAbs) {
-		return fmt.Errorf("reparse/symlink path blocked: %s", path)
+	for cur := abs; ; cur = filepath.Dir(cur) {
+		info, err := os.Lstat(cur)
+		if err != nil {
+			return err
+		}
+		mode := info.Mode()
+		if mode&os.ModeSymlink != 0 || mode&os.ModeIrregular != 0 {
+			return fmt.Errorf("reparse/symlink path blocked: %s", path)
+		}
+		parent := filepath.Dir(cur)
+		if samePath(parent, cur) {
+			break
+		}
 	}
 	return nil
 }

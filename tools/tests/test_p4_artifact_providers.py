@@ -19,8 +19,9 @@ for x in ['type provider interface','Probe(context.Context','Acquire(context.Con
     assert x in provider,x
 for x in ['Range','retryableStatus','too many redirects','Authorization','githubResolve','Content-Range']:
     assert x in http,x
-for x in ['credential-bearing URL must be supplied via url_env','sourceFingerprint','redactErrorMessage','errorSecretPattern']:
+for x in ['credential-bearing URL must be supplied via url_env','sourceFingerprint','redactErrorMessage','errorSecretPattern','os.Lstat','os.ModeSymlink','os.ModeIrregular']:
     assert x in security,x
+assert 'filepath.EvalSymlinks' not in security
 for x in ['ed25519-sha256','required signature material missing','artifact signature mismatch']:
     assert x in verify,x
 for x in ['.provider-','staging','os.Rename','verifyFile','os.Remove(sidecar)']:

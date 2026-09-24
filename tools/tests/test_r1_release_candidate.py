@@ -16,9 +16,11 @@ evidence=need(Path('tools/ci/Write-ExactRCEvidence.ps1'),'EXACT_RC_SOURCE_COMMIT
 status=need(Path('docs/status/R1_RELEASE_CANDIDATE_FREEZE.md'),'base Workspace Policy','job-scoped grant','exact source','CI','LIVE','2.5.7 R4','3.10.5')
 policy=json.loads((ROOT/'docs/status/R1_RELEASE_CANDIDATE_POLICY.json').read_text(encoding='utf-8'))
 assert policy['schema']=='sokna-r1-release-candidate-policy-v1' and policy['ci_expected_commit_required'] is True
-assert policy['home_pc_allowed_before_ci_pass'] is False and policy['candidate_ref']=='sokna-agent-2.6.0-rc3'
+assert policy['home_pc_allowed_before_ci_pass'] is False and policy['candidate_ref']=='sokna-agent-2.6.0-rc4'
 corr=json.loads((ROOT/'docs/status/R1_RC2_CORRECTION_MANIFEST.json').read_text(encoding='utf-8'))
 assert corr['schema']=='sokna-r1-rc2-correction-manifest-v1' and corr['candidate_ref']=='sokna-agent-2.6.0-rc2' and corr['windows_exact_rc_execution_claimed'] is False
 rc3=json.loads((ROOT/'docs/status/R1_RC3_SESSION_GATE_MANIFEST.json').read_text(encoding='utf-8'))
 assert rc3['schema']=='sokna-r1-rc3-session-gate-manifest-v1' and rc3['candidate_ref']=='sokna-agent-2.6.0-rc3' and rc3['windows_exact_rc_execution_claimed'] is False
+rc4=json.loads((ROOT/'docs/status/R1_RC4_PROVIDER_WINDOWS_MANIFEST.json').read_text(encoding='utf-8'))
+assert rc4['schema']=='sokna-r1-rc4-provider-windows-manifest-v1' and rc4['candidate_ref']=='sokna-agent-2.6.0-rc4' and rc4['source_ci_failure_reproduced_off_endpoint'] is True
 print('R1_RELEASE_CANDIDATE_CONTRACTS_PASS')

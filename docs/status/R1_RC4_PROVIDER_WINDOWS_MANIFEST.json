@@ -1,0 +1,80 @@
+{
+  "schema": "sokna-r1-rc4-provider-windows-manifest-v1",
+  "supersedes_candidate": "sokna-agent-2.6.0-rc3",
+  "candidate_ref": "sokna-agent-2.6.0-rc4",
+  "failed_exact_rc_commit": "e394eda68eec13b4fdf07856c06a2c973b7f44b0",
+  "failed_windows_ci_run": "35946302187",
+  "failed_step": "Native artifact provider tests",
+  "root_cause": "Windows 8.3 short-name expansion changed EvalSymlinks path text without an actual reparse point",
+  "source_ci_failure_reproduced_off_endpoint": true,
+  "home_pc_runtime_2_6_activated": false,
+  "corrections": [
+    "ancestor Lstat reparse/symlink checks",
+    "ordinary temp path positive regression",
+    "symlink parent negative regression",
+    "RC4 exact-source/workflow naming and evidence",
+    "normalize non-launcher Python file modes to 100644 for cross-platform tree stability"
+  ],
+  "files": [
+    {
+      "path": "native/provider/security.go",
+      "bytes": 6838,
+      "sha256": "9c7f85283a135a66f281c277cf7bb1e5c5dfc9951dedc442a448b9ead45e8d08"
+    },
+    {
+      "path": "native/provider/provider_test.go",
+      "bytes": 11498,
+      "sha256": "bb0a9c4d9bfd97fa091ff5c6eea8d663928f0603b2847017bfde6701fe23a683"
+    },
+    {
+      "path": "tools/tests/test_p4_artifact_providers.py",
+      "bytes": 5266,
+      "sha256": "d50c22c313203f5cb2f533d82ca8bf834c5e279abdfe76f18b4cfd16e31ca934"
+    },
+    {
+      "path": "docs/contracts/ARTIFACT_PROVIDER_CONTRACT_V1_FA.md",
+      "bytes": 5742,
+      "sha256": "bc3b5a5e17d3ddbe6367fd98f52964354aee4ece947282cfe540ff0acedcb0a3"
+    },
+    {
+      "path": "docs/knowledge/agent-lessons.jsonl",
+      "bytes": 15483,
+      "sha256": "64cfb705892dd698b68850cf7aabc2a9fd3af70762d0db824c4c704cc74c1565"
+    },
+    {
+      "path": "docs/status/R1_RELEASE_CANDIDATE_FREEZE.md",
+      "bytes": 4510,
+      "sha256": "442084a071d428f6a7b56933027288f867b2c9d10c825d42e22a253e8a8aeb7e"
+    },
+    {
+      "path": "docs/status/R1_RELEASE_CANDIDATE_POLICY.json",
+      "bytes": 1921,
+      "sha256": "7988d0a29025edacd1f04e811cf9a3236001a85d836dada19d7cf6b4dc1aef37"
+    },
+    {
+      "path": "tools/tests/test_r1_release_candidate.py",
+      "bytes": 2446,
+      "sha256": "eb7807adc97db004ab8c51954af24fb0a1decea4a3a2bdfa4c9533ecf5a5727b"
+    },
+    {
+      "path": "tools/release/Build-R1SourceRC.py",
+      "bytes": 4855,
+      "sha256": "8c7e35bcf3d46888ec012f2ed3253f5a6e060cd17cc26b41099661862384ea5e"
+    },
+    {
+      "path": ".github/workflows/windows-agent-validation.yml",
+      "bytes": 12184,
+      "sha256": "e9cbc8ce0dba13f5bc831acb8a6b2da2a7342e20a366a281fb8f30e674cf2f3a"
+    },
+    {
+      "path": "docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md",
+      "bytes": 19982,
+      "sha256": "64deaa7a8888616a1f3c175669c140df1c4641a561eef6588c56fc4ffd87d915"
+    },
+    {
+      "path": "tools/tests/test_p3_browser_visual_qa.py",
+      "bytes": 4409,
+      "sha256": "647441ad897dd30e566aff89cf621676cd4b79f31a9958a0d959edf56f90d29a"
+    }
+  ]
+}
