@@ -33,6 +33,16 @@
     return "";
   }
   function terminalJobStatus(s){return ["done","failed","completed","canceled","cancelled"].includes(String(s||"").toLowerCase())}
+  function findSubmittedJobs(action,node,depth=0,out=null){
+    out=out||[];if(depth>10||node==null)return out;
+    if(action==="job.submit"&&node&&typeof node==="object"&&node.ok&&node.job_id){
+      const id=String(node.job_id);if(id&&!out.some(x=>String(x.job_id)===id))out.push(node);
+    }
+    if(node&&typeof node==="object"&&Array.isArray(node.results)){
+      for(const entry of node.results){if(!entry||typeof entry!=="object")continue;findSubmittedJobs(String(entry.action||""),entry.result,depth+1,out)}
+    }
+    return out;
+  }
 
   function shouldBlockStatusEvent(eventId,eventRec,seen,conversationKey){
     if(eventRec?.kind!=="status-event")return false;
@@ -55,5 +65,5 @@
       }:null
     };
   }
-  globalThis[G]=Object.freeze({version:1,clip,findCiSummary,summarizeJob,terminalJobStatus,shouldBlockStatusEvent});
+  globalThis[G]=Object.freeze({version:1,clip,findCiSummary,summarizeJob,findSubmittedJobs,terminalJobStatus,shouldBlockStatusEvent});
 })();

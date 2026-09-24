@@ -5,7 +5,7 @@ R1 freezes an **exact source candidate**. It is not a Windows PASS and does not 
 ## Candidate identity
 - candidate runtime: Agent `2.6.0` development RC source;
 - accepted live baseline remains Agent `2.5.7 R4` + Extension `3.10.5` until CI passes;
-- candidate ref: `sokna-agent-2.6.0-rc5`, created locally only after the clean R1 commit exists;
+- candidate ref: `sokna-agent-2.6.0-rc6`, created locally only after the clean R1 commit exists;
 - canonical source identity is the exact Git commit/tree recorded by the generated RC manifest, not a mutable branch name.
 
 
@@ -23,6 +23,9 @@ R1 freezes an **exact source candidate**. It is not a Windows PASS and does not 
 
 ## RC4 supersession after broader exact-RC Windows CI
 `rc4` was canonicalized and pushed as commit `86014574dcbb11fc662b79068ffdaee93f064062`; exact-RC Windows CI run `35947423759` proved the RC4 Provider correction by passing Native Artifact Provider tests, then continued through Native Host and ArtifactRoot Windows tests before failing at `Workspace 2.6.0 Windows permission matrix`. The concrete failure was Windows PowerShell 5.1 StrictMode cardinality semantics on `$lw.tools.Count`, not a demonstrated Workspace permission bypass. Because later independent Windows steps were then skipped, RC5 is intentionally **not** a one-line patch: it sweeps sibling PowerShell collection/native-output hazards, adds a 2.6.0 PowerShell/runtime compatibility preflight, converts independent Windows diagnostics to continue-and-aggregate with one final gate, and promotes the already-existing `job.submit` GitHub CI plan to the mandatory no-manual-polling path. This is designed to surface the remaining Windows failure set in one CI run instead of one RC per first failure. No Agent 2.6.0 install/activation occurred on the home PC.
+
+## RC5 supersession after aggregated exact-RC Windows CI
+`rc5` was canonicalized and pushed as commit `cdedc0b5b558a2f01098d577214222ed175ad1fa`; exact-RC Windows CI run `35948850265` successfully proved the new continue-and-aggregate diagnostic design. Instead of stopping at the first failure, the run exposed the full independent Windows failure set in one pass: `WINDOWS_COMPAT`, `WIN_ADVANCED_WORKSPACE`, `WIN_ARTIFACT_PROVIDER`, `WIN_BROWSER`, and `WIN_COMPONENT`. Source contracts, native Agent/Browser/Provider/Host tests, ArtifactRoot and base Workspace matrices passed. Code review mapped the five failures to two PowerShell 5.1 compatibility families: compact `return[ordered]@{...}` runtime syntax in Agent/Provider/Browser/Component, and dynamic property assignment on an `OrderedDictionary` in ephemeral Workspace view construction. RC6 fixes both families across the runtime, adds static anti-regression coverage, and additionally hardens Extension job watching so successful nested `job.submit` results inside `plan.run`/`job.batch` are discoverable. Candidate Extension becomes `3.10.6`; accepted live baseline remains `3.10.5` until exact-RC CI passes and the Code-Activation Barrier (reload + re-arm) is explicitly completed.
 
 ## Reproducible source bundle
 `tools/release/Build-R1SourceRC.py` reads blobs directly from the exact Git commit, rejects dirty source and non-HEAD commits, uses fixed ZIP metadata/order, and embeds `__SOKNA_RC__/SOURCE_MANIFEST.json` with every tracked path/mode/blob/hash. Two builds from the same commit/tool implementation must be byte-identical.

@@ -1,6 +1,6 @@
 {
   "schema": "sokna-r1-release-candidate-policy-v1",
-  "candidate_ref": "sokna-agent-2.6.0-rc5",
+  "candidate_ref": "sokna-agent-2.6.0-rc6",
   "candidate_agent_version": "2.6.0",
   "accepted_live_agent_baseline": "2.5.7-r4",
   "accepted_extension_version": "3.10.5",
@@ -42,5 +42,15 @@
     "harden release-critical native git output capture against Windows PowerShell 5.1 empty-output null semantics",
     "record RC4 provider PASS and Workspace failure evidence in canonical KB",
     "ship a checked-in RC5 publish plan that commits/tags/pushes once and submits durable exact-RC CI after artifact apply"
+  ],
+  "candidate_extension_version": "3.10.6",
+  "rc5_status": "superseded_after_aggregated_windows_ci_runtime_strictmode_failures",
+  "rc6_corrections": [
+    "normalize PowerShell 5.1 return [ordered]@ lexical form across Agent 2.6.0 runtime modules",
+    "use OrderedDictionary indexer writes for ephemeral workspace metadata under StrictMode",
+    "add anti-regression scans for PS5 return/ordered and dynamic-key hazards",
+    "discover nested successful job.submit results inside plan.run/job.batch and register durable Extension watches",
+    "bump candidate Extension to 3.10.6; keep accepted live baseline 3.10.5 until CI PASS and explicit reload/re-arm",
+    "publish RC6 without nested CI submission; submit exact-RC CI as a direct top-level job.submit so live 3.10.5 registers the watch"
   ]
 }

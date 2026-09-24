@@ -1,0 +1,24 @@
+{
+  "schema": "sokna-r1-rc6-ps51-nested-job-hardening-manifest-v1",
+  "candidate_ref": "sokna-agent-2.6.0-rc6",
+  "candidate_extension_version": "3.10.6",
+  "accepted_live_extension_baseline": "3.10.5",
+  "base_canonical_commit": "cdedc0b5b558a2f01098d577214222ed175ad1fa",
+  "source_ci_run": "35948850265",
+  "aggregated_failures": [
+    "WINDOWS_COMPAT",
+    "WIN_ADVANCED_WORKSPACE",
+    "WIN_ARTIFACT_PROVIDER",
+    "WIN_BROWSER",
+    "WIN_COMPONENT"
+  ],
+  "root_cause_families": [
+    "PowerShell 5.1 return[ordered] lexical/runtime incompatibility",
+    "OrderedDictionary dynamic property assignment under StrictMode"
+  ],
+  "nested_job_watch_hardened": true,
+  "publish_plan": "tools/plans/publish-rc6.json",
+  "ci_submit_mode_until_extension_reload": "direct_top_level_job.submit",
+  "home_pc_source_development": false,
+  "windows_exact_rc_execution_claimed": false
+}

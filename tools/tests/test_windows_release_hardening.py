@@ -2,11 +2,10 @@ from pathlib import Path
 import re
 ROOT=Path(__file__).resolve().parents[2]
 import json
-publish_plan=json.loads((ROOT/'tools/plans/publish-rc5-and-submit-ci.json').read_text(encoding='utf-8'))
+publish_plan=json.loads((ROOT/'tools/plans/publish-rc6.json').read_text(encoding='utf-8'))
 actions=[x['action'] for x in publish_plan['steps']]
-assert actions==['process.run','git.add','process.run','git.commit','process.run','process.run','job.submit']
-assert publish_plan['steps'][-1]['params']['path']=='tools/plans/github-windows-ci-full.json'
-assert publish_plan['steps'][4]['params']['args']==['tag','sokna-agent-2.6.0-rc5']
+assert actions==['process.run','git.add','process.run','git.commit','process.run','process.run','process.run','process.run']
+assert publish_plan['steps'][4]['params']['args']==['tag','sokna-agent-2.6.0-rc6']
 wf=(ROOT/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
 helper=(ROOT/'tools/ci/Invoke-GitHubWindowsCI.ps1').read_text(encoding='utf-8')
 preflight=(ROOT/'tools/ci/Test-WindowsAgentEnvironment.ps1').read_text(encoding='utf-8')
@@ -37,4 +36,16 @@ critical=[
 pat=re.compile(r'=\s*\(&\s*(?:git|gh)\b[^\r\n]*\)\.Trim\(',re.I)
 for f in critical:
     assert not pat.search(f.read_text(encoding='utf-8')),f
+# PowerShell 5.1 runtime lexical/strict-mode regressions discovered by exact-RC CI.
+runtime = ROOT / "native" / "runtime" / "v2.6.0"
+for ps in [*runtime.glob("*.ps1"), *runtime.glob("*.psm1")]:
+    text = ps.read_text(encoding="utf-8")
+    assert "return[ordered]@" not in text, f"PS5_RETURN_ORDERED_SPACING:{ps}"
+workspace = (runtime / "Sokna.Workspace.psm1").read_text(encoding="utf-8")
+assert "$view['owner_job_id']" in workspace and "$view['expires_at']" in workspace, "PS5_ORDERED_DICTIONARY_DYNAMIC_KEY"
+jobcore = (ROOT / "extension" / "chrome" / "agent_job_core.js").read_text(encoding="utf-8")
+background = (ROOT / "extension" / "chrome" / "background.js").read_text(encoding="utf-8")
+assert "findSubmittedJobs" in jobcore, "NESTED_JOB_DISCOVERY_CORE"
+assert "JOBCORE.findSubmittedJobs(command.action,result)" in background, "NESTED_JOB_WATCH_REGISTRATION"
+
 print('WINDOWS_RELEASE_HARDENING_PASS')

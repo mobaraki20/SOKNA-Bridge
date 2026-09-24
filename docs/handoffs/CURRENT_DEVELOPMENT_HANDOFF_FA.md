@@ -211,3 +211,13 @@ Two gates remain: `CI -> LIVE`.
 - `tools/ci/Invoke-GitHubWindowsCI.ps1` is exact-commit aware and the existing `tools/plans/github-windows-ci-full.json` MUST be submitted with `job.submit`; chat-by-chat `gh run view` polling is fallback-only. Extension 3.10.5 already watches terminal jobs and posts the terminal summary.
 - Current endpoint rule remains: user PC is publish/access/acceptance only; no source fixes or dev toolchain installs there.
 - RC5 ships `tools/plans/publish-rc5-and-submit-ci.json`: after one artifact inspect/apply, execute this plan instead of rebuilding commit/tag/push/CI steps in Chat.
+
+## 2026-09-24 RC5 aggregated Windows CI -> RC6 PS5.1 + nested-watch hardening
+- RC5 canonical commit: `cdedc0b5b558a2f01098d577214222ed175ad1fa`; exact-RC run: `35948850265`.
+- The continue-and-aggregate workflow worked as intended and exposed five independent outcomes in one run instead of one failure per RC: `WINDOWS_COMPAT`, `WIN_ADVANCED_WORKSPACE`, `WIN_ARTIFACT_PROVIDER`, `WIN_BROWSER`, `WIN_COMPONENT`.
+- Four outcomes share one PowerShell 5.1 family: `return[ordered]@{...}` is accepted by parsing but fails at runtime as a command token on Windows PowerShell 5.1. RC6 normalizes every Agent 2.6.0 runtime occurrence to `return [ordered]@{...}` and statically forbids regression.
+- Advanced Workspace failure is an `OrderedDictionary` StrictMode mutation bug: adding `owner_job_id` / `expires_at` via property syntax fails. RC6 uses indexer writes and adds a regression assertion.
+- RC5 durable CI worker completed correctly, but Extension 3.10.5 did not auto-watch it because `job.submit` was nested under `job.batch -> plan.run`. Candidate Extension 3.10.6 adds recursive nested-job discovery.
+- Until 3.10.6 is actually reloaded/re-armed, exact-RC CI MUST be submitted as a direct top-level `job.submit`; do not infer candidate runtime behavior from files on disk.
+- Large/full GitHub logs must be summarized on the endpoint by exact step, not dumped into chat. `gh run view --log-failed` is insufficient when independent steps use `continue-on-error`, because only the final diagnostic gate is formally failed.
+- RC6 publish plan is `tools/plans/publish-rc6.json`; it commits/tags/pushes only. CI submission is intentionally a separate direct top-level `job.submit` while live Extension remains 3.10.5.

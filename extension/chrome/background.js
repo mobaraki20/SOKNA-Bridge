@@ -2,7 +2,7 @@ importScripts("protocol.js","agent_job_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.10.5";
+const VERSION="3.10.6";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -292,7 +292,7 @@ async function handleCommandInner(tabId,command){
   await setStatus(tabId,{state:"Working",detail:`Executing ${command.action}`,currentCommandId:command.id,etaMs:null,etaConfidence:"unknown"});
   let result;
   try{result=await agentExec(command)}catch(e){result={ok:false,error:String(e)}}
-  if(command.action==="job.submit"&&result?.ok&&result?.job_id){try{await registerJobWatch(tabId,command.id,result,a.registered.conversationKey)}catch{}}
+  for(const submitted of JOBCORE.findSubmittedJobs(command.action,result)){try{await registerJobWatch(tabId,command.id,submitted,a.registered.conversationKey)}catch{}}
   seen=await seenAll();seen[command.id]={...(seen[command.id]||{}),state:"done",completedAt:now(),result,posted:false};await saveSeen(seen);
   return await postPending(tabId,command.id,seen[command.id]);
 }

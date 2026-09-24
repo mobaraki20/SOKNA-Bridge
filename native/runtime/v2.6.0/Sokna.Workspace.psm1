@@ -186,7 +186,7 @@ function Get-SoknaWorkspace([string]$Workspace){
     if(-not(Test-Path -LiteralPath $root -PathType Container)){throw 'WORKSPACE_ROOT_NOT_FOUND: '+$root}
     Assert-SoknaNoReparsePath $root
     $view=ConvertTo-SoknaWorkspaceCompat $w
-    if($kind-eq'ephemeral_checkout'){$view.kind='ephemeral_checkout';$view.owner_job_id=[string](Get-SoknaOptionalProperty $w 'owner_job_id' '');$view.expires_at=[string](Get-SoknaOptionalProperty $w 'expires_at' '')}
+    if($kind-eq'ephemeral_checkout'){$view['kind']='ephemeral_checkout';$view['owner_job_id']=[string](Get-SoknaOptionalProperty $w 'owner_job_id' '');$view['expires_at']=[string](Get-SoknaOptionalProperty $w 'expires_at' '')}
     return $view
   }
   if($kind-eq'remote'){

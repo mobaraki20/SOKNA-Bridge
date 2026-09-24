@@ -5,7 +5,9 @@ let s=C.summarizeJob({job:{id:'j1',status:'done',result:{results:[{result:{stdou
 s=C.summarizeJob({job:{id:'j2',status:'failed',result:{results:[{result:{ok:false,stderr:'boom'}}]}}});a(!s.ok&&s.error.includes('boom'),'failed evidence');
 s=C.summarizeJob({job:{id:'j3',status:'done',result:{results:[{result:{ok:true,stdout:'activation-ok'}}]}}});a(s.ok&&s.output_excerpt.includes('activation-ok'),'generic output');
 a(C.terminalJobStatus('done')&&C.terminalJobStatus('failed')&&!C.terminalJobStatus('running'),'terminal states');
+let jobs=C.findSubmittedJobs('job.submit',{ok:true,job_id:'direct-1'});a(jobs.length===1&&jobs[0].job_id==='direct-1','direct job discovery');
+jobs=C.findSubmittedJobs('job.batch',{ok:true,results:[{action:'plan.run',result:{ok:true,results:[{action:'job.submit',result:{ok:true,job_id:'nested-1'}}]}}]});a(jobs.length===1&&jobs[0].job_id==='nested-1','nested job discovery');
 const seen={a:{state:'done',posted:false,conversationKey:'c',acceptedAt:10},b:{state:'done',posted:true,conversationKey:'c',acceptedAt:20},e:{state:'done',posted:false,kind:'status-event',conversationKey:'c',acceptedAt:30}};
 a(C.shouldBlockStatusEvent('e',seen.e,seen,'c'),'result-first block');seen.a.posted=true;a(!C.shouldBlockStatusEvent('e',seen.e,seen,'c'),'result-first release');
 
-console.log(JSON.stringify({ok:true,tests:6}));
+console.log(JSON.stringify({ok:true,tests:8}));

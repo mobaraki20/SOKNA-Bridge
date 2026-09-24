@@ -114,7 +114,7 @@ function SubmitAutomationClaim($claim){
 function InvokeAutomationDispatch([string]$TriggerKey='',[string]$EventId=''){
   $active=GetActiveJobRecords;$claims=Get-SoknaAutomationClaims -ActiveJobs $active -TriggerKey $TriggerKey -EventId $EventId;$out=@()
   foreach($c in @($claims)){try{$r=SubmitAutomationClaim $c;$null=Complete-SoknaAutomationClaim $c 'submitted';$out+=@([ordered]@{ok=$true;automation_id=[string]$c.automation_id;run_key=[string]$c.run_key;job=$r})}catch{$err=$_.Exception.Message;try{$null=Undo-SoknaAutomationClaim $c}catch{};$out+=@([ordered]@{ok=$false;automation_id=[string]$c.automation_id;run_key=[string]$c.run_key;error=$err})}}
-  $ok=$true;foreach($x in $out){if(-not[bool]$x.ok){$ok=$false}};return[ordered]@{ok=$ok;trigger_key=$TriggerKey;event_id=$EventId;claims=$out}
+  $ok=$true;foreach($x in $out){if(-not[bool]$x.ok){$ok=$false}};return [ordered]@{ok=$ok;trigger_key=$TriggerKey;event_id=$EventId;claims=$out}
 }
 function StartAutomationSchedulerWorker {
   if($RunScheduler){return $PID};$pidPath=SchedulerPidPath;$currentHash=Sha256File $PSCommandPath

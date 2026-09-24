@@ -118,3 +118,9 @@ PC کاربر = Access / Publish / Activation / Acceptance endpoint.
 ## 10) Handoff requirement
 
 ایجنت نباید منتظر یادآوری کاربر درباره batch/artifact/result-first/carrier guard بماند. این سند بخشی از READ-FIRST است و omission آن regression محسوب می‌شود.
+
+## Nested durable-job watch compatibility
+- Extension 3.10.5 only auto-registers a durable watch when `job.submit` is the top-level command.
+- If the live Extension is 3.10.5, do not hide a CI `job.submit` inside `plan.run`/`job.batch` when automatic terminal posting is required; publish first, then issue one direct top-level `job.submit`.
+- Candidate Extension 3.10.6 recursively discovers successful nested `job.submit` results inside `plan.run`/`job.batch`, registers each watch, and preserves Result-First ordering for the terminal status event.
+- Extension source changes are not runtime-active until reload + page reload/re-arm; never claim nested watch behavior from disk files alone.
