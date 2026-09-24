@@ -1,0 +1,74 @@
+{
+  "schema": "sokna-browser-recipe-v1",
+  "scenario_id": "p3-acceptance",
+  "url": "http://127.0.0.1:18771/index.html",
+  "viewports": [
+    {
+      "id": "mobile-narrow",
+      "width": 360,
+      "height": 800,
+      "dpr": 1
+    },
+    {
+      "id": "desktop",
+      "width": 1366,
+      "height": 768,
+      "dpr": 1
+    }
+  ],
+  "actions": [
+    {
+      "op": "type",
+      "selector": "#name",
+      "value": "SOKNA"
+    },
+    {
+      "op": "select",
+      "selector": "#kind",
+      "value": "b"
+    },
+    {
+      "op": "click",
+      "selector": "#apply"
+    },
+    {
+      "op": "wait",
+      "selector": "#result",
+      "timeout_ms": 5000
+    }
+  ],
+  "assertions": [
+    {
+      "type": "selector_visible",
+      "selector": "#result"
+    },
+    {
+      "type": "no_horizontal_overflow"
+    },
+    {
+      "type": "console_errors_max",
+      "max": 0
+    },
+    {
+      "type": "network_failures_max",
+      "max": 0
+    }
+  ],
+  "captures": {
+    "screenshot": true,
+    "full_page": true,
+    "dom": true,
+    "geometry": true,
+    "a11y": true,
+    "console": true,
+    "network": true,
+    "elements": [
+      "#result"
+    ],
+    "slow_resource_ms": 2000
+  },
+  "visual": {
+    "enabled": false,
+    "max_changed_ratio": 0.001
+  }
+}

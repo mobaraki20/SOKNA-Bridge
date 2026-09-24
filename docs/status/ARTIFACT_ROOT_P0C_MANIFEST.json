@@ -1,0 +1,80 @@
+{
+  "schema": "sokna-p0c-artifact-root-manifest-v1",
+  "created": "2026-09-24",
+  "source_baseline": {
+    "branch": "dev/bootstrap-v2.5",
+    "recorded_head": "402eae1b23df7bb7e829ff8e3656c816fb6a4442",
+    "accepted_agent": "2.5.7 R4",
+    "accepted_extension": "3.10.5"
+  },
+  "development_runtime": "2.6.0-source-only",
+  "phase": "P0-C ArtifactRoot",
+  "windows_live_status": "not claimed; deferred to whole-product CI/LIVE gates",
+  "files": [
+    {
+      "path": "00_READ_FIRST_NEW_CHAT.md",
+      "bytes": 2775,
+      "sha256": "fa280ccec945efa2ea19ee52b3f10a8396d0db2dfeb909d2cf94fa451da8924d"
+    },
+    {
+      "path": ".github/workflows/windows-agent-validation.yml",
+      "bytes": 4146,
+      "sha256": "1b047b1f50aa5ae8bbead37b6376eed1bf670b97bca8ec81760e2a6a5fce47ba"
+    },
+    {
+      "path": "docs/contracts/ARTIFACT_ROOT_CONTRACT_V1_FA.md",
+      "bytes": 3380,
+      "sha256": "b4d76c4487e5076347ebcf81a9eab38975b7434ef3617744a52b61e877649f9a"
+    },
+    {
+      "path": "docs/status/DEVELOPMENT_BASELINE_2026-09-24.md",
+      "bytes": 3186,
+      "sha256": "dae687792d7542e24de86c33fdd2c2e4943b118ad06806acca25d7094ae7d185"
+    },
+    {
+      "path": "docs/status/ARTIFACT_ROOT_P0C_DEV_VALIDATION.md",
+      "bytes": 2449,
+      "sha256": "17297cf9077528d26f5060751e6c94a5400a27a2da6ad2976f32f2f4df9ed89e"
+    },
+    {
+      "path": "docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md",
+      "bytes": 3009,
+      "sha256": "bd0aca4e421eeb61bcbbabd6b773b29ffdd54bd477219d572cae48ac5aa91b3f"
+    },
+    {
+      "path": "native/agent/artifact_root.go",
+      "bytes": 12882,
+      "sha256": "12b6c8274ae8c73ec3b902326490b42aed50eeb9bf93aa0f072642207e5193c1"
+    },
+    {
+      "path": "native/agent/artifact_root_test.go",
+      "bytes": 7160,
+      "sha256": "49998a3b0a25a0dadb9c98d66071da3209ae91b217a88ff208626beeb35daac1"
+    },
+    {
+      "path": "native/runtime/v2.6.0/agent.ps1",
+      "bytes": 41767,
+      "sha256": "46f7f3cac6209a99d43f9c4fb655eb79f653ca42d1a7cc2c5357868628d63ab4"
+    },
+    {
+      "path": "native/runtime/v2.6.0/AGENT_CAPABILITIES.json",
+      "bytes": 1602,
+      "sha256": "414d55480573dee72e22703158ed0394b1a97545fb9c82064a4738bdcc8d4c39"
+    },
+    {
+      "path": "native/runtime/v2.6.0/Sokna.ArtifactRoot.psm1",
+      "bytes": 17915,
+      "sha256": "3934a73254507f0305a88505ea453c38624e7747aeffc048b552f8cf937db6d5"
+    },
+    {
+      "path": "tools/runtime/releases/2.6.0/Test-ArtifactRoot260.ps1",
+      "bytes": 5357,
+      "sha256": "ad89267cde01b79e93f3f93ef19a79cdd00db8fa02163ce58c1db4bbdfd1dffe"
+    },
+    {
+      "path": "tools/tests/test_artifact_root_contract.py",
+      "bytes": 2184,
+      "sha256": "274e654fcf241fdb30f95086b2a187bfd905352b66fbe73ce65769beadead90b"
+    }
+  ]
+}

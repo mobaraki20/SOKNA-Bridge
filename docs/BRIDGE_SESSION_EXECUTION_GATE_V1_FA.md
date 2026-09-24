@@ -1,0 +1,115 @@
+# Bridge Session Execution Gate v1
+
+Status: **MANDATORY / CANONICAL**
+
+هدف: هر ایجنت جدید باید بدون یادآوری کاربر، SOKNA Bridge را با کمترین رفت‌وبرگشت و بدون تبدیل PC کاربر به محیط توسعه استفاده کند.
+
+## 1) قبل از اولین فرمان Bridge در هر session
+
+ایجنت MUST این اسناد را بخواند:
+1. `00_READ_FIRST_NEW_CHAT.md`
+2. `docs/AI_AGENT_OPERATING_CONTRACT_V2.md`
+3. `docs/AI_AGENT_COMMAND_PREFLIGHT_V1.md`
+4. `docs/FAST_WORK_PATH_V1_FA.md`
+5. این سند
+6. KB مرتبط از `docs/knowledge/agent-lessons.jsonl`
+
+سپس نسخه live Extension/Agent و `agent.capabilities` را مبنا قرار دهد. action/schema حدس زده نشود.
+
+## 2) Route Selection — قبل از ساخت هر carrier
+
+### A. یک probe ساده و مستقل
+یک action کوتاه read-only مجاز است.
+
+### B. دو یا چند مرحله bounded/deterministic
+**پیش‌فرض = یک `job.batch`**، نه چند فرمان chat-by-chat.
+- Runtime 2.5.7: حداکثر 30 step.
+- `workspace` را در سطح batch بده؛ فقط overrideهای لازم داخل step.
+- `stop_on_error=true` برای dependency chain؛ برای probeهای مستقل `false`.
+- مثال مناسب: `git.status + repo.inspect + gh.auth.status` در یک batch.
+
+### C. mutation چندمرحله‌ای / workflow قابل‌تکرار
+**پیش‌فرض = plan/job**.
+- plan را در workspace/artifact plane نگه دار.
+- `plan.run` برای bounded synchronous workflow.
+- `job.submit` برای کار طولانی/async/recoverable.
+- Chat فقط path/hash/id را حمل کند.
+
+### D. فایل/patch/build/log بزرگ
+**Artifact Plane**؛ هرگز inline carrier.
+- یک ZIP/artifact کامل بهتر از file-by-file transfer است.
+- `artifact.inspect` قبل از `artifact.apply`.
+- large result => `result.get`، نه carrier بزرگ.
+
+## 3) Result-First درست یعنی چه؟
+
+Result-First بین **outer commandها** اجباری است:
+- تا RESULT/NACK فرمان فعلی resolve نشده، outer command بعدی ممنوع.
+- اما stepهای داخل یک `job.batch` یا `plan.run` یک outer command واحد هستند و باید برای کاهش round-trip تجمیع شوند.
+
+پس Result-First هرگز توجیهی برای خردکردن یک probe سه‌مرحله‌ای به سه پیام جدا نیست.
+
+## 4) Carrier Generation Gate
+
+قبل از هر carrier:
+- فقط `tools/sokna_carrier_guard.py`.
+- `--extension-version <live-version>` اجباری.
+- serialize/parse + Base64URL round-trip + outer/inner id + budget verification.
+- manual Base64/carrier یا hand-edit خروجی ممنوع.
+- اگر guard/preflight قابل اجرا نیست: **فرمان ارسال نشود**.
+
+Budget فعلی:
+- raw UTF-8 JSON <= 800 bytes
+- final carrier <= 1200 chars
+
+اگر batch از budget عبور کرد:
+1. params را کوچک کن / path-ref استفاده کن؛
+2. plan/job ref بساز؛
+3. batch را فقط در مرز dependency منطقی تقسیم کن، نه step-by-step.
+
+## 5) PC Role Gate
+
+PC کاربر = Access / Publish / Activation / Acceptance endpoint.
+
+روی PC:
+- source development و patch-on-patch ممنوع؛
+- نصب toolchain توسعه برای عبور از تست ممنوع؛
+- failure = evidence؛ fix در development workspace؛
+- integrity/publish checks مجاز؛
+- unknown untracked files حفظ شوند.
+
+## 6) GitHub / CI Gate
+
+- GitHub scratchpad نیست.
+- یک candidate کامل و validated => یک milestone commit/push.
+- exact commit => CI.
+- Windows-only build/runtime validation در clean Windows CI، نه با تجهیز PC کاربر به Node/Go/SDK/Inno.
+
+## 7) Preferred command patterns
+
+ترتیب ترجیح:
+1. `job.batch` برای 2+ probe/action کوتاه.
+2. `plan.run` برای bounded multi-step mutation.
+3. `job.submit` برای async/long-running/recoverable work.
+4. `artifact.inspect/apply` برای change-set حجیم.
+5. `result.get` برای خروجی حجیم.
+6. single action فقط برای یک کار واقعاً مستقل.
+
+## 8) Session efficiency rule
+
+قبل از هر outer command ایجنت باید از خود بپرسد:
+- آیا مرحلهٔ بعدیِ قابل‌پیش‌بینی را می‌توان همین الآن در همان batch/plan گنجاند؟
+- آیا خروجی این probe برای 2-3 تصمیم بعدی کافی است؟
+- آیا من دارم چیزی را که Agent خودش در یک batch می‌تواند انجام دهد به چند رفت‌وبرگشت تبدیل می‌کنم؟
+
+اگر پاسخ مثبت است، split کردن فرمان ممنوع است مگر safety/result dependency واقعی وجود داشته باشد.
+
+## 9) Current accepted baseline
+
+- Extension: 3.10.5
+- Agent: 2.5.7 R4
+- current capabilities include `job.batch`, `plan.run`, `job.submit`, `artifact.inspect/apply`, `result.get`.
+
+## 10) Handoff requirement
+
+ایجنت نباید منتظر یادآوری کاربر درباره batch/artifact/result-first/carrier guard بماند. این سند بخشی از READ-FIRST است و omission آن regression محسوب می‌شود.

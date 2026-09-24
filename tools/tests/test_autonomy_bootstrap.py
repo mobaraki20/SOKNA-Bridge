@@ -22,7 +22,7 @@ ci=(root/'tools/ci/Invoke-GitHubWindowsCI.ps1').read_text(encoding='utf-8')
 for x in ['request_id=$requestId','--log-failed','CI_SHA_MISMATCH','displayTitle']: assert x in ci,x
 for p in ['quick','full']:
  obj=json.loads((root/f'tools/plans/github-windows-ci-{p}.json').read_text(encoding='utf-8'));assert obj['steps'][0]['action']=='process.run';assert obj['steps'][0]['params']['timeout_sec']==1200
-lessons=[json.loads(x) for x in (root/'docs/knowledge/agent-lessons.jsonl').read_text().splitlines() if x.strip()]
+lessons=[json.loads(x) for x in (root/'docs/knowledge/agent-lessons.jsonl').read_text(encoding='utf-8').splitlines() if x.strip()]
 ids={x['id'] for x in lessons}
 for need in ['KB-CTRL-001','KB-RUNTIME-001','KB-DEV-001','KB-DEV-002','KB-PS-001','KB-PS-002','KB-CI-001','KB-CI-002','KB-ASYNC-001','KB-CTRL-002','KB-SRC-001','KB-ROUTE-001','KB-ROUTE-002','KB-CTRL-003','KB-PC-001','github-windows-python-stdin-explicit-json']: assert need in ids,need
 

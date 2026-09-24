@@ -1,0 +1,68 @@
+{
+  "schema": "sokna-p2-workspace-permission-manifest-v1",
+  "date": "2026-09-24",
+  "files": [
+    {
+      "path": "00_READ_FIRST_NEW_CHAT.md",
+      "sha256": "adcb4a64a7bc572960ad88f91f5500407f74d1fc032789ee29e21f4f11ac6e65",
+      "bytes": 2762
+    },
+    {
+      "path": "native/agent/workspace_manager.go",
+      "sha256": "c0ca0fb5749bf4960996a7836a1ef3aca88fb5cfc40ceeb8fab533173be5f864",
+      "bytes": 22567
+    },
+    {
+      "path": "native/agent/workspace_manager_test.go",
+      "sha256": "df7c06bc0b530e8895f4fa6c5c2fa7c66e3125f39e46dfbaca44203f3a0e963f",
+      "bytes": 10972
+    },
+    {
+      "path": "native/runtime/v2.6.0/Sokna.Workspace.psm1",
+      "sha256": "9320f4f8db0511f60f3cb87bcc0caec453966e4a0c5a6965f8b4179c1442ab86",
+      "bytes": 19580
+    },
+    {
+      "path": "native/runtime/v2.6.0/agent.ps1",
+      "sha256": "5b420d70bd91aba6adcedb6ffbdce7e548b5aa4cd1116ea8c60f660a006e1595",
+      "bytes": 46345
+    },
+    {
+      "path": "native/runtime/v2.6.0/AGENT_CAPABILITIES.json",
+      "sha256": "1438a1fea2632e65edf322e87bfb1911febfcfa6cddea1c27193d0d3e24d1f54",
+      "bytes": 2214
+    },
+    {
+      "path": "docs/contracts/WORKSPACE_PERMISSION_MANAGER_V1_FA.md",
+      "sha256": "2bf357ad645df79785e84fd6a684ce6fd4b07747f150a986798d11228c69b48a",
+      "bytes": 5319
+    },
+    {
+      "path": "docs/status/P2_WORKSPACE_PERMISSION_DEV_VALIDATION.md",
+      "sha256": "576e3474a52abf3ba7fc5e8bf662ed6e068f15f72756a58b636a99c676d1448f",
+      "bytes": 2998
+    },
+    {
+      "path": "tools/tests/test_p2_workspace_permissions.py",
+      "sha256": "b6fa79519ef0b0c4a05bb4cf0ea31f870eb33271002c64b1884a40924f7ce6d7",
+      "bytes": 3870
+    },
+    {
+      "path": "tools/runtime/releases/2.6.0/Test-Workspace260.ps1",
+      "sha256": "f8c9fbb1e27112c2953b2cb3e9ef0954e47ac7de332a405f5b13bdcf87d739ec",
+      "bytes": 4858
+    },
+    {
+      "path": ".github/workflows/windows-agent-validation.yml",
+      "sha256": "b94ba6c89e856b0a7eec0809206f4258c73c3135ae031e00aeb3a0d3f7e82b81",
+      "bytes": 6787
+    },
+    {
+      "path": "docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md",
+      "sha256": "88db339da67ceea62eb72fbbffce3a2e08cb03041a5974fc42cbcd9720924207",
+      "bytes": 5148
+    }
+  ],
+  "windows_runtime_execution_claimed": false,
+  "home_pc_touched": false
+}

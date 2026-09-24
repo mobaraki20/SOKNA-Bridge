@@ -1,0 +1,98 @@
+{
+  "schema": "sokna-p5-advanced-workspaces-manifest-v1",
+  "date": "2026-09-24",
+  "phase": "P5 Advanced Workspaces / Permissions — development complete unit",
+  "base_checkpoint": "facf5b23ae77dfe80e92d1151a3f70eb82e072fb",
+  "accepted_agent": "2.5.7 R4",
+  "accepted_extension": "3.10.5",
+  "development_runtime": "2.6.0 source-only",
+  "local_source_regression_passed": true,
+  "windows_advanced_workspace_acceptance_authored": true,
+  "windows_advanced_workspace_execution_claimed": false,
+  "home_pc_touched": false,
+  "github_pushed": false,
+  "remaining_major_gates_after_p5": [
+    "P6",
+    "R0",
+    "R1",
+    "CI",
+    "LIVE"
+  ],
+  "files": [
+    {
+      "path": ".github/workflows/windows-agent-validation.yml",
+      "sha256": "b27ce3be7e735810c78c81f129cc3a20f53c5bca25f9ad688e9ba66e4607f60c",
+      "bytes": 8402
+    },
+    {
+      "path": "00_READ_FIRST_NEW_CHAT.md",
+      "sha256": "5a2b2bc7b105f310b3671b41e0de7ecf99d9bda4ab3e573e1204e00805476060",
+      "bytes": 2899
+    },
+    {
+      "path": "docs/contracts/ADVANCED_WORKSPACE_PERMISSION_CONTRACT_V1_FA.md",
+      "sha256": "4eebe2592a387ceb8a0d16e6ad3261d474ddd3c3cd2fdab5033e483ebbfb657a",
+      "bytes": 3200
+    },
+    {
+      "path": "docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md",
+      "sha256": "9d33349f86580a0261e2b5bcaece9a67d9444954fab05cf8c3afd0008a7eeb73",
+      "bytes": 11843
+    },
+    {
+      "path": "docs/status/DEVELOPMENT_BASELINE_2026-09-24.md",
+      "sha256": "eb9c172c2d7d044858c11f1d03b93d4e3e03c345b4348f5aba06c2c28f31dbf5",
+      "bytes": 3084
+    },
+    {
+      "path": "docs/status/P5_ADVANCED_WORKSPACES_DEV_VALIDATION.md",
+      "sha256": "b53f129994e0100fb3a0ba22cb5b93a2aaf777e9833e2d4f73a1f0da150eb461",
+      "bytes": 2476
+    },
+    {
+      "path": "native/agent/workspace_advanced.go",
+      "sha256": "789291e08183ca8d8bd5cca65fb0c5105843651baaf4fe47ffa9edd4ca951e67",
+      "bytes": 17179
+    },
+    {
+      "path": "native/agent/workspace_advanced_test.go",
+      "sha256": "491112493e191b533d8414cba1cb397e9764888a464f3523d4a4bd66201a9da0",
+      "bytes": 5815
+    },
+    {
+      "path": "native/agent/workspace_manager.go",
+      "sha256": "10c8d478be2074e37986d50850be4df2cd880922e8be79c1f6688b0af655898b",
+      "bytes": 23281
+    },
+    {
+      "path": "native/runtime/v2.6.0/AGENT_CAPABILITIES.json",
+      "sha256": "1dc1fc74b9e25d4925df2b6bcf2b8d27482cd2b04a597b189e0b5f1a7b63b361",
+      "bytes": 4544
+    },
+    {
+      "path": "native/runtime/v2.6.0/Sokna.Workspace.psm1",
+      "sha256": "cc9c69a727f08092ae92b54d3e05237714715bb0a5c0d303163177e5dc2218b6",
+      "bytes": 35575
+    },
+    {
+      "path": "native/runtime/v2.6.0/agent.ps1",
+      "sha256": "61ed7fa9df3d232b8eb1450d8b6e76f21e735a3b8812386bdd08e6527b16405d",
+      "bytes": 55440
+    },
+    {
+      "path": "tools/runtime/releases/2.6.0/Test-AdvancedWorkspace260.ps1",
+      "sha256": "8d590e33510d5cf962b802b1aef6b4d21705840ea8055eff0beb56b9755ebdcf",
+      "bytes": 6513
+    },
+    {
+      "path": "tools/tests/test_p4_artifact_providers.py",
+      "sha256": "e2f751ddad4fb05fed96b1f1bb81aa99358871ad1a036b666117ef1afb17aff2",
+      "bytes": 4948
+    },
+    {
+      "path": "tools/tests/test_p5_advanced_workspaces.py",
+      "sha256": "8f68e1ee6c644978818af4ce30c5a2c8a73285f04de62f4ed96affa3537b2288",
+      "bytes": 3186
+    }
+  ]
+}

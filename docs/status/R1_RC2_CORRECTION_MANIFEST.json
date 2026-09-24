@@ -1,0 +1,89 @@
+{
+  "schema": "sokna-r1-rc2-correction-manifest-v1",
+  "supersedes_candidate": "sokna-agent-2.6.0-rc1",
+  "candidate_ref": "sokna-agent-2.6.0-rc2",
+  "base_checkpoint": "86241dcbaa42f12d120ffeee0df1040ef702f471",
+  "reason": "pre-CI Windows portability findings; corrections authored and validated in development workspace, not on acceptance endpoint",
+  "corrections": [
+    "explicit UTF-8 Python repository reads",
+    "PowerShell 5.1 conservative component process-start expression",
+    "carrier/acceptance-endpoint KB evidence and enforcement",
+    "RC2 builder/workflow naming"
+  ],
+  "local_nonwindows_regression_passed": true,
+  "windows_exact_rc_execution_claimed": false,
+  "home_pc_runtime_2_6_activated": false,
+  "github_pushed": false,
+  "files": [
+    {
+      "path": ".github/workflows/windows-agent-validation.yml",
+      "bytes": 12034,
+      "sha256": "779bc34aa60ae8f34f5184650f3a10c40c2bac48856927665d838690c9f65498"
+    },
+    {
+      "path": "00_READ_FIRST_NEW_CHAT.md",
+      "bytes": 2965,
+      "sha256": "6b0c03323d0b95a9f380bb5c098ddaf1b779cd025e47f6dc862dec0a6fde1aa3"
+    },
+    {
+      "path": "docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md",
+      "bytes": 16791,
+      "sha256": "237d9cbf16864151052474163bc8eaf4e02694b0e5d45db89201cda7ea35a2f3"
+    },
+    {
+      "path": "docs/knowledge/agent-lessons.jsonl",
+      "bytes": 10772,
+      "sha256": "775a593ab1e6fe369ac5f216a85fb5b434ca479b76187f9ac2a5e8ac4160c9ff"
+    },
+    {
+      "path": "docs/status/R1_RELEASE_CANDIDATE_FREEZE.md",
+      "bytes": 2895,
+      "sha256": "5ce6d5e99cb6293f748daa8eb2661a0672da3239cd3089f28c675e8cc90920fe"
+    },
+    {
+      "path": "docs/status/R1_RELEASE_CANDIDATE_POLICY.json",
+      "bytes": 1116,
+      "sha256": "6920bb0b0e7a65e78377ca15c5170fec9433d8b8d7f91ae298d58feac23563e8"
+    },
+    {
+      "path": "native/runtime/v2.6.0/Sokna.Component.psm1",
+      "bytes": 41789,
+      "sha256": "fd89375d52bc8b48c9932d18920c9a9d177317c0dc14182cd3df83413c461782"
+    },
+    {
+      "path": "tools/release/Build-R1SourceRC.py",
+      "bytes": 4855,
+      "sha256": "99a4870285ac703859c7165a967dc8acfbf600fd7fd317c800be0d51d4c7e82e"
+    },
+    {
+      "path": "tools/tests/test_autonomy_bootstrap.py",
+      "bytes": 3800,
+      "sha256": "2bd870086fa363a5d4a86b2713f3156bab8b916ff199294d42c774e7fdd1ef4a"
+    },
+    {
+      "path": "tools/tests/test_p3_browser_visual_qa.py",
+      "bytes": 4409,
+      "sha256": "647441ad897dd30e566aff89cf621676cd4b79f31a9958a0d959edf56f90d29a"
+    },
+    {
+      "path": "tools/tests/test_p4_artifact_providers.py",
+      "bytes": 5172,
+      "sha256": "fea0db72dd068d3fa5199d785f3d6872ceee381d69f77041f9fb161c333fcfed"
+    },
+    {
+      "path": "tools/tests/test_p5_advanced_workspaces.py",
+      "bytes": 3230,
+      "sha256": "d73660af69c8ab14ad3ac1a1e932bdd801a1a4414cb4bf05232995bbeb0636b9"
+    },
+    {
+      "path": "tools/tests/test_p6_component_automation.py",
+      "bytes": 3454,
+      "sha256": "0858605279d806366e712d247d6c51735c88d14cce91ba79b8f4b78d85fa0c54"
+    },
+    {
+      "path": "tools/tests/test_r1_release_candidate.py",
+      "bytes": 1634,
+      "sha256": "da7a936579d74705ce12da3f5ca3b4e9080b75a5e9afe75cc1547c7cd3a93e3e"
+    }
+  ]
+}

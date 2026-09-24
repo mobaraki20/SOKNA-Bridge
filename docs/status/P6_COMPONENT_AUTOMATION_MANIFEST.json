@@ -1,0 +1,80 @@
+{
+  "schema": "sokna-p6-component-automation-manifest-v1",
+  "base_checkpoint": "f4ef62efae785e2c1d98fe166f73ae71dc2a3760",
+  "phase": "P6",
+  "scope": "Advanced Automation / Component Lifecycle",
+  "local_source_regression_passed": true,
+  "windows_component_automation_acceptance_authored": true,
+  "windows_component_automation_execution_claimed": false,
+  "windows_crossbuild_agent_browser_provider_passed": true,
+  "home_pc_touched": false,
+  "github_pushed": false,
+  "next_phase": "R0 Whole-product Integration",
+  "files": [
+    {
+      "path": ".github/workflows/windows-agent-validation.yml",
+      "bytes": 8808,
+      "sha256": "cac9f439faf0f24623fedc7469ad607b872c4488c243e3a0868d8da4fc19864a"
+    },
+    {
+      "path": "00_READ_FIRST_NEW_CHAT.md",
+      "bytes": 2929,
+      "sha256": "0cf11b343ddc2bf28d4053b3f601d230ecddfaedcc9ee77b72158a6c7170aedc"
+    },
+    {
+      "path": "docs/contracts/COMPONENT_AUTOMATION_LIFECYCLE_CONTRACT_V1_FA.md",
+      "bytes": 4140,
+      "sha256": "bbed4c7b7ace850770fef19e5eda5d521690b4303e83de56fb4d9a6a57927062"
+    },
+    {
+      "path": "docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md",
+      "bytes": 12832,
+      "sha256": "145003156bef12be71a86cef79a10b8249836838c6469caf1fb795c700169cd3"
+    },
+    {
+      "path": "docs/status/P6_COMPONENT_AUTOMATION_DEV_VALIDATION.md",
+      "bytes": 1696,
+      "sha256": "42cf039ac6af2cc87838d065080aa189149382d01fa6ee01050762518f9092e8"
+    },
+    {
+      "path": "native/agent/component_lifecycle.go",
+      "bytes": 10059,
+      "sha256": "84d5da18120e65ae9470960ed5cc0d3e6e74d147da25cb4de3b9cb967ed08f1e"
+    },
+    {
+      "path": "native/agent/component_lifecycle_test.go",
+      "bytes": 4064,
+      "sha256": "f2a7e15132abe7467cfae5afa72baa845023c6d6c55c2eb9dc6ec77b9a161aab"
+    },
+    {
+      "path": "native/runtime/v2.6.0/AGENT_CAPABILITIES.json",
+      "bytes": 6453,
+      "sha256": "8bbcedd8b64ff4f188dfbb60a39e6081006a82ad58a9f2f40b8ccdba22cb41df"
+    },
+    {
+      "path": "native/runtime/v2.6.0/Sokna.Component.psm1",
+      "bytes": 41740,
+      "sha256": "936b35bcf58a98800dd86af39d06561181ee6297bfd5cf4be5cfb63f554cbbd5"
+    },
+    {
+      "path": "native/runtime/v2.6.0/Sokna.Workspace.psm1",
+      "bytes": 36001,
+      "sha256": "18b76a87eacf0ab8414b7f259339196ac054f657227c7aabba87fe23d64d9fb5"
+    },
+    {
+      "path": "native/runtime/v2.6.0/agent.ps1",
+      "bytes": 68180,
+      "sha256": "ccdc1c7f1f5c2cf7a43a6cb54d5e33e461834be36e2e6030fb6461390283dee5"
+    },
+    {
+      "path": "tools/runtime/releases/2.6.0/Test-ComponentAutomation260.ps1",
+      "bytes": 9431,
+      "sha256": "1774522575db6d8c8c1faebd17717d5810b2c5b2ac071e38bf64f9b21a4ec563"
+    },
+    {
+      "path": "tools/tests/test_p6_component_automation.py",
+      "bytes": 3438,
+      "sha256": "1a355217058955e624f63bbe89871c4427491947b98d4d295cf9da567a4989a4"
+    }
+  ]
+}

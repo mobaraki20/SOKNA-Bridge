@@ -1,0 +1,70 @@
+{
+  "schema": "sokna-r0-whole-product-manifest-v1",
+  "base_checkpoint": "998fac120859dd399074a12b65c3152fea15cb25",
+  "phase": "R0",
+  "scope": "Whole-product Integration",
+  "full_local_regression_passed": true,
+  "whole_product_health_hardened": true,
+  "support_bundle_whole_product_state_redacted": true,
+  "windows_exact_rc_execution_claimed": false,
+  "home_pc_touched": false,
+  "github_pushed": false,
+  "next_phase": "R1 Release Candidate Freeze",
+  "files": [
+    {
+      "path": ".github/workflows/windows-agent-validation.yml",
+      "bytes": 8951,
+      "sha256": "e58f2352c6bb192fe371ac1a3eb1f37448831987d1d69281971d3b6fb74b0c75"
+    },
+    {
+      "path": "00_READ_FIRST_NEW_CHAT.md",
+      "bytes": 2715,
+      "sha256": "78f50e395faf70e084ec128e419b659ddf7732b2178b2e4b981809169aba6124"
+    },
+    {
+      "path": "docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md",
+      "bytes": 13915,
+      "sha256": "ee49ebb57b93e9d0c1a8db2d2b2ababe8f5b9ea6e0476a7d6e6c48b14929b2b3"
+    },
+    {
+      "path": "docs/status/R0_WHOLE_PRODUCT_INTEGRATION.md",
+      "bytes": 1810,
+      "sha256": "bf81737196c5a0d8c9c06df7399b4c1b44ce78bdca0cd28a16466d79b4bb543b"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/HealthDiagnostics.cs",
+      "bytes": 7710,
+      "sha256": "ef42648ca4678d5af15ab10fd8ccca6bae3cf0f754154d9e7f110f174e0af72a"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/Models.cs",
+      "bytes": 2261,
+      "sha256": "897132bb3eb924659acc58d847ba212c2fe6675cc06161b1f12b7188d8d7315a"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/SupportBundle.cs",
+      "bytes": 6014,
+      "sha256": "e153221b19d095b2b8b3338c730e25a4fed42ca6a780ed5f86d0aabf205db3c6"
+    },
+    {
+      "path": "tools/installer/Test-P1Windows.ps1",
+      "bytes": 7571,
+      "sha256": "0245ff20b02a05a84b83c5843b8c9c6ad7beea0ae4652b64fc2fffb3899500c9"
+    },
+    {
+      "path": "tools/tests/run_r0_regression.py",
+      "bytes": 936,
+      "sha256": "641e7353e026aa0ef68a74546f386f80908ed18b61a063d9ed679988b7b6af03"
+    },
+    {
+      "path": "tools/tests/test_p5_advanced_workspaces.py",
+      "bytes": 3198,
+      "sha256": "7a0e39bc0bfaba7adeb3041e5b171cde79c5b43b3c08ec3620d22e2ce983a2aa"
+    },
+    {
+      "path": "tools/tests/test_r0_whole_product.py",
+      "bytes": 5024,
+      "sha256": "a3cc288f45c08b9d50bb3702f0f63d86b04a79098646b15c45621c53a8b64a84"
+    }
+  ]
+}

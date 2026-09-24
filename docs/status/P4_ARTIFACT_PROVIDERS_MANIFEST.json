@@ -1,0 +1,121 @@
+{
+  "schema": "sokna-p4-artifact-providers-manifest-v1",
+  "date": "2026-09-24",
+  "phase": "P4 Artifact Providers / Auto-download — development complete unit",
+  "base_checkpoint": "2c4bcd1095812f181c8495331c58a56b4e34a56d",
+  "accepted_agent": "2.5.7 R4",
+  "accepted_extension": "3.10.5",
+  "development_runtime": "2.6.0 source-only",
+  "local_source_regression_passed": true,
+  "windows_provider_acceptance_authored": true,
+  "windows_provider_execution_claimed": false,
+  "home_pc_touched": false,
+  "github_pushed": false,
+  "files": [
+    {
+      "path": ".github/workflows/windows-agent-validation.yml",
+      "sha256": "ef681d997914102a54c9153001a3f82a94408289300f27ab4e18da478396809c",
+      "bytes": 7892
+    },
+    {
+      "path": "00_READ_FIRST_NEW_CHAT.md",
+      "sha256": "1bd0d0ac56e41f3cb12c82d3cb6d7c6ec478021319599e81ba1de6967e424ed3",
+      "bytes": 2853
+    },
+    {
+      "path": "docs/contracts/ARTIFACT_PROVIDER_CONTRACT_V1_FA.md",
+      "sha256": "3190fa130c89d0c179b3ff37fde98cef88298a988ba495981a1043a1c36b9cf8",
+      "bytes": 5424
+    },
+    {
+      "path": "docs/contracts/ARTIFACT_PROVIDER_POLICY_V1.json",
+      "sha256": "23df16efe743d3a10f169d737affcaaf86a2cd0d9845a91bafc259f6725d7bb2",
+      "bytes": 1973
+    },
+    {
+      "path": "docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md",
+      "sha256": "1ca5beac336c46567645e1faf120fefc0b6ccacea6c2b6b855f259df132983ff",
+      "bytes": 9509
+    },
+    {
+      "path": "docs/status/DEVELOPMENT_BASELINE_2026-09-24.md",
+      "sha256": "6653bbed503f5114bb2bda998b8a55272c319409b000edd0c71d648be9c54d1a",
+      "bytes": 3016
+    },
+    {
+      "path": "docs/status/P4_ARTIFACT_PROVIDERS_DEV_VALIDATION.md",
+      "sha256": "ea5adcf916c249f073543904af9d11afcfc167965be5e7e69b69d3cecfd25b79",
+      "bytes": 4720
+    },
+    {
+      "path": "native/provider/go.mod",
+      "sha256": "dcdd7c7b2f093e42f8586fcf891fafc03e62edeca70e5770651838d0e1072be0",
+      "bytes": 40
+    },
+    {
+      "path": "native/provider/http.go",
+      "sha256": "165355ee14bfe18d7732708ed68fd371ab034fccc697d276e82761ba7f7ee1d7",
+      "bytes": 10795
+    },
+    {
+      "path": "native/provider/main.go",
+      "sha256": "95faad4d5be0bec454b8bdb99b0bf7d6a9aaea7f5b64eec219e643a3c07dc559",
+      "bytes": 4332
+    },
+    {
+      "path": "native/provider/model.go",
+      "sha256": "dd210f64945c92321e9bf1232c3a05c959f5e66bda6541debdb06885eaf70de3",
+      "bytes": 3396
+    },
+    {
+      "path": "native/provider/provider_test.go",
+      "sha256": "85ac428b15503cff3ae0817b8dbcb84bae8f92e30e7aa05612c9a5400b78ff4f",
+      "bytes": 10572
+    },
+    {
+      "path": "native/provider/providers.go",
+      "sha256": "094f8a97ad780b1fe22533065f58419731702a8de881ac6d648b5eef36c4ccd2",
+      "bytes": 6952
+    },
+    {
+      "path": "native/provider/security.go",
+      "sha256": "0a5c3fd9ef6dd669fd0832ea61b0af1e022a63ca990d3de24ea9830d9bc2df28",
+      "bytes": 6752
+    },
+    {
+      "path": "native/provider/verify.go",
+      "sha256": "bf18f36e751a77afb1c96142492858466b85c727010df123445ecb26b8d0baca",
+      "bytes": 2783
+    },
+    {
+      "path": "native/runtime/v2.6.0/AGENT_CAPABILITIES.json",
+      "sha256": "a75a03a04a55cbd25e32a6ed8483acd951fc1ae58e8cabec6f199b71c1df938f",
+      "bytes": 3497
+    },
+    {
+      "path": "native/runtime/v2.6.0/Sokna.ArtifactProvider.psm1",
+      "sha256": "27cccc513cba6a955ca9b017a69993053960cba5e4fb0e0bd762793e4e906229",
+      "bytes": 15753
+    },
+    {
+      "path": "native/runtime/v2.6.0/agent.ps1",
+      "sha256": "8dd7448a8b0fc14d54ee86f4142fd4a4dcde9e6b48e2a4616f9d936c6380e96b",
+      "bytes": 48040
+    },
+    {
+      "path": "tools/installer/Build-P1Installer.ps1",
+      "sha256": "063adcbaac8ed4ae944f690b1be916cb8e09bf3cd94b2c9f367a6035558d488a",
+      "bytes": 5546
+    },
+    {
+      "path": "tools/runtime/releases/2.6.0/Test-ArtifactProviders260.ps1",
+      "sha256": "ef972185b807e106e515cb99afcd95950d711a9842aa371acb5f425badd7cca2",
+      "bytes": 5568
+    },
+    {
+      "path": "tools/tests/test_p4_artifact_providers.py",
+      "sha256": "76352c7961ad5958ab12316be4939b3fb029fee1ee2546d2a9e703582ee890e6",
+      "bytes": 4450
+    }
+  ]
+}

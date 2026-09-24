@@ -1,0 +1,74 @@
+{
+  "schema": "sokna-r1-rc3-session-gate-manifest-v1",
+  "supersedes_candidate": "sokna-agent-2.6.0-rc2",
+  "candidate_ref": "sokna-agent-2.6.0-rc3",
+  "base_checkpoint": "f70671b9f4b8e1886fd33453a2a7b2841c21a467",
+  "reason": "mandatory Bridge session batch-first/carrier-preflight anti-regression hardening requested before publish",
+  "corrections": [
+    "mandatory per-session Bridge execution gate",
+    "batch-first vs Result-First canonical KB rule",
+    "R0 and Windows CI contract coverage",
+    "RC3 source/workflow naming"
+  ],
+  "local_nonwindows_regression_passed": true,
+  "windows_exact_rc_execution_claimed": false,
+  "home_pc_runtime_2_6_activated": false,
+  "github_pushed": false,
+  "files": [
+    {
+      "path": ".github/workflows/windows-agent-validation.yml",
+      "bytes": 12184,
+      "sha256": "400080570181b675ec256935cf790988e1d475429c8eeaaadffa55b5764f37b7"
+    },
+    {
+      "path": "00_READ_FIRST_NEW_CHAT.md",
+      "bytes": 3459,
+      "sha256": "ac997b3667880e23c1d5370cd44c9fa17e7242fc9caf0735795625dbf2a2205a"
+    },
+    {
+      "path": "docs/BRIDGE_SESSION_EXECUTION_GATE_V1_FA.md",
+      "bytes": 5272,
+      "sha256": "5f4b9df279982f794775921cedb06b5b8b67cd2c49dfa660c14504279cc09893"
+    },
+    {
+      "path": "docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md",
+      "bytes": 18755,
+      "sha256": "da5413d8ca766bab28cf828ecbfe7c1257e5ccca1fbfc2a6e7c0a70d181d709d"
+    },
+    {
+      "path": "docs/knowledge/agent-lessons.jsonl",
+      "bytes": 12377,
+      "sha256": "3ac64a1ba1fce44393adc6e9b7ad745bdff42cb095ec50e016e08d292b81f284"
+    },
+    {
+      "path": "docs/status/R1_RELEASE_CANDIDATE_FREEZE.md",
+      "bytes": 3680,
+      "sha256": "55667df7526624a514bdabb40e29634948fad8a6e290f4fb716361dcf92e953b"
+    },
+    {
+      "path": "docs/status/R1_RELEASE_CANDIDATE_POLICY.json",
+      "bytes": 1487,
+      "sha256": "c645d234773bb79926314cdd188530cab2519ca9cfb30b11b15f048e33d41f58"
+    },
+    {
+      "path": "tools/release/Build-R1SourceRC.py",
+      "bytes": 4855,
+      "sha256": "c9cb39b7bed3b0631371afc11f14f4067b4361c6f5be4d05287cbb858efa8357"
+    },
+    {
+      "path": "tools/tests/run_r0_regression.py",
+      "bytes": 981,
+      "sha256": "ad6b18f135c7a486f2e25f284fd002b05360564e8b31e45ec36d76e72d70893b"
+    },
+    {
+      "path": "tools/tests/test_bridge_session_execution_gate.py",
+      "bytes": 749,
+      "sha256": "6c4eb3741d232d4848c97358a20c71c9eed8ce7042ab6e7b9ff0b6e4ef4b880f"
+    },
+    {
+      "path": "tools/tests/test_r1_release_candidate.py",
+      "bytes": 2166,
+      "sha256": "9717ce9117cf7ac98fead07666764f624956810f4ff842b15d76109b43f20fcb"
+    }
+  ]
+}

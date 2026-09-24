@@ -1,2 +1,6 @@
 extension/chrome/*.recovery-backup
 extension/chrome/*.pre-delivery-probe-*
+
+artifacts/
+.ci/tools/
+.ci/inno-compiler-path.txt

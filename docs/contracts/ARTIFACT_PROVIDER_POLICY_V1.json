@@ -2,57 +2,32 @@
   "schema": "sokna-artifact-provider-policy-v1",
   "version": 1,
   "artifact_root_required": true,
+  "core_provider_dependency": null,
   "provider_contract": {
-    "operations": [
-      "probe",
-      "acquire",
-      "verify"
-    ],
-    "required_metadata": [
-      "provider",
-      "source_ref",
-      "artifact_id",
-      "size",
-      "sha256",
-      "content_type",
-      "created_at"
-    ],
+    "operations": ["probe", "acquire", "verify", "register", "audit", "retention"],
+    "required_metadata": ["provider", "source_ref", "artifact_id", "size", "sha256", "content_type", "created_at", "auto_execute"],
     "rules": [
       "write-only-under-artifact-root",
       "hash-before-accept",
+      "remote-acquire-requires-expected-sha256",
       "no-auto-execute",
-      "audit-every-transition"
-    ]
+      "audit-every-transition",
+      "bounded-retry-resume",
+      "atomic-finalize",
+      "credential-values-never-persisted"
+    ],
+    "signature": {"optional": true, "required_means_fail_closed": true, "algorithms": ["ed25519-sha256"]},
+    "network": {"remote_scheme": "https", "max_redirects": 5, "raw_credential_query_forbidden": true, "credential_env_only": true, "cross_origin_authorization": false}
   },
   "providers": {
-    "local_file": {
-      "status": "mvp",
-      "transport": "filesystem"
-    },
-    "managed_folder": {
-      "status": "mvp-design",
-      "transport": "filesystem"
-    },
-    "github_release_asset": {
-      "status": "roadmap",
-      "transport": "https",
-      "note": "optional; not core dependency"
-    },
-    "object_storage": {
-      "status": "roadmap",
-      "transport": "https"
-    },
-    "chat_attachment": {
-      "status": "feasibility-only",
-      "transport": "page-session",
-      "fail_closed_schemes": [
-        "sandbox:"
-      ],
-      "note": "do not ship hidden-click fallback without evidence"
-    },
-    "github_actions_artifact": {
-      "status": "optional-evidence",
-      "must_not_back_result_plane": true
-    }
+    "local_file": {"status": "implemented-p4", "transport": "filesystem"},
+    "managed_folder": {"status": "implemented-p4", "transport": "filesystem-or-lan", "configured_roots_only": true},
+    "https": {"status": "implemented-p4", "transport": "https", "resume": true, "retry": true},
+    "github_release_asset": {"status": "implemented-p4", "transport": "https", "core_dependency": false},
+    "object_storage": {"status": "implemented-p4", "transport": "https", "signed_url_requires_url_env": true},
+    "google_drive": {"status": "plugin-boundary-p4", "transport": "https-url-env", "oauth_in_core": false},
+    "onedrive": {"status": "plugin-boundary-p4", "transport": "https-url-env", "oauth_in_core": false},
+    "chat_attachment": {"status": "feasibility-only", "transport": "page-session", "fail_closed_schemes": ["sandbox:"], "note": "do not ship hidden-click fallback without evidence"},
+    "github_actions_artifact": {"status": "optional-evidence", "must_not_back_result_plane": true}
   }
 }

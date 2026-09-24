@@ -36,6 +36,10 @@ type V2Config struct {
 	Token string `json:"token"`
 }
 
+type InstallLocator struct {
+	ConfigPath string `json:"config_path"`
+}
+
 const version = "3.0.0"
 const maxIn = 64 * 1024 * 1024
 const maxOut = 900 * 1024
@@ -73,23 +77,55 @@ func loadEndpoint() (string, string, error) {
 	if ep := strings.TrimSpace(os.Getenv("SOKNA_V3_AGENT_ENDPOINT")); ep != "" {
 		return ep, os.Getenv("SOKNA_V3_AGENT_TOKEN"), nil
 	}
-	local := os.Getenv("LOCALAPPDATA")
-	if local == "" {
-		return "", "", errors.New("LOCALAPPDATA not found")
-	}
-	p := filepath.Join(local, "SOKNA-Bridge-V2", "config.json")
-	b, err := os.ReadFile(p)
+	configPath, err := resolveConfigPath()
 	if err != nil {
-		return "", "", fmt.Errorf("V2 config not found: %w", err)
+		return "", "", err
+	}
+	b, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", "", fmt.Errorf("agent config not found: %w", err)
 	}
 	var c V2Config
 	if err := json.Unmarshal(b, &c); err != nil {
-		return "", "", fmt.Errorf("invalid V2 config: %w", err)
+		return "", "", fmt.Errorf("invalid agent config: %w", err)
 	}
-	if c.Port < 1 || c.Token == "" {
-		return "", "", errors.New("V2 config missing port/token")
+	if c.Port < 1 || c.Port > 65535 || strings.TrimSpace(c.Token) == "" {
+		return "", "", errors.New("agent config missing valid port/token")
 	}
 	return fmt.Sprintf("http://127.0.0.1:%d/api", c.Port), c.Token, nil
+}
+
+func resolveConfigPath() (string, error) {
+	if explicit := strings.TrimSpace(os.Getenv("SOKNA_AGENT_CONFIG_PATH")); explicit != "" {
+		if !filepath.IsAbs(explicit) {
+			return "", errors.New("SOKNA_AGENT_CONFIG_PATH must be absolute")
+		}
+		return filepath.Clean(explicit), nil
+	}
+	local := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
+	if local == "" {
+		return "", errors.New("LOCALAPPDATA not found")
+	}
+	locatorPath := filepath.Join(local, "SOKNA", "Agent", "install-locator.json")
+	if b, err := os.ReadFile(locatorPath); err == nil {
+		var locator InstallLocator
+		if json.Unmarshal(b, &locator) == nil {
+			p := strings.TrimSpace(locator.ConfigPath)
+			if filepath.IsAbs(p) {
+				return filepath.Clean(p), nil
+			}
+		}
+	}
+	candidates := []string{
+		filepath.Join(local, "SOKNA", "Agent", "config.json"),
+		filepath.Join(local, "SOKNA-Bridge-V2", "config.json"),
+	}
+	for _, p := range candidates {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("agent config not found via locator or compatibility paths")
 }
 
 func proxy(command json.RawMessage) (json.RawMessage, error) {

@@ -1,0 +1,140 @@
+{
+  "schema": "sokna-development-checkpoint-manifest-v1",
+  "date": "2026-09-24",
+  "phase": "P1 Universal Installer & Maintenance — hardened complete unit",
+  "base_local_checkpoint": "7689d86da852b10dc0f9eadb5bb258829238a978",
+  "foundation_checkpoint": "3cf42e0",
+  "canonical_recorded_upstream": "402eae1b23df7bb7e829ff8e3656c816fb6a4442",
+  "accepted_agent": "2.5.7 R4",
+  "accepted_extension": "3.10.5",
+  "development_runtime": "2.6.0 source-only",
+  "windows_live_claimed": false,
+  "windows_acceptance_authored": true,
+  "files": [
+    {
+      "path": ".github/workflows/windows-agent-validation.yml",
+      "bytes": 6489,
+      "sha256": "7b3a3860849e58cf2dafdd225448dc6ea7d53c0bf0cc4476b0426c5972ecb8cb"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 125,
+      "sha256": "9c20cd8c6c25e85efc93b0586e0ac7e93d691aadd14121f4d746effa2a5141dc"
+    },
+    {
+      "path": "00_READ_FIRST_NEW_CHAT.md",
+      "bytes": 2725,
+      "sha256": "ecc57f1bffd31036b33dc46049b5887630f0f38cfb50ba1207f1a6f8c77544b1"
+    },
+    {
+      "path": "docs/contracts/INSTALLER_MAINTENANCE_CONTRACT_V1_FA.md",
+      "bytes": 8245,
+      "sha256": "ada758a3dc2cc0a616c97e0d3ae7596b82e24191e0f855148a8a8a1c2a7b629d"
+    },
+    {
+      "path": "docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md",
+      "bytes": 4301,
+      "sha256": "b6bd2390d7b96d85ed76f623e9a2331da4682da4a7f5db59590526c97b8dae38"
+    },
+    {
+      "path": "docs/status/DEVELOPMENT_BASELINE_2026-09-24.md",
+      "bytes": 3078,
+      "sha256": "5e860d548b5508d78bb307bbcb17ad6cd1c41093576e2b823b584ac827ab82c2"
+    },
+    {
+      "path": "docs/status/P1_INSTALLER_MAINTENANCE_DEV_VALIDATION.md",
+      "bytes": 4734,
+      "sha256": "717142677947c343e99421947699581175465559e2439faf8b3037fe0899d206"
+    },
+    {
+      "path": "installer/windows/README.md",
+      "bytes": 761,
+      "sha256": "0b4e9c315a4d520ffd92d13726510bfeba5110dd06a7ef079aed1f01062101e6"
+    },
+    {
+      "path": "installer/windows/SOKNA.Agent.iss",
+      "bytes": 5608,
+      "sha256": "ab079c91b8d56ea4fa6e9c8f1c629598a3c23bc6f1130bde97ee668a075f0584"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Launcher/Program.cs",
+      "bytes": 5418,
+      "sha256": "3f90441cec5a75dd452d297c0a618e11c684ef054c54883753172a223f6f9582"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Launcher/Sokna.Agent.Launcher.csproj",
+      "bytes": 542,
+      "sha256": "9883c7c29a30f927e872702babcae0c13065f1db5c870ae308d7711275b00b57"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/Configuration.cs",
+      "bytes": 5565,
+      "sha256": "1f8e021d506fac7739c58bbe0fc7cf14dbc8d9b63b72102850e57661bc8cb946"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/Core.cs",
+      "bytes": 7421,
+      "sha256": "f92c4ea0cdd2f3bb99254ec241d94ca154ac63ff174dd89332f4f0667c9545a3"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/HealthDiagnostics.cs",
+      "bytes": 6011,
+      "sha256": "339b0d6fbbe12b8763ed28a49455d9a8a7fb596ef065330b936cdfa2c58536cd"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/Lifecycle.cs",
+      "bytes": 16825,
+      "sha256": "b62f9d373773e5cc67bcc16645086cd049e6cad1ec66f2210a97ef8f4460eab8"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/Models.cs",
+      "bytes": 2207,
+      "sha256": "ab9b1fd2c69755066360aaed4a01f5d1f928e9ed35e98581ae8a67ba8834a6ea"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/Program.cs",
+      "bytes": 9125,
+      "sha256": "5f30e0859971e3b2a9d36e25f015ec029580bd6b9707b4fcabc6fb30364d030c"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/Sokna.Agent.Maintenance.csproj",
+      "bytes": 662,
+      "sha256": "0bb504a27a84450614ac4795820a768759283fcb57c20c974f538a29717af3c4"
+    },
+    {
+      "path": "maintenance/Sokna.Agent.Maintenance/SupportBundle.cs",
+      "bytes": 3687,
+      "sha256": "77e84a40cd5a21bc840096539d9e415082a9b4e1d47f576a9e1b0ac3c96075ba"
+    },
+    {
+      "path": "native/host/go.mod",
+      "bytes": 45,
+      "sha256": "c745e2fcc2b59e44d123af3e63aa25e5e99249a7db6c6e9432541530eefa95cf"
+    },
+    {
+      "path": "native/host/main.go",
+      "bytes": 5501,
+      "sha256": "1880a89355470814b70477a119d0dea4b6c66c6b2d35655fa5ce2e5d05f289ac"
+    },
+    {
+      "path": "native/host/main_test.go",
+      "bytes": 1679,
+      "sha256": "a0addfd87582d4432ab939b63432b09a672a51f870e4d1368e038bf895b66a2f"
+    },
+    {
+      "path": "tools/installer/Build-P1Installer.ps1",
+      "bytes": 4718,
+      "sha256": "391d12b615bd950b7cb04365e360af1e9607d40bde6e28a8e40b8c0b02d818f3"
+    },
+    {
+      "path": "tools/installer/Test-P1Windows.ps1",
+      "bytes": 7325,
+      "sha256": "c8e539d3ea82b2ac9e2e1db856449418f5107ffc52fc3f523ba152fcd8cb67c6"
+    },
+    {
+      "path": "tools/tests/test_p1_installer_contract.py",
+      "bytes": 5407,
+      "sha256": "898e8d0705b3dc82bb536353bb59afb6d39cd45e19f5f780357a7c51cfa15642"
+    }
+  ]
+}

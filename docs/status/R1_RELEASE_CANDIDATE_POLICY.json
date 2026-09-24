@@ -1,0 +1,28 @@
+{
+  "schema": "sokna-r1-release-candidate-policy-v1",
+  "candidate_ref": "sokna-agent-2.6.0-rc3",
+  "candidate_agent_version": "2.6.0",
+  "accepted_live_agent_baseline": "2.5.7-r4",
+  "accepted_extension_version": "3.10.5",
+  "source_commit_binding": "generated from clean HEAD by tools/release/Build-R1SourceRC.py after the R1 checkpoint commit; candidate tag must point to that exact commit",
+  "source_bundle": "deterministic tracked Git blobs plus __SOKNA_RC__/SOURCE_MANIFEST.json",
+  "ci_workflow": ".github/workflows/windows-agent-validation.yml",
+  "ci_profile": "full",
+  "ci_expected_commit_required": true,
+  "windows_execution_claimed_locally": false,
+  "home_pc_allowed_before_ci_pass": false,
+  "next_gate": "CI exact-RC Windows full-profile validation",
+  "rc1_status": "superseded_pre_ci_due_windows_endpoint_findings",
+  "rc2_corrections": [
+    "explicit UTF-8 reads in cross-platform Python source-contract tests",
+    "PowerShell 5.1 conservative component process start-time expression",
+    "operational KB evidence/rules for carrier preflight and acceptance-endpoint no-inline-patching"
+  ],
+  "rc2_status": "superseded_pre_push_due_bridge_session_anti_regression_hardening",
+  "rc3_corrections": [
+    "mandatory Bridge session execution gate in READ-FIRST",
+    "canonical batch-first vs Result-First knowledge rule",
+    "R0/Windows CI contract test for Bridge session gate",
+    "no runtime/product authority expansion; operational anti-regression only"
+  ]
+}
