@@ -73,6 +73,7 @@ assert not re.search(r'(?im)(^|[;\s])(gci|gc|cp|mv|rm|kill|sleep|gfh)(?=\s|;|$)'
 
 workflow=(ROOT/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
 assert '$buildOutput=@(' in workflow and 'Select-Object -Last 1' in workflow
+assert 'timeout-minutes: 30' in workflow
 
 windows_acceptance = (ROOT / 'tools/installer/Test-P1Windows.ps1').read_text(encoding='utf-8')
 for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime']:
