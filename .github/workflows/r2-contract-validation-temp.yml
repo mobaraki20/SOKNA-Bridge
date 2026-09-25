@@ -13,6 +13,7 @@ jobs:
       - name: JavaScript syntax
         run: |
           node --check extension/chrome/protocol.js
+          node --check extension/chrome/capability_gate.js
           node --check extension/chrome/semantic_gate.js
           node --check extension/chrome/semantic_core.js
           node --check extension/chrome/semantic_intent.js
@@ -22,6 +23,8 @@ jobs:
           node --check extension/chrome/background.js
       - name: Unified transport regression
         run: node tools/tests/test_transport_v3105.mjs
+      - name: Capability preflight regression
+        run: node tools/tests/test_capability_gate.mjs
       - name: R2 contract reliability tests
         run: |
           python -m py_compile tools/sokna_command_compiler.py tools/tests/test_r2_contract_reliability.py
