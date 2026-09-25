@@ -34,6 +34,8 @@ jobs:
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           python tools/tests/test_r2_browser_audit.py
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          python tools/tests/test_browser_credential_contract.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           python tools/tests/test_r2_session_continuity.py
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           node tools/tests/test_transport_v3105.mjs
