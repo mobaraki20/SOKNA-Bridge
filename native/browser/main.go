@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,7 +15,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal("usage: sokna-browser-qa <run|validate|version> ...")
+		fatal("usage: sokna-browser-qa <run|validate|credential|version> ...")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -23,11 +24,68 @@ func main() {
 		validateCmd(os.Args[2:])
 	case "run":
 		runCmd(os.Args[2:])
+	case "credential":
+		credentialCmd(os.Args[2:])
 	default:
 		fatal("unknown command: " + os.Args[1])
 	}
 }
 func fatal(s string) { fmt.Fprintln(os.Stderr, s); os.Exit(2) }
+
+func credentialCmd(args []string) {
+	if len(args) < 1 {
+		fatal("usage: sokna-browser-qa credential <set|list|delete> ...")
+	}
+	switch args[0] {
+	case "set":
+		fs := flag.NewFlagSet("credential set", flag.ExitOnError)
+		id := fs.String("id", "", "credential id")
+		username := fs.String("username", "", "username")
+		_ = fs.Parse(args[1:])
+		if *id == "" {
+			fatal("--id required")
+		}
+		b, err := io.ReadAll(io.LimitReader(os.Stdin, 16385))
+		if err != nil {
+			fatal("credential secret read failed")
+		}
+		if len(b) > 16384 {
+			fatal("credential secret exceeds 16384 bytes")
+		}
+		secret := string(b)
+		secret = strings.TrimSuffix(secret, "\r\n")
+		secret = strings.TrimSuffix(secret, "\n")
+		if err := storeCredential(*id, *username, secret); err != nil {
+			fatal(err.Error())
+		}
+		out := map[string]any{"ok": true, "id": *id, "username": *username, "store": "windows-dpapi"}
+		enc, _ := json.Marshal(out)
+		fmt.Println(string(enc))
+	case "list":
+		items, err := listCredentials()
+		if err != nil {
+			fatal(err.Error())
+		}
+		out := map[string]any{"ok": true, "credentials": items, "store": "windows-dpapi"}
+		enc, _ := json.Marshal(out)
+		fmt.Println(string(enc))
+	case "delete":
+		fs := flag.NewFlagSet("credential delete", flag.ExitOnError)
+		id := fs.String("id", "", "credential id")
+		_ = fs.Parse(args[1:])
+		if *id == "" {
+			fatal("--id required")
+		}
+		if err := deleteCredential(*id); err != nil {
+			fatal(err.Error())
+		}
+		out := map[string]any{"ok": true, "id": *id, "deleted": true}
+		enc, _ := json.Marshal(out)
+		fmt.Println(string(enc))
+	default:
+		fatal("unknown credential command: " + args[0])
+	}
+}
 
 func validateCmd(args []string) {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
