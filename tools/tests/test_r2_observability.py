@@ -10,7 +10,8 @@ HTML = (ROOT / "extension" / "chrome" / "popup.html").read_text(encoding="utf-8"
 
 for action in ['"job.list"', '"job.events"', '"bridge.activity"']:
     assert action in HOST, f"missing observability action {action}"
-assert 'Source: "agent-job-store"' in HOST
+# Assert the semantic source value, not gofmt/whitespace formatting.
+assert '"agent-job-store"' in HOST and 'Source' in HOST
 assert 'owned_processes' in HOST
 assert 'worker_pid' in HOST
 assert 'events.jsonl' in HOST
