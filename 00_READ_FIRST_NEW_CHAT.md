@@ -4,6 +4,9 @@ Status: MANDATORY.
 **First read:** `docs/handoffs/ARCHITECTURE_ROADMAP_2026-09-25_FA.md`.
 This is the current architecture/reliability roadmap and records the 2026-09-25 decisions about semantic command compilation, contract simplification, fail-silent/NACK closure, ACK/activity monitoring, durable job events, outbound artifacts, Browser Inspection, new-chat continuity, the current P1 installer blocker, and the phased continuation plan. Do not issue a Bridge command before reading it.
 
+**Then read:** `docs/contracts/AI_SESSION_BOOTSTRAP_CONTINUITY_V1_FA.md`.
+This contract defines the product-level solution for ChatGPT context exhaustion: Chat is an ephemeral client, while Agent/Bridge must persist work-session state and expose a self-describing machine-readable bootstrap so a new AI chat learns the correct command protocol, route policy, artifact/file transfer rules, Git/GitHub capability, resumable jobs, evidence refs and exact continuation state without the user teaching it again.
+
 Then read `docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md` for historical implementation checkpoints and detailed prior evidence. D0 through P6, R0 Whole-product Integration, and the R1 source-freeze work are implemented as development checkpoints; no Windows exact-RC/live acceptance is claimed. RC1 is superseded. RC2 added Windows portability corrections, but later checkpoints and the current roadmap supersede stale next-action wording in older handoffs. Always verify current branch/HEAD, CI and live versions before acting.
 
 - Canonical development branch: `dev/bootstrap-v2.5`. Treat the checked-out repository HEAD as the durable source; verify it with Git before any sync/reset/clean and never rely on a hard-coded SHA in this file.
@@ -18,7 +21,8 @@ Then read `docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md` for historical imple
 - Any correlated invalid command must become a machine-readable NACK; fail-silent paths are defects, not acceptable behavior.
 - Chat should receive only concise started/final/failure status. Detailed step/job/process state belongs in the planned Activity Monitor backed by Agent event data.
 - Browser/UI inspection target is controlled autonomous inspection (navigate/click/capture evidence), not live screen sharing. Browser evidence must use Result/Artifact planes and should not require the user to relay screenshots manually.
-- Chat exhaustion is a normal operating condition: continue from roadmap + handoff + KB + live capability probe instead of rediscovering or asking the user to re-explain past architecture decisions.
+- Chat exhaustion is a normal operating condition: the target architecture is `bridge.bootstrap + persistent work_session + session.resume`; docs are bootstrap/fallback during migration, not the final source of operational memory.
+- A new AI chat must not rely on remembered rules for carrier format, file size routing, batch/job choice, Artifact Plane, or Git/GitHub use. Those must be advertised/enforced by Bridge/compiler policy.
 - Preserve unknown untracked files. Acceptance endpoints are evidence/activation targets, not development workspaces.
 - No release/live claim without exact Windows evidence.
 
