@@ -4,3 +4,9 @@ extension/chrome/*.pre-delivery-probe-*
 artifacts/
 .ci/tools/
 .ci/inno-compiler-path.txt
+
+# Deterministic test/build by-products. These must never make an exact-commit
+# release checkout look dirty after Python contract validation.
+__pycache__/
+*.py[cod]
+.pytest_cache/
