@@ -4,6 +4,9 @@ Status: MANDATORY.
 **First read:** `docs/handoffs/ARCHITECTURE_ROADMAP_2026-09-25_FA.md`.
 This is the current architecture/reliability roadmap and records the 2026-09-25 decisions about semantic command compilation, contract simplification, fail-silent/NACK closure, ACK/activity monitoring, durable job events, outbound artifacts, Browser Inspection, new-chat continuity, the current P1 installer blocker, and the phased continuation plan. Do not issue a Bridge command before reading it.
 
+**Then read:** `docs/handoffs/R2_IMPLEMENTATION_EXECUTION_ORDER_2026-09-25_FA.md`.
+This is the canonical execution order when older roadmap wording conflicts: complete R2-A through R2-E first, then P1-FIX, then R3 exact-commit whole-product Windows acceptance, and only after all gates PASS produce the user-test Setup.exe. The installer is the final validated output, not the next development step.
+
 **Then read:** `docs/contracts/AI_SESSION_BOOTSTRAP_CONTINUITY_V1_FA.md`.
 This contract defines the product-level solution for ChatGPT context exhaustion: Chat is an ephemeral client, while Agent/Bridge must persist work-session state and expose a self-describing machine-readable bootstrap so a new AI chat learns the correct command protocol, route policy, artifact/file transfer rules, Git/GitHub capability, resumable jobs, evidence refs and exact continuation state without the user teaching it again.
 
@@ -31,4 +34,4 @@ Then read `docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md` for historical imple
 - No release/live claim without exact Windows evidence.
 
 ## Current critical continuation
-Read the current roadmap for the exact phase order. At the 2026-09-25 checkpoint, P1 Windows lifecycle acceptance still has a synthetic-payload blocker and the architecture work is planned as R2 reliability/observability/artifact/browser/new-chat phases before final whole-product Windows acceptance and LIVE promotion.
+Read the current roadmap plus the canonical R2 execution-order handoff. Complete R2-A through R2-E first; then fix and prove P1 Windows lifecycle; then R3 whole-product exact-commit Windows acceptance; only after those gates PASS may a user-test Setup.exe be produced and handed over.
