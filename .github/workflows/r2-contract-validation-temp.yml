@@ -21,14 +21,19 @@ jobs:
           node --check extension/chrome/content.js
           node --check extension/chrome/background_bootstrap.js
           node --check extension/chrome/background.js
+          node --check extension/chrome/popup.js
       - name: Unified transport regression
         run: node tools/tests/test_transport_v3105.mjs
       - name: Capability preflight regression
         run: node tools/tests/test_capability_gate.mjs
       - name: R2 contract reliability tests
         run: |
-          python -m py_compile tools/sokna_command_compiler.py tools/tests/test_r2_contract_reliability.py
+          python -m py_compile tools/sokna_command_compiler.py tools/tests/test_r2_contract_reliability.py tools/tests/test_r2_observability.py
           python tools/tests/test_r2_contract_reliability.py
+          python tools/tests/test_r2_observability.py
+      - name: Native Host observability unit tests
+        working-directory: native/host
+        run: go test ./...
       - name: Compiler smoke
         run: |
           python tools/sokna_command_compiler.py --meta --json '{"intent":"exec","action":"ping","params":{}}'
