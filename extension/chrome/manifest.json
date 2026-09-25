@@ -25,6 +25,8 @@
       ],
       "js": [
         "protocol.js",
+        "semantic_core.js",
+        "semantic_intent.js",
         "chat_artifact_core.js",
         "dom_core.js",
         "content.js"
