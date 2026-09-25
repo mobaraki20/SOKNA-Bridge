@@ -18,6 +18,7 @@ jobs:
           node --check extension/chrome/semantic_intent.js
           node --check extension/chrome/dom_core.js
           node --check extension/chrome/content.js
+          node --check extension/chrome/background_bootstrap.js
           node --check extension/chrome/background.js
       - name: Unified transport regression
         run: node tools/tests/test_transport_v3105.mjs
