@@ -1,0 +1,78 @@
+name: P1 Full Validation Temporary
+run-name: P1 Full Validation Temporary [${{ github.sha }}]
+
+on:
+  push:
+    branches:
+      - ci/full-validation-25cf63f8
+
+permissions:
+  contents: read
+
+jobs:
+  p1-full:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Acquire pinned Inno Setup compiler
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path .ci/tools -Force | Out-Null
+          nuget install Tools.InnoSetup -Version 6.7.3 -OutputDirectory .ci/tools -NonInteractive
+          $iscc=Get-ChildItem .ci/tools -Filter ISCC.exe -File -Recurse | Select-Object -First 1
+          if(-not $iscc){ throw 'PINNED_INNO_COMPILER_NOT_FOUND' }
+          $iscc.FullName | Set-Content .ci/inno-compiler-path.txt -Encoding ASCII
+
+      - name: Build self-contained maintenance, launcher and Setup.exe
+        shell: powershell
+        run: |
+          $head=((& git rev-parse HEAD) -join "`n").Trim()
+          if(-not [string]::Equals($head,'${{ github.sha }}',[StringComparison]::OrdinalIgnoreCase)){ throw "CHECKOUT_SHA_MISMATCH: expected=${{ github.sha }} actual=$head" }
+          $iscc=(Get-Content .ci/inno-compiler-path.txt -Raw).Trim()
+          $buildOutput=@(./tools/installer/Build-P1Installer.ps1 -InnoCompiler $iscc -ExpectedSourceCommit $head)
+          $result=($buildOutput | Select-Object -Last 1) | ConvertFrom-Json
+          if(-not $result.ok){ throw 'P1_INSTALLER_BUILD_FAILED' }
+          $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Agent-Setup-*.exe' -File | Select-Object -First 1
+          if(-not $setup){ throw 'P1_SETUP_EXE_MISSING' }
+          Write-Host ('P1_SETUP_READY '+$setup.FullName)
+
+      - name: P1 clean-system install, repair, upgrade, rollback and uninstall acceptance
+        shell: powershell
+        run: |
+          $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Agent-Setup-*.exe' -File | Select-Object -First 1
+          if(-not $setup){ throw 'P1_SETUP_EXE_MISSING_FOR_ACCEPTANCE' }
+          ./tools/installer/Test-P1Windows.ps1 -SetupPath $setup.FullName
+
+      - name: Write validation evidence
+        shell: powershell
+        run: |
+          $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Agent-Setup-*.exe' -File | Select-Object -First 1
+          $evidence=[ordered]@{
+            schema='sokna-p1-temp-full-validation-v1'
+            source_commit='${{ github.sha }}'
+            acceptance='passed'
+            setup_name=$setup.Name
+            setup_sha256=(Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            validated_at=(Get-Date).ToUniversalTime().ToString('o')
+          }
+          $evidence | ConvertTo-Json -Depth 5 | Set-Content artifacts/windows/p1-full-evidence.json -Encoding UTF8
+
+      - name: Upload validated Setup.exe and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOKNA-Agent-P1-full-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            artifacts/windows/setup/SOKNA-Agent-Setup-*.exe
+            artifacts/windows/installer-payload/manifests/installed-manifest.json
+            artifacts/windows/p1-full-evidence.json
