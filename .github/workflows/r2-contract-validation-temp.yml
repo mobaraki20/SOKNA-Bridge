@@ -32,11 +32,12 @@ jobs:
         run: node tools/tests/test_outbound_attachment_core.mjs
       - name: R2 acceptance tests
         run: |
-          python -m py_compile tools/sokna_command_compiler.py tools/tests/test_r2_contract_reliability.py tools/tests/test_r2_observability.py tools/tests/test_r2_outbound_artifacts.py tools/tests/test_r2_browser_audit.py tools/tests/test_r2_session_continuity.py
+          python -m py_compile tools/sokna_command_compiler.py tools/tests/test_r2_contract_reliability.py tools/tests/test_r2_observability.py tools/tests/test_r2_outbound_artifacts.py tools/tests/test_r2_browser_audit.py tools/tests/test_browser_credential_contract.py tools/tests/test_r2_session_continuity.py
           python tools/tests/test_r2_contract_reliability.py
           python tools/tests/test_r2_observability.py
           python tools/tests/test_r2_outbound_artifacts.py
           python tools/tests/test_r2_browser_audit.py
+          python tools/tests/test_browser_credential_contract.py
           python tools/tests/test_r2_session_continuity.py
       - name: Native Host R2 unit tests
         working-directory: native/host
