@@ -1,0 +1,22 @@
+import fs from "node:fs";
+import vm from "node:vm";
+const src=fs.readFileSync(new URL("../../extension/chrome/activity_journal.js",import.meta.url),"utf8");
+vm.runInThisContext(src,{filename:"activity_journal.js"});
+const Core=globalThis.__SOKNA_ACTIVITY_JOURNAL_V1__;
+if(!Core)throw new Error("activity journal not loaded");
+let store=[],clock=1000;
+const journal=Core.create({load:async()=>store,save:async v=>{store=structuredClone(v)},now:()=>clock,maxEntries:50});
+await journal.append({event:"command.received",commandId:"cmd-1",action:"ping",executed:false});
+clock++;
+await journal.append({event:"native.dispatch.started",commandId:"cmd-1",action:"ping",executed:true});
+clock++;
+await journal.append({event:"native.dispatch.completed",commandId:"cmd-1",action:"ping",ok:true,executed:true});
+let rows=await journal.list({commandId:"cmd-1",limit:10});
+if(rows.length!==3)throw new Error("journal filter failed");
+if(rows[0].event!=="command.received"||rows[2].ok!==true)throw new Error("journal ordering failed");
+for(let i=0;i<60;i++){clock++;await journal.append({event:"tick",commandId:`cmd-${i+2}`})}
+rows=await journal.list({limit:500});
+if(rows.length!==50)throw new Error("journal retention bound failed");
+await journal.clear();
+if((await journal.list()).length!==0)throw new Error("journal clear failed");
+console.log("ACTIVITY_JOURNAL_PASS");
