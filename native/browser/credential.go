@@ -52,6 +52,33 @@ func credentialPath(id string) (string, error) {
 	return filepath.Join(dir, id+".bin"), nil
 }
 
+func replaceCredentialFile(path string, protected []byte) error {
+	tmp := fmt.Sprintf("%s.tmp.%d", path, os.Getpid())
+	backup := fmt.Sprintf("%s.bak.%d", path, os.Getpid())
+	_ = os.Remove(tmp)
+	_ = os.Remove(backup)
+	if err := os.WriteFile(tmp, protected, 0o600); err != nil {
+		return err
+	}
+	defer os.Remove(tmp)
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return os.Rename(tmp, path)
+	} else if err != nil {
+		return err
+	}
+	// Windows os.Rename does not reliably replace an existing destination.
+	// Preserve the old DPAPI blob until the new one has been activated.
+	if err := os.Rename(path, backup); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Rename(backup, path)
+		return err
+	}
+	_ = os.Remove(backup)
+	return nil
+}
+
 func storeCredential(id, username, secret string) error {
 	if err := validateCredentialID(id); err != nil {
 		return err
@@ -78,15 +105,7 @@ func storeCredential(id, username, secret string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, protected, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	return replaceCredentialFile(path, protected)
 }
 
 func loadCredential(id string) (CredentialRecord, error) {
