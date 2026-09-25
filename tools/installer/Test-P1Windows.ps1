@@ -35,10 +35,14 @@ function New-SyntheticPayload([string]$Source,[string]$Destination,[string]$Vers
 
   # Rebuild ownership from the actual destination tree. Never splice entries from
   # the previous manifest: a stale path there must not survive into a synthetic upgrade.
-  $files=@(Get-ChildItem -LiteralPath $Destination -File -Recurse|Where-Object{
+  # Use Path.GetRelativePath instead of substring math, and convert separators with
+  # a single backslash. PowerShell single-quoted strings do not use C-style escaping,
+  # so '\\' would create two literal separators and can make Test-Path fail on Windows.
+  $destinationRoot=[IO.Path]::GetFullPath($Destination).TrimEnd('\')
+  $files=@(Get-ChildItem -LiteralPath $destinationRoot -File -Recurse|Where-Object{
     -not [string]::Equals($_.FullName,$manifestPath,[StringComparison]::OrdinalIgnoreCase)
   }|ForEach-Object{
-    $rel=$_.FullName.Substring($Destination.Length).TrimStart('\').Replace('\','/')
+    $rel=[IO.Path]::GetRelativePath($destinationRoot,$_.FullName).Replace('\','/')
     $owner=if($rel.StartsWith('runtime/',[StringComparison]::OrdinalIgnoreCase)){'maintenance'}else{'installer'}
     [pscustomobject]@{path=$rel;sha256=(Sha $_.FullName);bytes=$_.Length;owner=$owner}
   }|Sort-Object path)
@@ -51,7 +55,7 @@ function New-SyntheticPayload([string]$Source,[string]$Destination,[string]$Vers
   foreach($file in @($manifest.files)){
     $rel=[string]$file.path
     if([string]::IsNullOrWhiteSpace($rel)-or[IO.Path]::IsPathRooted($rel)-or$rel.Contains('..')){throw ('SYNTHETIC_PAYLOAD_UNSAFE_PATH: '+$rel)}
-    $candidate=Join-Path $Destination ($rel.Replace('/','\'))
+    $candidate=Join-Path $destinationRoot ($rel.Replace('/','\'))
     if(-not(Test-Path -LiteralPath $candidate -PathType Leaf)){throw ('SYNTHETIC_PAYLOAD_OWNED_PATH_MISSING: '+$rel)}
     $actual=Sha $candidate
     if(-not[string]::Equals($actual,[string]$file.sha256,[StringComparison]::OrdinalIgnoreCase)){throw ('SYNTHETIC_PAYLOAD_HASH_MISMATCH: '+$rel)}
