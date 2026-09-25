@@ -1,0 +1,72 @@
+name: P1 Windows Lifecycle Temporary
+on:
+  push:
+    branches: [r2/contract-reliability]
+permissions:
+  contents: read
+concurrency:
+  group: p1-windows-lifecycle-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  p1:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: P1 and R2 source contracts
+        shell: powershell
+        run: |
+          python tools/tests/test_p1_installer_contract.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          python tools/tests/test_r2_contract_reliability.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          python tools/tests/test_r2_observability.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          python tools/tests/test_r2_outbound_artifacts.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          python tools/tests/test_r2_browser_audit.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          python tools/tests/test_r2_session_continuity.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          node tools/tests/test_transport_v3105.mjs
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          node tools/tests/test_capability_gate.mjs
+      - name: Native unit tests
+        shell: powershell
+        run: |
+          Push-Location native/agent; try { go test ./...; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE} } finally { Pop-Location }
+          Push-Location native/host; try { go test ./...; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE} } finally { Pop-Location }
+          Push-Location native/browser; try { go test ./...; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE} } finally { Pop-Location }
+          Push-Location native/provider; try { go test ./...; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE} } finally { Pop-Location }
+      - name: Acquire pinned Inno Setup
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path .ci/tools -Force | Out-Null
+          nuget install Tools.InnoSetup -Version 6.7.3 -OutputDirectory .ci/tools -NonInteractive
+          $iscc=Get-ChildItem .ci/tools -Filter ISCC.exe -File -Recurse | Select-Object -First 1
+          if(-not $iscc){throw 'PINNED_INNO_COMPILER_NOT_FOUND'}
+          $iscc.FullName | Set-Content .ci/inno-compiler-path.txt -Encoding ASCII
+      - name: Build exact-commit Setup for lifecycle validation only
+        shell: powershell
+        run: |
+          $iscc=(Get-Content .ci/inno-compiler-path.txt -Raw).Trim()
+          $output=@(./tools/installer/Build-P1Installer.ps1 -InnoCompiler $iscc -ExpectedSourceCommit '${{ github.sha }}')
+          $result=($output|Select-Object -Last 1)|ConvertFrom-Json
+          if(-not $result.ok){throw 'P1_INSTALLER_BUILD_FAILED'}
+          $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Agent-Setup-*.exe' -File|Select-Object -First 1
+          if(-not $setup){throw 'P1_SETUP_EXE_MISSING'}
+          Write-Host ('P1_VALIDATION_SETUP_SHA256='+(Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant())
+      - name: Full P1 clean install and lifecycle acceptance
+        shell: powershell
+        run: |
+          $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Agent-Setup-*.exe' -File|Select-Object -First 1
+          if(-not $setup){throw 'P1_SETUP_EXE_MISSING_FOR_ACCEPTANCE'}
+          ./tools/installer/Test-P1Windows.ps1 -SetupPath $setup.FullName
