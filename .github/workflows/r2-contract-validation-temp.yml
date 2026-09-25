@@ -13,14 +13,18 @@ jobs:
       - name: JavaScript syntax
         run: |
           node --check extension/chrome/protocol.js
+          node --check extension/chrome/semantic_gate.js
+          node --check extension/chrome/semantic_core.js
+          node --check extension/chrome/semantic_intent.js
+          node --check extension/chrome/dom_core.js
           node --check extension/chrome/content.js
           node --check extension/chrome/background.js
-      - name: Existing transport regression
+      - name: Unified transport regression
         run: node tools/tests/test_transport_v3105.mjs
       - name: R2 contract reliability tests
         run: |
-          python -m py_compile tools/sokna_carrier_guard.py tools/sokna_command_compiler.py tools/tests/test_r2_contract_reliability.py
+          python -m py_compile tools/sokna_command_compiler.py tools/tests/test_r2_contract_reliability.py
           python tools/tests/test_r2_contract_reliability.py
       - name: Compiler smoke
         run: |
-          python tools/sokna_command_compiler.py --extension-version 3.10.9 --meta --json '{"intent":"exec","action":"ping","params":{}}'
+          python tools/sokna_command_compiler.py --meta --json '{"intent":"exec","action":"ping","params":{}}'
