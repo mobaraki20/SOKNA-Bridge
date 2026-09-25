@@ -11,13 +11,14 @@ const B64_START="[SOKNA-CMD-B64]";
 const B64_END="[/SOKNA-CMD-B64]";
 const seen=new Set();
 const rejectedB64=new Set();
+const rejectedLegacy=new Set();
 const observers=new Map();
 
 let armed=false,disposed=false;
 let lastScanAt=0,lastCommandDetectedAt=0,lastPostMethod="",lastPostError="";
 let mutationCallbacks=0,addedNodesSeen=0,characterMutationsSeen=0;
 let legacyMarkerCaptures=0,lastLegacyCaptureAt=0,lastLegacySource="";
-let immediateTextChars=0,b64ParseErrors=0;
+let immediateTextChars=0,b64ParseErrors=0,legacyParseErrors=0;
 let deliveryStateTimer=0,lastDeliveryGate="",lastDeliveryReadySignalAt=0,periodicScanTimer=0;
 
 // V3.8: secondary streaming reassembly path for long commands.
@@ -53,17 +54,39 @@ function hasRecentV4Start(id){const ts=recentV4Starts.get(String(id||""));return
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const utf8Bytes=s=>PROTO.bytes(s);
 
+function stableTransportRef(s){
+  s=String(s||"");let h=2166136261;
+  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}
+  return "rx-"+(h>>>0).toString(16).padStart(8,"0");
+}
+function commandIdHint(raw){
+  try{const x=JSON.parse(raw);return String(x?.id||x?.i||"")}catch{}
+  const m=String(raw||"").match(/(?:"id"|"i")\s*:\s*"([A-Za-z0-9._:-]{1,96})"/);
+  return m?.[1]||"";
+}
+function validCommandId(id){return /^[A-Za-z0-9._-]{1,96}$/.test(String(id||""))}
+function legacyFailure(raw,source,reason,error,report=true){
+  const clipped=String(raw||"").slice(0,4096),ref=stableTransportRef(clipped||source||reason);
+  const key=`${ref}:${reason}`;if(rejectedLegacy.has(key))return;
+  rejectedLegacy.add(key);if(rejectedLegacy.size>64)rejectedLegacy.delete(rejectedLegacy.values().next().value);
+  legacyParseErrors++;
+  if(!report)return;
+  const hinted=commandIdHint(clipped),commandId=validCommandId(hinted)?hinted:"";
+  chrome.runtime.sendMessage({type:"TRANSPORT_DIAG",diagnostic:{kind:"command-intake-failed",final:!!commandId,reason,version:VERSION,error:String(error?.message||error||reason),source,commandId,transportRef:ref}}).catch(()=>{});
+}
 
 function pageBroken(){
   return (document.body?.innerText||"").toLowerCase().includes("content failed to load");
 }
-function commands(text){
+function commands(text,report=true){
   const out=[];RE.lastIndex=0;let m;
   while((m=RE.exec(text||""))){
+    const raw=m[1].trim();
     try{
-      const c=JSON.parse(m[1].trim());
+      const c=JSON.parse(raw);
       if(c?.id&&c?.action)out.push(c);
-    }catch{}
+      else legacyFailure(raw,"legacy-v2","invalid_compact_command",new Error("legacy command requires id and action"),report);
+    }catch(e){legacyFailure(raw,"legacy-v2","invalid_json",e,report)}
   }
   return out;
 }
@@ -75,16 +98,6 @@ function b64urlDecodeUtf8(s){
   const bin=atob(s),bytes=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
   return new TextDecoder().decode(bytes);
-}
-function stableTransportRef(s){
-  s=String(s||"");let h=2166136261;
-  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}
-  return "rx-"+(h>>>0).toString(16).padStart(8,"0");
-}
-function commandIdHint(raw){
-  try{const x=JSON.parse(raw);return String(x?.id||x?.i||"")}catch{}
-  const m=String(raw||"").match(/(?:"id"|"i")\s*:\s*"([A-Za-z0-9._:-]{1,96})"/);
-  return m?.[1]||"";
 }
 function decodeV3Body(body,span,outerId=""){
   let raw;
@@ -113,19 +126,19 @@ function recordV3ParseFailure(body,source,error,extra={},report=true){
 function b64Commands(text,report=true){
   const out=[];B64_RE.lastIndex=0;let m;
   while((m=B64_RE.exec(text||""))){
+    const encoded=String(m?.[1]||"").replace(/\s+/g,"").slice(0,4096);
+    let raw="";
     try{
-      const c=JSON.parse(b64urlDecodeUtf8(m[1]));
+      raw=b64urlDecodeUtf8(encoded);
+      const c=JSON.parse(raw);
       if(c?.id&&c?.action)out.push(c);
+      else legacyFailure(raw,"legacy-b64","invalid_compact_command",new Error("legacy B64 command requires id and action"),report);
     }catch(e){
-      const raw=String(m?.[1]||"").replace(/\s+/g,"").slice(0,4096);
-      if(!rejectedB64.has(raw)){
-        rejectedB64.add(raw);if(rejectedB64.size>64)rejectedB64.delete(rejectedB64.values().next().value);
+      if(!rejectedB64.has(encoded)){
+        rejectedB64.add(encoded);if(rejectedB64.size>64)rejectedB64.delete(rejectedB64.values().next().value);
         b64ParseErrors++;
-        if(report)chrome.runtime.sendMessage({
-          type:"TRANSPORT_DIAG",
-          diagnostic:{kind:"command-rejected",reason:"invalid_base64url",version:VERSION,error:String(e)}
-        }).catch(()=>{});
       }
+      legacyFailure(raw||encoded,"legacy-b64",raw?"invalid_json":"invalid_base64url",e,report);
     }
   }
   return out;
@@ -520,7 +533,7 @@ function baseline(){
   for(const t of candidates){
     // Baseline is discovery-only: seed valid command ids and rejection fingerprints,
     // but never emit transport NACKs for historical examples already on the page.
-    for(const c of commands(t)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
+    for(const c of commands(t,false)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
     for(const c of b64Commands(t,false)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
     for(const c of v3Commands(t,false)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
     for(const c of v4Commands(t,false)){seen.add(c.id);if(c?.id)map.set(c.id,c)}
@@ -925,7 +938,6 @@ function deliveryProbe(){
       '[role="button"][aria-label*="send" i]'
     ];
     const seen=new Set();
-const rejectedB64=new Set();
     for(const q of qs)for(const e of document.querySelectorAll(q)){
       if(seen.has(e))continue;seen.add(e);
       const p=pack(e);if(p?.visible)buttons.push(p);
@@ -983,7 +995,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
         lastStreamCaptureAt,lastStreamLane,streamLaneCount:laneBuffers.size,
         activeCandidateCount:activeCandidates.size,candidateStartsSeen,candidateCompleted,
         candidateParseErrors,lastCandidateAt,lastCandidateSource,lastPartialDiagAt,
-        b64Transport:true,b64ParseErrors
+        b64Transport:true,b64ParseErrors,legacyParseErrors
       },
       lastScanAt,lastCommandDetectedAt,lastPostMethod,lastPostError,
       hasChromeDom:!!chrome?.dom?.openOrClosedShadowRoot,deliveryProbe:deliveryProbe()
