@@ -16,7 +16,7 @@ import (
 const (
 	recipeSchema = "sokna-browser-recipe-v1"
 	reportSchema = "sokna-browser-qa-report-v1"
-	toolVersion  = "0.3.0-p3"
+	toolVersion  = "0.4.0-p3"
 )
 
 type Viewport struct {
@@ -27,14 +27,16 @@ type Viewport struct {
 }
 
 type Action struct {
-	Op       string `json:"op"`
-	URL      string `json:"url,omitempty"`
-	Selector string `json:"selector,omitempty"`
-	Text     string `json:"text,omitempty"`
-	Value    string `json:"value,omitempty"`
-	ValueEnv string `json:"value_env,omitempty"`
-	MS       int    `json:"ms,omitempty"`
-	Timeout  int    `json:"timeout_ms,omitempty"`
+	Op              string `json:"op"`
+	URL             string `json:"url,omitempty"`
+	Selector        string `json:"selector,omitempty"`
+	Text            string `json:"text,omitempty"`
+	Value           string `json:"value,omitempty"`
+	ValueEnv        string `json:"value_env,omitempty"`
+	CredentialRef   string `json:"credential_ref,omitempty"`
+	CredentialField string `json:"credential_field,omitempty"`
+	MS              int    `json:"ms,omitempty"`
+	Timeout         int    `json:"timeout_ms,omitempty"`
 }
 
 type Assertion struct {
@@ -217,11 +219,24 @@ func validateRecipe(r *Recipe) error {
 		default:
 			return fmt.Errorf("action[%d] unsupported op %q", i, a.Op)
 		}
-		if len(a.Selector) > 1000 || len(a.Text) > 65536 || len(a.Value) > 65536 || len(a.ValueEnv) > 200 {
+		if len(a.Selector) > 1000 || len(a.Text) > 65536 || len(a.Value) > 65536 || len(a.ValueEnv) > 200 || len(a.CredentialRef) > 100 || len(a.CredentialField) > 20 {
 			return fmt.Errorf("action[%d] input too large", i)
 		}
 		if a.Value != "" && a.ValueEnv != "" {
 			return fmt.Errorf("action[%d] cannot set both value and value_env", i)
+		}
+		if a.CredentialRef != "" {
+			if !safeID.MatchString(a.CredentialRef) {
+				return fmt.Errorf("action[%d] credential_ref invalid", i)
+			}
+			if a.CredentialField != "username" && a.CredentialField != "secret" && a.CredentialField != "password" {
+				return fmt.Errorf("action[%d] credential_field must be username or secret", i)
+			}
+			if a.Value != "" || a.ValueEnv != "" || a.Text != "" {
+				return fmt.Errorf("action[%d] credential_ref cannot be combined with value/value_env/text", i)
+			}
+		} else if a.CredentialField != "" {
+			return fmt.Errorf("action[%d] credential_field requires credential_ref", i)
 		}
 	}
 	if len(r.Assertions) > 100 {
