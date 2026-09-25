@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 import importlib.util
 import pathlib
-import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 COMPILER_PATH = ROOT / "tools" / "sokna_command_compiler.py"
 CONTENT = (ROOT / "extension" / "chrome" / "content.js").read_text(encoding="utf-8")
+DOM_CORE = (ROOT / "extension" / "chrome" / "dom_core.js").read_text(encoding="utf-8")
+PROTOCOL = (ROOT / "extension" / "chrome" / "protocol.js").read_text(encoding="utf-8")
 BACKGROUND = (ROOT / "extension" / "chrome" / "background.js").read_text(encoding="utf-8")
 SEMANTIC_CORE = (ROOT / "extension" / "chrome" / "semantic_core.js").read_text(encoding="utf-8")
+SEMANTIC_INTENT = (ROOT / "extension" / "chrome" / "semantic_intent.js").read_text(encoding="utf-8")
 
 spec = importlib.util.spec_from_file_location("sokna_command_compiler", COMPILER_PATH)
 assert spec and spec.loader
@@ -25,7 +27,6 @@ assert cmd["protocolVersion"] == "2" and cmd["schemaVersion"] == "2"
 assert cmd["kind"] == "command" and cmd["messageId"] == cmd["id"] and cmd["correlationId"] == cmd["id"]
 assert "timestamp" in cmd and isinstance(cmd["timestamp"], int)
 
-# Explicit requests for a retired legacy transport are rejected.
 try:
     compiler.compile_semantic({"intent": "exec", "action": "ping", "params": {}}, transport="v4")
     raise AssertionError("legacy transport must be rejected from normal semantic flow")
@@ -76,20 +77,17 @@ for token in [
 ]:
     assert token in SEMANTIC_CORE, f"missing semantic envelope field: {token}"
 
-# During migration, any still-present legacy intake must never fail silently.
-# These assertions are temporary and will be replaced by absence assertions when
-# physical retirement of content.js legacy parsers lands.
-assert "function legacyFailure(" in CONTENT
-assert 'legacyFailure(raw,"legacy-v2","invalid_json"' in CONTENT
-assert 'legacyFailure(raw,"legacy-v2","invalid_compact_command"' in CONTENT
-assert 'legacyFailure(raw||encoded,"legacy-b64",raw?"invalid_json":"invalid_base64url"' in CONTENT
-m = re.search(r"function commands\(text,report=true\)\{(?P<body>.*?)\n\}\n\nfunction b64urlDecodeUtf8", CONTENT, re.S)
-assert m, "legacy V2 parser not found during migration"
-assert "catch{}" not in m.group("body"), "legacy V2 parser still contains fail-silent catch"
+# Active runtime command discovery must be semantic-only; legacy command parsers are gone.
+for legacy in ["SOKNA3CMD:", "SOKNA4CMD:", "SOKNA-CMD-B64", "SOKNA-V2-CMD"]:
+    assert legacy not in CONTENT, f"legacy marker still present in content runtime: {legacy}"
+    assert legacy not in DOM_CORE, f"legacy marker still present in DOM runtime: {legacy}"
+    assert legacy not in PROTOCOL, f"legacy marker still present in protocol runtime: {legacy}"
+assert '[SOKNA-INTENT]' in SEMANTIC_INTENT
+assert 'commandDiscovery:"semantic-intent-only"' in CONTENT
+assert 'legacyCommandParsers:false' in CONTENT
 
-# Background correlated, final-only NACK barrier remains mandatory until the new
-# unified NACK envelope fully replaces transport diagnostics.
-assert 'd.final===true&&hard.has(d.reason)&&correlated' in BACKGROUND
+# Background keeps correlated machine-readable rejection behavior while the unified
+# NACK result envelope is being completed.
 assert 'if(!VALID_COMMAND_ID.test(cid))return{ok:true,ignored:true,uncorrelated:true}' in BACKGROUND
 assert 'executed:false' in BACKGROUND
 
