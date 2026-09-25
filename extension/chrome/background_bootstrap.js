@@ -39,7 +39,7 @@ function unifiedCommand(action,params={}){
 function capabilityCommand(){return unifiedCommand("agent.capabilities",{})}
 const capabilityGate=CAP?.create?.({
   ttlMs:60000,
-  extensionActions:["artifact.chat.apply"],
+  extensionActions:["artifact.chat.apply","job.list","job.events","bridge.activity"],
   fetchCapabilities:async()=>{
     const command=capabilityCommand();
     const r=await nativeMessage({type:"agent.exec",request_id:uid("cap-request"),command});
