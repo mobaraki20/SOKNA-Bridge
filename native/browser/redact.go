@@ -28,23 +28,34 @@ func redactText(s string) string {
 func knownRecipeSecrets(r Recipe) []string {
 	seen := map[string]bool{}
 	out := []string{}
-	add := func(envName string) {
-		if envName == "" {
-			return
-		}
-		if value, ok := os.LookupEnv(envName); ok && value != "" && len(value) >= 4 && !seen[value] {
+	addValue := func(value string) {
+		if value != "" && len(value) >= 4 && !seen[value] {
 			seen[value] = true
 			out = append(out, value)
 		}
 	}
+	addEnv := func(envName string) {
+		if envName == "" {
+			return
+		}
+		if value, ok := os.LookupEnv(envName); ok {
+			addValue(value)
+		}
+	}
 	for _, a := range r.Actions {
-		add(a.ValueEnv)
+		addEnv(a.ValueEnv)
+		if a.CredentialRef != "" {
+			if rec, err := loadCredential(a.CredentialRef); err == nil {
+				addValue(rec.Secret)
+				addValue(rec.Username)
+			}
+		}
 	}
 	for _, c := range r.Setup.Cookies {
-		add(c.ValueEnv)
+		addEnv(c.ValueEnv)
 	}
 	for _, s := range r.Setup.LocalStorage {
-		add(s.ValueEnv)
+		addEnv(s.ValueEnv)
 	}
 	return out
 }
