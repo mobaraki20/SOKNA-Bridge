@@ -28,10 +28,11 @@ jobs:
         run: node tools/tests/test_capability_gate.mjs
       - name: R2 contract reliability tests
         run: |
-          python -m py_compile tools/sokna_command_compiler.py tools/tests/test_r2_contract_reliability.py tools/tests/test_r2_observability.py
+          python -m py_compile tools/sokna_command_compiler.py tools/tests/test_r2_contract_reliability.py tools/tests/test_r2_observability.py tools/tests/test_r2_outbound_artifacts.py
           python tools/tests/test_r2_contract_reliability.py
           python tools/tests/test_r2_observability.py
-      - name: Native Host observability unit tests
+          python tools/tests/test_r2_outbound_artifacts.py
+      - name: Native Host R2 unit tests
         working-directory: native/host
         run: go test ./...
       - name: Compiler smoke
