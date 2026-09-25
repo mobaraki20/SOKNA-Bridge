@@ -20,7 +20,7 @@ Then read `docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md` for historical imple
 - Read `docs/handoffs/FAST_WORK_ROUTE_AND_EXT3105_HANDOFF_FA.md` for the permanent Bridge/GitHub routing history, but prefer the current roadmap where newer decisions conflict with older wording.
 - SOKNA Bridge is the Chat agent's access plane to the user PC. Do not ask the user to restate the Bridge architecture in every new chat.
 - Development is workspace-first and batch-first. Read/patch/test/package off the user PC. GitHub is a milestone/CI boundary, not a scratchpad.
-- New normal flow must move toward semantic commands compiled deterministically; AI should not manually reason about or hand-build V3/V4/Base64/carrier plumbing. Until that migration is complete, all executable carriers MUST still be generated and round-trip validated programmatically with `tools/sokna_carrier_guard.py` and never hand-edited.
+- The normal executable path is now semantic-only: AI emits semantic intent, the deterministic compiler builds the unified versioned command envelope, and Extension/Bridge validates it fail-closed. V2/B64/V3/V4 command carriers and `tools/sokna_carrier_guard.py` are retired from the active runtime and must not be reintroduced.
 - Read `docs/AI_AGENT_OPERATING_CONTRACT_V2.md`, `docs/AI_AGENT_COMMAND_PREFLIGHT_V1.md`, and `docs/BRIDGE_SESSION_EXECUTION_GATE_V1_FA.md` before Bridge execution while they remain active contracts.
 - Result-First applies between outer commands, not steps inside one bounded batch/plan. For 2+ deterministic bounded steps prefer one batch; long work uses durable jobs; bulky bytes use Artifact Plane.
 - Before non-basic actions, probe live `ping` + `agent.capabilities`; never guess runtime version, action name, schema or transport.
