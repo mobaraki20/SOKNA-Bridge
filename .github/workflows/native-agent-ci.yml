@@ -5,13 +5,20 @@ on:
 jobs:
   test:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: native/agent
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
-      - run: go test ./...
-      - run: go build .
+      - name: Agent unit tests
+        working-directory: native/agent
+        run: go test ./...
+      - name: Agent build
+        working-directory: native/agent
+        run: go build .
+      - name: Native Host unit tests
+        working-directory: native/host
+        run: go test ./...
+      - name: Native Host build
+        working-directory: native/host
+        run: go build .
