@@ -8,7 +8,7 @@ const event=chrome.runtime.onMessage;
 const originalAdd=event.addListener.bind(event);
 const ID=/^[A-Za-z0-9._-]{1,96}$/;
 function idOf(m){const id=String(m?.command?.id||m?.command?.correlationId||"");return ID.test(id)?id:""}
-function uid(){return crypto.randomUUID?.()||(`cap-${Date.now()}-${Math.random().toString(16).slice(2)}`)}
+function uid(prefix="cap"){return crypto.randomUUID?.()||(`${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`)}
 function rejection(m,error){
   const cid=idOf(m);
   return {
@@ -32,16 +32,17 @@ function nativeMessage(msg){
     if(e)reject(new Error(e.message));else resolve(r||{});
   }));
 }
-function capabilityCommand(){
-  const id=uid(),ts=Date.now();
-  return {protocolVersion:"2",messageId:id,correlationId:id,parentId:"",kind:"command",action:"agent.capabilities",schemaVersion:"2",timestamp:ts,id,params:{}};
+function unifiedCommand(action,params={}){
+  const id=uid("bridge"),ts=Date.now();
+  return {protocolVersion:"2",messageId:id,correlationId:id,parentId:"",kind:"command",action,schemaVersion:"2",timestamp:ts,id,params};
 }
+function capabilityCommand(){return unifiedCommand("agent.capabilities",{})}
 const capabilityGate=CAP?.create?.({
   ttlMs:60000,
   extensionActions:["artifact.chat.apply"],
   fetchCapabilities:async()=>{
     const command=capabilityCommand();
-    const r=await nativeMessage({type:"agent.exec",request_id:uid(),command});
+    const r=await nativeMessage({type:"agent.exec",request_id:uid("cap-request"),command});
     if(!r?.ok)throw new Error(r?.error||"CAPABILITY_NATIVE_REQUEST_FAILED");
     const result=r?.result||{};
     if(result?.ok===false)throw new Error(result?.error||"CAPABILITY_AGENT_REQUEST_FAILED");
@@ -51,8 +52,24 @@ const capabilityGate=CAP?.create?.({
   }
 });
 if(!capabilityGate)throw new Error("BACKGROUND_CAPABILITY_GATE_UNAVAILABLE");
+async function activitySnapshot(m){
+  const limit=Math.min(Math.max(Number(m?.limit)||50,1),200);
+  const jobId=String(m?.jobId||"").trim();
+  const action=jobId?"job.events":"bridge.activity";
+  const params=jobId?{id:jobId,limit}:{limit};
+  const command=unifiedCommand(action,params);
+  const r=await nativeMessage({type:"agent.exec",request_id:uid("activity-request"),command});
+  if(!r?.ok)throw new Error(r?.error||"ACTIVITY_NATIVE_REQUEST_FAILED");
+  const result=r?.result||{};
+  if(result?.ok===false)throw new Error(result?.error||"ACTIVITY_REQUEST_FAILED");
+  return result;
+}
 function wrapListener(listener){
   return function(m,sender,reply){
+    if(m?.type==="ACTIVITY_SNAPSHOT"){
+      activitySnapshot(m).then(x=>reply({ok:true,activity:x}),e=>reply({ok:false,error:String(e)}));
+      return true;
+    }
     if(m?.type!=="COMMAND")return listener(m,sender,reply);
     if(!m?.semantic)return listener(rejection(m,"SEMANTIC_ROUTE_REQUIRED"),sender,reply);
     const v=PROTO?.validateEnvelope?.(m.command,{kind:"command"})||{ok:false,error:"PROTOCOL_VALIDATOR_UNAVAILABLE"};
