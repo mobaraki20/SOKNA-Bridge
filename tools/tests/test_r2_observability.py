@@ -31,6 +31,10 @@ assert 'TestJobEventsAreDurableAndDeduplicatedByState' in HOST_TEST
 assert 'ACTIVITY_SNAPSHOT' in BOOTSTRAP
 assert 'bridge.activity' in BOOTSTRAP and 'job.events' in BOOTSTRAP
 assert 'sendNativeMessage' in BOOTSTRAP
+# Host-local observability commands must pass the capability gate even though they
+# are not actions exposed by the HTTP Agent capability manifest.
+for action in ['"job.list"', '"job.events"', '"bridge.activity"']:
+    assert action in BOOTSTRAP, f"host-local action blocked by capability preflight: {action}"
 assert 'ACTIVITY_SNAPSHOT' in POPUP
 assert 'setInterval(()=>refreshActivity()' in POPUP
 assert 'Activity Monitor' in HTML
