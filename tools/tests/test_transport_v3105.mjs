@@ -1,24 +1,30 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+
 const src=fs.readFileSync(new URL('../../extension/chrome/protocol.js',import.meta.url),'utf8');
-const ctx={TextEncoder,globalThis:{}};ctx.globalThis=ctx;vm.runInNewContext(src,ctx);
+const ctx={TextEncoder,Date,Set,globalThis:{}};ctx.globalThis=ctx;vm.runInNewContext(src,ctx);
 const P=ctx.__SOKNA_PROTOCOL_V1__;assert.ok(P);
-const b64=s=>Buffer.from(s,'utf8').toString('base64url');
-const cmd={i:'nack-reg-1',o:'p',a:{}};const body=b64(JSON.stringify(cmd));
-let f=P.nextV4Frame(`SOKNA4CMD:${cmd.i}:${body}:SOKNA4END`,0);
-assert.equal(f.kind,'complete');assert.equal(f.validOuterId,true);assert.equal(f.hasWhitespace,false);
-assert.equal(P.correlatableMalformedV4(f),true);
-const malformed=`SOKNA4CMD:${cmd.i}:${body.slice(0,5)} ${body.slice(5)}:SOKNA4END`;
-f=P.nextV4Frame(malformed,0);assert.equal(f.hasWhitespace,true);assert.equal(f.validOuterId,true);assert.equal(P.correlatableMalformedV4(f),true);
-f=P.nextV4Frame(`SOKNA4CMD:<bad-id>:${body}:SOKNA4END`,0);assert.equal(f.validOuterId,false);assert.equal(P.correlatableMalformedV4(f),false);
-const old='old-fragment-1';const good=`SOKNA4CMD:${cmd.i}:${body}:SOKNA4END`;
-f=P.nextV4Frame(`SOKNA4CMD:${old}:broken historical prose ${good}`,0);assert.equal(f.kind,'nested');
-f=P.nextV4Frame(`SOKNA4CMD:${old}:broken historical prose ${good}`,f.nextFrom);assert.equal(f.kind,'complete');assert.equal(f.outerId,cmd.i);
+assert.equal(P.v,2);assert.equal(P.protocolVersion,'2');assert.equal(P.schemaVersion,'2');
+
+const c=P.commandEnvelope({id:'unified-1',action:'ping',params:{}});
+assert.equal(c.kind,'command');assert.equal(c.messageId,'unified-1');assert.equal(c.correlationId,'unified-1');assert.equal(c.id,'unified-1');
+assert.equal(P.validateEnvelope(c,{kind:'command'}).ok,true);
+assert.equal(P.validateEnvelope({...c,protocolVersion:'1'},{kind:'command'}).error,'PROTOCOL_VERSION_UNSUPPORTED');
+assert.equal(P.validateEnvelope({...c,correlationId:'other'},{kind:'command'}).error,'COMMAND_ID_CORRELATION_MISMATCH');
+const n=P.nack({messageId:'nack-1',correlationId:'unified-1',action:'ping',error:'SCHEMA_INVALID'});
+assert.equal(n.kind,'nack');assert.equal(n.executed,false);assert.equal(n.correlationId,'unified-1');
+
 const content=fs.readFileSync(new URL('../../extension/chrome/content.js',import.meta.url),'utf8');
-assert.match(content,/final:PROTO\.correlatableMalformedV4\(frame\)/);
-assert.match(content,/if\(frame\.kind==="nested"\)\{from=frame\.nextFrom;continue\}/);
-const bg=fs.readFileSync(new URL('../../extension/chrome/background.js',import.meta.url),'utf8');
-assert.match(bg,/d\.final===true&&hard\.has\(d\.reason\)&&correlated/);
-assert.match(bg,/if\(!VALID_COMMAND_ID\.test\(cid\)\)return\{ok:true,ignored:true,uncorrelated:true\}/);
-console.log('TRANSPORT_V3105_REGRESSION_PASS');
+const dom=fs.readFileSync(new URL('../../extension/chrome/dom_core.js',import.meta.url),'utf8');
+const semantic=fs.readFileSync(new URL('../../extension/chrome/semantic_intent.js',import.meta.url),'utf8');
+for(const active of [src,content,dom]){
+  assert.doesNotMatch(active,/SOKNA3CMD:/);
+  assert.doesNotMatch(active,/SOKNA4CMD:/);
+  assert.doesNotMatch(active,/SOKNA-CMD-B64/);
+  assert.doesNotMatch(active,/SOKNA-V2-CMD/);
+}
+assert.match(semantic,/\[SOKNA-INTENT\]/);
+assert.match(content,/commandDiscovery:"semantic-intent-only"/);
+assert.match(content,/legacyCommandParsers:false/);
+console.log('UNIFIED_TRANSPORT_REGRESSION_PASS');
