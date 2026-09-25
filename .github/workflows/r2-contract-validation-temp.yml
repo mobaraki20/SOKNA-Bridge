@@ -17,7 +17,9 @@ jobs:
           node --check extension/chrome/semantic_gate.js
           node --check extension/chrome/semantic_core.js
           node --check extension/chrome/semantic_intent.js
+          node --check extension/chrome/outbound_attachment_core.js
           node --check extension/chrome/dom_core.js
+          node --check extension/chrome/outbound_attachment.js
           node --check extension/chrome/content.js
           node --check extension/chrome/background_bootstrap.js
           node --check extension/chrome/background.js
@@ -26,6 +28,8 @@ jobs:
         run: node tools/tests/test_transport_v3105.mjs
       - name: Capability preflight regression
         run: node tools/tests/test_capability_gate.mjs
+      - name: Outbound attachment integrity regression
+        run: node tools/tests/test_outbound_attachment_core.mjs
       - name: R2 acceptance tests
         run: |
           python -m py_compile tools/sokna_command_compiler.py tools/tests/test_r2_contract_reliability.py tools/tests/test_r2_observability.py tools/tests/test_r2_outbound_artifacts.py tools/tests/test_r2_browser_audit.py tools/tests/test_r2_session_continuity.py
