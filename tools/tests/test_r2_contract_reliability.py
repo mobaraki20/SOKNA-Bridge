@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import importlib.util
+import json
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -8,8 +9,11 @@ CONTENT = (ROOT / "extension" / "chrome" / "content.js").read_text(encoding="utf
 DOM_CORE = (ROOT / "extension" / "chrome" / "dom_core.js").read_text(encoding="utf-8")
 PROTOCOL = (ROOT / "extension" / "chrome" / "protocol.js").read_text(encoding="utf-8")
 BACKGROUND = (ROOT / "extension" / "chrome" / "background.js").read_text(encoding="utf-8")
+BACKGROUND_BOOTSTRAP = (ROOT / "extension" / "chrome" / "background_bootstrap.js").read_text(encoding="utf-8")
+SEMANTIC_GATE = (ROOT / "extension" / "chrome" / "semantic_gate.js").read_text(encoding="utf-8")
 SEMANTIC_CORE = (ROOT / "extension" / "chrome" / "semantic_core.js").read_text(encoding="utf-8")
 SEMANTIC_INTENT = (ROOT / "extension" / "chrome" / "semantic_intent.js").read_text(encoding="utf-8")
+MANIFEST = json.loads((ROOT / "extension" / "chrome" / "manifest.json").read_text(encoding="utf-8"))
 
 spec = importlib.util.spec_from_file_location("sokna_command_compiler", COMPILER_PATH)
 assert spec and spec.loader
@@ -86,8 +90,15 @@ assert '[SOKNA-INTENT]' in SEMANTIC_INTENT
 assert 'commandDiscovery:"semantic-intent-only"' in CONTENT
 assert 'legacyCommandParsers:false' in CONTENT
 
-# Background keeps correlated machine-readable rejection behavior while the unified
-# NACK result envelope is being completed.
+# Fail-closed validation exists at both page-side and service-worker-side boundaries.
+assert 'UNIFIED_ENVELOPE_INVALID:' in SEMANTIC_GATE
+assert 'SEMANTIC_ROUTE_REQUIRED' in SEMANTIC_GATE
+assert 'PROTO?.validateEnvelope?.(m.command,{kind:"command"})' in BACKGROUND_BOOTSTRAP
+assert 'SEMANTIC_ROUTE_REQUIRED' in BACKGROUND_BOOTSTRAP
+assert 'executed:false' in BACKGROUND_BOOTSTRAP
+assert MANIFEST["background"]["service_worker"] == "background_bootstrap.js"
+
+# Background keeps correlated machine-readable rejection behavior.
 assert 'if(!VALID_COMMAND_ID.test(cid))return{ok:true,ignored:true,uncorrelated:true}' in BACKGROUND
 assert 'executed:false' in BACKGROUND
 
