@@ -1,29 +1,41 @@
 (()=>{
 'use strict';
 const E=new TextEncoder();
-const V4_START='SOKNA4CMD:',V4_END=':SOKNA4END';
 const ID_RE=/^[A-Za-z0-9._-]{1,96}$/;
-const api={
-  v:1,maxCarrierChars:1200,maxPayloadBytes:800,maxExpandedCommandBytes:4096,
-  ws:Object.freeze({B:'SOKNA-Bridge',C:'SoknaCafe'}),
-  op:Object.freeze({fr:'file.read',fw:'file.write',fx:'file.replace',fs:'file.search',ps:'plan.stage',pr:'plan.run',j:'job.submit',p:'ping'}),
-  k:Object.freeze({f:'path',s:'start_line',n:'line_count',q:'query'}),
-  expand(c){if(c?.id&&c?.action)return c;const p={};for(const[k,v]of Object.entries(c?.a||{}))p[this.k[k]||k]=v;if(c?.w)p.workspace=this.ws[c.w]||c.w;return{id:c?.i,action:this.op[c?.o]||c?.o,params:p}},
-  accept(raw,span){return span<=this.maxCarrierChars&&this.bytes(raw)<=this.maxPayloadBytes},
-  bytes:s=>E.encode(String(s)).byteLength,
-  validCommandId:id=>ID_RE.test(String(id||'')),
-  nextV4Frame(text,from=0){
-    text=String(text||'');
-    const a=text.indexOf(V4_START,from);if(a<0)return null;
-    const b=text.indexOf(V4_END,a+V4_START.length);if(b<0)return{kind:'partial',a,nextFrom:a+V4_START.length};
-    const nested=text.indexOf(V4_START,a+V4_START.length);
-    if(nested>=0&&nested<b)return{kind:'nested',a,b,nested,nextFrom:nested};
-    const inner=text.slice(a+V4_START.length,b).trim(),sep=inner.indexOf(':');
-    const outerId=sep>0?inner.slice(0,sep).trim():'',body=sep>0?inner.slice(sep+1).trim():'';
-    const span=b+V4_END.length-a;
-    return{kind:'complete',a,b,nextFrom:b+V4_END.length,inner,outerId,body,span,validOuterId:ID_RE.test(outerId),hasWhitespace:/\s/.test(inner)};
-  },
-  correlatableMalformedV4(frame){return !!frame&&frame.kind==='complete'&&frame.validOuterId===true&&Number(frame.span||0)<=this.maxCarrierChars}
-};
-globalThis.__SOKNA_PROTOCOL_V1__=Object.freeze(api);
+const PROTOCOL_VERSION='2',SCHEMA_VERSION='2';
+const KINDS=new Set(['command','ack','event','result','nack']);
+function bytes(s){return E.encode(String(s)).byteLength}
+function validCommandId(id){return ID_RE.test(String(id||''))}
+function commandEnvelope({id,action,params={},parentId='',timestamp=Date.now()}={}){
+  id=String(id||'');action=String(action||'');parentId=String(parentId||'');
+  if(!validCommandId(id))throw new Error('INVALID_COMMAND_ID');
+  if(!action)throw new Error('ACTION_REQUIRED');
+  if(parentId&&!validCommandId(parentId))throw new Error('INVALID_PARENT_ID');
+  if(!params||typeof params!=='object'||Array.isArray(params))throw new Error('PARAMS_OBJECT_REQUIRED');
+  return {protocolVersion:PROTOCOL_VERSION,messageId:id,correlationId:id,parentId,kind:'command',action,schemaVersion:SCHEMA_VERSION,timestamp:Number(timestamp)||Date.now(),id,params};
+}
+function validateEnvelope(x,{kind=''}={}){
+  if(!x||typeof x!=='object'||Array.isArray(x))return {ok:false,error:'ENVELOPE_OBJECT_REQUIRED'};
+  if(String(x.protocolVersion||'')!==PROTOCOL_VERSION)return {ok:false,error:'PROTOCOL_VERSION_UNSUPPORTED'};
+  if(String(x.schemaVersion||'')!==SCHEMA_VERSION)return {ok:false,error:'SCHEMA_VERSION_UNSUPPORTED'};
+  if(!KINDS.has(String(x.kind||'')))return {ok:false,error:'KIND_INVALID'};
+  if(kind&&String(x.kind)!==kind)return {ok:false,error:'KIND_MISMATCH'};
+  if(!validCommandId(x.messageId))return {ok:false,error:'MESSAGE_ID_INVALID'};
+  if(!validCommandId(x.correlationId))return {ok:false,error:'CORRELATION_ID_INVALID'};
+  if(x.parentId&&!validCommandId(x.parentId))return {ok:false,error:'PARENT_ID_INVALID'};
+  if(!Number.isFinite(Number(x.timestamp))||Number(x.timestamp)<=0)return {ok:false,error:'TIMESTAMP_INVALID'};
+  if(x.kind==='command'){
+    if(String(x.id||'')!==String(x.correlationId||''))return {ok:false,error:'COMMAND_ID_CORRELATION_MISMATCH'};
+    if(!String(x.action||''))return {ok:false,error:'ACTION_REQUIRED'};
+    if(!x.params||typeof x.params!=='object'||Array.isArray(x.params))return {ok:false,error:'PARAMS_OBJECT_REQUIRED'};
+  }
+  return {ok:true};
+}
+function nack({messageId,correlationId,parentId='',action='',error='REJECTED',detail='',retryable=false}={}){
+  const mid=String(messageId||'');const cid=String(correlationId||'');
+  if(!validCommandId(mid)||!validCommandId(cid))throw new Error('NACK_ID_INVALID');
+  return {protocolVersion:PROTOCOL_VERSION,messageId:mid,correlationId:cid,parentId:String(parentId||''),kind:'nack',action:String(action||''),schemaVersion:SCHEMA_VERSION,timestamp:Date.now(),executed:false,retryable:!!retryable,error:String(error||'REJECTED'),detail:String(detail||'')};
+}
+const api=Object.freeze({v:2,protocolVersion:PROTOCOL_VERSION,schemaVersion:SCHEMA_VERSION,maxControlBytes:800,maxExpandedCommandBytes:4096,bytes,validCommandId,commandEnvelope,validateEnvelope,nack});
+globalThis.__SOKNA_PROTOCOL_V1__=api;
 })();
