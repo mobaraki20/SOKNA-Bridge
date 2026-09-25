@@ -22,23 +22,35 @@ function New-SyntheticPayload([string]$Source,[string]$Destination,[string]$Vers
     Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
   }
   $manifestPath=Join-Path $Destination 'manifests\installed-manifest.json'
+  if(-not(Test-Path -LiteralPath $manifestPath -PathType Leaf)){throw 'SYNTHETIC_PAYLOAD_SOURCE_MANIFEST_MISSING'}
   $manifest=Get-Content $manifestPath -Raw|ConvertFrom-Json
   $old=[string]$manifest.product_version
   $agent=Join-Path $Destination 'runtime\agent.ps1'
+  if(-not(Test-Path -LiteralPath $agent -PathType Leaf)){throw 'SYNTHETIC_PAYLOAD_AGENT_MISSING'}
   if($BrokenRuntime){[IO.File]::WriteAllText($agent,'param([string]$ConfigPath=""); throw "CI injected startup failure"',[Text.UTF8Encoding]::new($false))}
   else{$text=Get-Content $agent -Raw;$text=$text.Replace($old,$Version);[IO.File]::WriteAllText($agent,$text,[Text.UTF8Encoding]::new($false))}
   $obsolete=Join-Path $Destination 'runtime\obsolete-ci.txt'
   if($AddObsolete){[IO.File]::WriteAllText($obsolete,'obsolete-ci',[Text.UTF8Encoding]::new($false))}
   if($RemoveObsolete -and (Test-Path $obsolete)){Remove-Item $obsolete -Force}
-  $files=@($manifest.files|Where-Object{[string]$_.owner -ne 'maintenance'})
-  Get-ChildItem (Join-Path $Destination 'runtime') -File -Recurse|ForEach-Object{
+
+  # Rebuild ownership from the actual destination tree. Never splice entries from
+  # the previous manifest: a stale path there must not survive into a synthetic upgrade.
+  $files=@(Get-ChildItem -LiteralPath $Destination -File -Recurse|Where-Object{
+    -not [string]::Equals($_.FullName,$manifestPath,[StringComparison]::OrdinalIgnoreCase)
+  }|ForEach-Object{
     $rel=$_.FullName.Substring($Destination.Length).TrimStart('\').Replace('\','/')
-    $files += [pscustomobject]@{path=$rel;sha256=(Sha $_.FullName);bytes=$_.Length;owner='maintenance'}
-  }
-  $manifest.product_version=$Version;$manifest.source_commit='ci-synthetic';$manifest.files=@($files|Sort-Object path)
+    $owner=if($rel.StartsWith('runtime/',[StringComparison]::OrdinalIgnoreCase)){'maintenance'}else{'installer'}
+    [pscustomobject]@{path=$rel;sha256=(Sha $_.FullName);bytes=$_.Length;owner=$owner}
+  }|Sort-Object path)
+  $dupes=@($files|Group-Object path|Where-Object Count -gt 1)
+  if($dupes.Count -gt 0){throw ('SYNTHETIC_PAYLOAD_DUPLICATE_PATH: '+(($dupes|ForEach-Object Name)-join','))}
+  $manifest.product_version=$Version
+  $manifest.source_commit='ci-synthetic'
+  $manifest.files=$files
   Write-Json $manifestPath $manifest
   foreach($file in @($manifest.files)){
     $rel=[string]$file.path
+    if([string]::IsNullOrWhiteSpace($rel)-or[IO.Path]::IsPathRooted($rel)-or$rel.Contains('..')){throw ('SYNTHETIC_PAYLOAD_UNSAFE_PATH: '+$rel)}
     $candidate=Join-Path $Destination ($rel.Replace('/','\'))
     if(-not(Test-Path -LiteralPath $candidate -PathType Leaf)){throw ('SYNTHETIC_PAYLOAD_OWNED_PATH_MISSING: '+$rel)}
     $actual=Sha $candidate
