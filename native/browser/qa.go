@@ -15,6 +15,9 @@ import (
 func jsString(s string) string { b, _ := json.Marshal(s); return string(b) }
 
 func resolveActionValue(a Action) (string, error) {
+	if a.CredentialRef != "" {
+		return credentialValue(a.CredentialRef, a.CredentialField)
+	}
 	if a.ValueEnv != "" {
 		v, ok := os.LookupEnv(a.ValueEnv)
 		if !ok {
