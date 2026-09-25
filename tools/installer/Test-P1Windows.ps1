@@ -18,7 +18,9 @@ function Write-Json([string]$Path,$Object){[IO.File]::WriteAllText($Path,($Objec
 function New-SyntheticPayload([string]$Source,[string]$Destination,[string]$Version,[switch]$AddObsolete,[switch]$RemoveObsolete,[switch]$BrokenRuntime){
   if(Test-Path $Destination){Remove-Item $Destination -Recurse -Force}
   New-Item -ItemType Directory -Path $Destination -Force|Out-Null
-  Copy-Item (Join-Path $Source '*') $Destination -Recurse -Force
+  Get-ChildItem -LiteralPath $Source -Force|ForEach-Object{
+    Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
+  }
   $manifestPath=Join-Path $Destination 'manifests\installed-manifest.json'
   $manifest=Get-Content $manifestPath -Raw|ConvertFrom-Json
   $old=[string]$manifest.product_version
@@ -35,6 +37,13 @@ function New-SyntheticPayload([string]$Source,[string]$Destination,[string]$Vers
   }
   $manifest.product_version=$Version;$manifest.source_commit='ci-synthetic';$manifest.files=@($files|Sort-Object path)
   Write-Json $manifestPath $manifest
+  foreach($file in @($manifest.files)){
+    $rel=[string]$file.path
+    $candidate=Join-Path $Destination ($rel.Replace('/','\'))
+    if(-not(Test-Path -LiteralPath $candidate -PathType Leaf)){throw ('SYNTHETIC_PAYLOAD_OWNED_PATH_MISSING: '+$rel)}
+    $actual=Sha $candidate
+    if(-not[string]::Equals($actual,[string]$file.sha256,[StringComparison]::OrdinalIgnoreCase)){throw ('SYNTHETIC_PAYLOAD_HASH_MISMATCH: '+$rel)}
+  }
   return $manifestPath
 }
 function Invoke-Maint([string]$Exe,[string]$InstallRoot,[string[]]$CommandArgs,[int[]]$Allowed=@(0)){
