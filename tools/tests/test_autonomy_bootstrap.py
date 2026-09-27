@@ -41,9 +41,8 @@ assert 'Environment selector and knowledge helpers' in wf
 read_first=(root/'00_READ_FIRST_NEW_CHAT.md').read_text(encoding='utf-8')
 for x in ['SOKNA Bridge is the Chat agent\'s access plane','semantic-only','bridge.bootstrap + persistent work_session + session.resume','No release/live claim without exact Windows evidence.']:
     assert x in read_first,x
-guard=(root/'tools/sokna_carrier_guard.py').read_text(encoding='utf-8')
-for x in ["choices=['v3','v4']",'transport_for_extension','SOKNA3CMD:','SOKNA4CMD:']:
-    assert x in guard,x
+guard_path=root/'tools/sokna_carrier_guard.py'
+assert not guard_path.exists(), 'legacy V3/V4 carrier guard must remain retired from the active source tree'
 handoff=(root/'docs/handoffs/FAST_WORK_ROUTE_AND_EXT3105_HANDOFF_FA.md').read_text(encoding='utf-8')
 for x in ['Agent 2.5.4 + Extension 3.9.5','GitHub is a durable checkpoint','programmatic only']:
     assert x in handoff,x
