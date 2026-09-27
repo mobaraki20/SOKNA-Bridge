@@ -84,6 +84,7 @@ for marker in ['Get-ChildItem -LiteralPath $destinationRoot -File -Recurse', 'SY
     assert marker in windows_acceptance, f'synthetic manifest rebuild missing {marker}'
 assert '[IO.Path]::GetRelativePath(' not in windows_acceptance, 'Windows PowerShell 5.1 does not provide System.IO.Path.GetRelativePath'
 assert '$fullPath.StartsWith($destinationPrefix,[StringComparison]::OrdinalIgnoreCase)' in windows_acceptance, 'synthetic payload path confinement boundary missing'
+assert "[string]::Equals($rel,'manifests/installed-manifest.json',[StringComparison]::OrdinalIgnoreCase)" in windows_acceptance, 'synthetic manifest must be excluded by canonical relative path'
 assert "$manifest.files|Where-Object{[string]$_.owner -ne 'maintenance'}" not in windows_acceptance, 'synthetic payload must not splice stale manifest entries'
 assert not re.search(r'(?im)(^|[;\s])(gci|gc|cp|mv|rm|kill|sleep|gfh)(?=\s|;|$)', windows_acceptance), 'forbidden PowerShell alias in Windows acceptance script'
 assert '$CommandArgs' in windows_acceptance
