@@ -1,5 +1,5 @@
 #define MyAppName "SOKNA Agent"
-#define MyAppVersion "2.6.0-dev"
+#define MyAppVersion "2.6.0"
 #define MyPublisher "SOKNA"
 #define MyExeName "Sokna.Agent.Maintenance.exe"
 #define PayloadRoot "..\..\artifacts\windows\installer-payload"

@@ -1,6 +1,6 @@
 name: Windows Agent Validation
 run-name: >-
-  Windows Agent Validation (${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'quick' }})
+  Windows Agent Validation (${{ github.event_name == 'workflow_dispatch' && inputs.profile || (github.ref == 'refs/heads/release/2.6.0' && 'full' || 'quick') }})
   [${{ github.event_name == 'workflow_dispatch' && inputs.request_id || 'push' }}]
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ on:
         default: ''
         type: string
   push:
-    branches: [dev/bootstrap-v2.5]
+    branches: [dev/bootstrap-v2.5, release/2.6.0]
     paths:
       - 'native/runtime/**'
       - 'native/host/**'
@@ -39,27 +39,30 @@ on:
       - 'docs/contracts/**'
       - 'docs/browser/**'
       - 'docs/knowledge/**'
+      - 'docs/releases/**'
       - '.github/workflows/windows-agent-validation.yml'
 permissions:
   contents: read
 concurrency:
-  group: windows-agent-validation-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'quick' }}
+  group: windows-agent-validation-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.profile || (github.ref == 'refs/heads/release/2.6.0' && 'full' || 'quick') }}
   cancel-in-progress: true
 jobs:
   validate:
     runs-on: windows-2025
     env:
-      SOKNA_VALIDATION_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'quick' }}
+      SOKNA_VALIDATION_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || (github.ref == 'refs/heads/release/2.6.0' && 'full' || 'quick') }}
+      SOKNA_EXPECTED_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_commit || github.sha }}
+      SOKNA_CANDIDATE_REF: ${{ github.ref == 'refs/heads/release/2.6.0' && 'sokna-agent-2.6.0' || 'sokna-agent-2.6.0-rc9' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Exact R1 source commit guard and deterministic source bundle
-        if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
+        if: env.SOKNA_VALIDATION_PROFILE == 'full'
         shell: powershell
         run: |
-          $expected='${{ inputs.expected_commit }}'.Trim()
+          $expected=$env:SOKNA_EXPECTED_COMMIT.Trim()
           if([string]::IsNullOrWhiteSpace($expected)){ throw 'EXACT_RC_EXPECTED_COMMIT_REQUIRED' }
           $headOut=@(& git rev-parse HEAD)
           if($LASTEXITCODE-ne0){throw 'EXACT_RC_GIT_HEAD_FAILED'}
@@ -68,7 +71,7 @@ jobs:
           if(@(& git status --porcelain --untracked-files=all).Count -gt 0){ throw 'EXACT_RC_DIRTY_CHECKOUT' }
           $rcDir=Join-Path $env:RUNNER_TEMP 'sokna-r1'
           New-Item -ItemType Directory -Path $rcDir -Force | Out-Null
-          python tools/release/Build-R1SourceRC.py --commit $head --output (Join-Path $rcDir 'SOKNA-Agent-2.6.0-rc9-source.zip') --manifest-output (Join-Path $rcDir 'source-manifest.json')
+          python tools/release/Build-R1SourceRC.py --commit $head --candidate-ref $env:SOKNA_CANDIDATE_REF --output (Join-Path $rcDir 'SOKNA-Agent-2.6.0-source.zip') --manifest-output (Join-Path $rcDir 'source-manifest.json')
           if($LASTEXITCODE -ne 0){ throw 'R1_SOURCE_BUNDLE_BUILD_FAILED' }
           "SOKNA_R1_DIR=$rcDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Windows adversarial preflight
@@ -201,30 +204,39 @@ jobs:
       - name: Browser QA 2.6.0 Windows acceptance
         id: win_browser
         continue-on-error: true
-        if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
+        if: env.SOKNA_VALIDATION_PROFILE == 'full'
         shell: powershell
         run: ./tools/runtime/releases/2.6.0/Test-BrowserQA260.ps1
       - name: Component lifecycle and automation 2.6.0 Windows acceptance
         id: win_component
         continue-on-error: true
-        if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
+        if: env.SOKNA_VALIDATION_PROFILE == 'full'
         shell: powershell
         run: ./tools/runtime/releases/2.6.0/Test-ComponentAutomation260.ps1
-      - name: Carrier generator legacy/current
-        id: carrier
+      - name: R2 semantic reliability and round-trip contracts
+        id: r2_contracts
         continue-on-error: true
         shell: powershell
         run: |
-          $v3Json = @{id='ci-v3-1';action='ping';params=@{}} | ConvertTo-Json -Compress
-          $v3B64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($v3Json))
-          $v3 = python tools/sokna_carrier_guard.py --json-b64 $v3B64 --extension-version 3.9.5 --meta
-          if($LASTEXITCODE -ne 0){ throw 'CARRIER_V3_GENERATOR_PROCESS_FAILED' }
-          if(($v3 -join "`n") -notmatch 'SOKNA3CMD:'){ throw 'CARRIER_V3_GENERATION_FAILED' }
-          $v4Json = @{i='ci-v4-1';o='p';a=@{}} | ConvertTo-Json -Compress
-          $v4B64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($v4Json))
-          $v4 = python tools/sokna_carrier_guard.py --json-b64 $v4B64 --extension-version 3.10.8 --meta
-          if($LASTEXITCODE -ne 0){ throw 'CARRIER_V4_GENERATOR_PROCESS_FAILED' }
-          if(($v4 -join "`n") -notmatch 'SOKNA4CMD:ci-v4-1:'){ throw 'CARRIER_V4_GENERATION_FAILED' }
+          python tools/tests/test_r2_contract_reliability.py
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/tests/test_r2_observability.py
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/tests/test_r2_outbound_artifacts.py
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/tests/test_r2_browser_audit.py
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/tests/test_r2_session_continuity.py
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/tests/test_browser_credential_contract.py
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/tests/test_chat_artifact_autopull.py
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          node tools/tests/test_capability_gate.mjs
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          node tools/tests/test_outbound_attachment_core.mjs
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          node tools/tests/test_chat_artifact_core.mjs
       - name: Environment selector and knowledge helpers
         id: env_helpers
         continue-on-error: true
@@ -266,11 +278,11 @@ jobs:
           WIN_ARTIFACT_PROVIDER: ${{ steps.win_artifact_provider.outcome }}
           WIN_BROWSER: ${{ steps.win_browser.outcome }}
           WIN_COMPONENT: ${{ steps.win_component.outcome }}
-          CARRIER: ${{ steps.carrier.outcome }}
+          R2_CONTRACTS: ${{ steps.r2_contracts.outcome }}
           ENV_HELPERS: ${{ steps.env_helpers.outcome }}
         run: |
           $failed=@()
-          $required=@('WINDOWS_ADVERSARIAL','WINDOWS_COMPAT','EXT_CONTRACTS','TRANSPORT','REPO_CONTRACTS','P0_CONTRACTS','P1_CONTRACTS','P2_CONTRACTS','P3_CONTRACTS','P4_CONTRACTS','P5_CONTRACTS','P6_CONTRACTS','BRIDGE_GATE','R0_CONTRACTS','R1_CONTRACTS','NATIVE_AGENT','NATIVE_BROWSER','NATIVE_PROVIDER','NATIVE_HOST','WIN_ARTIFACT_ROOT','WIN_WORKSPACE','WIN_ADVANCED_WORKSPACE','WIN_ARTIFACT_PROVIDER','CARRIER','ENV_HELPERS')
+          $required=@('WINDOWS_ADVERSARIAL','WINDOWS_COMPAT','EXT_CONTRACTS','TRANSPORT','REPO_CONTRACTS','P0_CONTRACTS','P1_CONTRACTS','P2_CONTRACTS','P3_CONTRACTS','P4_CONTRACTS','P5_CONTRACTS','P6_CONTRACTS','BRIDGE_GATE','R0_CONTRACTS','R1_CONTRACTS','NATIVE_AGENT','NATIVE_BROWSER','NATIVE_PROVIDER','NATIVE_HOST','WIN_ARTIFACT_ROOT','WIN_WORKSPACE','WIN_ADVANCED_WORKSPACE','WIN_ARTIFACT_PROVIDER','R2_CONTRACTS','ENV_HELPERS')
           if($env:SOKNA_VALIDATION_PROFILE-eq'full'){$required+=@('WIN_BROWSER','WIN_COMPONENT')}
           foreach($name in $required){
             $value=[Environment]::GetEnvironmentVariable($name)
@@ -278,12 +290,12 @@ jobs:
           }
           if(@($failed).Count -gt 0){throw ('WINDOWS_DIAGNOSTIC_FAILURES: '+($failed -join '; '))}
       - name: Setup .NET 8 for P1 full build
-        if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
+        if: env.SOKNA_VALIDATION_PROFILE == 'full'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
       - name: Acquire pinned Inno Setup compiler for P1 full build
-        if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
+        if: env.SOKNA_VALIDATION_PROFILE == 'full'
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path .ci/tools -Force | Out-Null
@@ -292,44 +304,44 @@ jobs:
           if(-not $iscc){ throw 'PINNED_INNO_COMPILER_NOT_FOUND' }
           $iscc.FullName | Set-Content .ci/inno-compiler-path.txt -Encoding ASCII
       - name: Build P1 self-contained maintenance, launcher and Setup.exe
-        if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
+        if: env.SOKNA_VALIDATION_PROFILE == 'full'
         shell: powershell
         run: |
           $iscc=(Get-Content .ci/inno-compiler-path.txt -Raw).Trim()
-          $buildOutput=@(./tools/installer/Build-P1Installer.ps1 -InnoCompiler $iscc -ExpectedSourceCommit '${{ inputs.expected_commit }}')
+          $buildOutput=@(./tools/installer/Build-P1Installer.ps1 -InnoCompiler $iscc -ExpectedSourceCommit $env:SOKNA_EXPECTED_COMMIT)
           $result=($buildOutput | Select-Object -Last 1) | ConvertFrom-Json
           if(-not $result.ok){ throw 'P1_INSTALLER_BUILD_FAILED' }
           $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Agent-Setup-*.exe' -File | Select-Object -First 1
           if(-not $setup){ throw 'P1_SETUP_EXE_MISSING' }
       - name: P1 clean-system install, repair, upgrade, rollback and uninstall acceptance
-        if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
+        if: env.SOKNA_VALIDATION_PROFILE == 'full'
         shell: powershell
         run: |
           $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Agent-Setup-*.exe' -File | Select-Object -First 1
           if(-not $setup){ throw 'P1_SETUP_EXE_MISSING_FOR_ACCEPTANCE' }
           ./tools/installer/Test-P1Windows.ps1 -SetupPath $setup.FullName
       - name: Write exact-RC Windows evidence
-        if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
+        if: env.SOKNA_VALIDATION_PROFILE == 'full'
         shell: powershell
         run: |
           $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Agent-Setup-*.exe' -File | Select-Object -First 1
           if(-not $setup){ throw 'P1_SETUP_EXE_MISSING_FOR_EVIDENCE' }
           ./tools/ci/Write-ExactRCEvidence.ps1 `
             -SourceManifestPath (Join-Path $env:SOKNA_R1_DIR 'source-manifest.json') `
-            -SourceBundlePath (Join-Path $env:SOKNA_R1_DIR 'SOKNA-Agent-2.6.0-rc9-source.zip') `
+            -SourceBundlePath (Join-Path $env:SOKNA_R1_DIR 'SOKNA-Agent-2.6.0-source.zip') `
             -SetupPath $setup.FullName `
             -PayloadManifestPath 'artifacts/windows/installer-payload/manifests/installed-manifest.json' `
             -AcceptanceStatus passed `
             -OutputPath (Join-Path $env:SOKNA_R1_DIR 'windows-exact-rc-evidence.json')
       - name: Upload exact-RC source, setup and evidence
-        if: github.event_name == 'workflow_dispatch' && inputs.profile == 'full'
+        if: env.SOKNA_VALIDATION_PROFILE == 'full'
         uses: actions/upload-artifact@v4
         with:
-          name: SOKNA-Agent-2.6.0-rc9-${{ github.sha }}
+          name: SOKNA-Agent-2.6.0-${{ github.sha }}
           if-no-files-found: error
           retention-days: 30
           path: |
-            ${{ runner.temp }}\sokna-r1\SOKNA-Agent-2.6.0-rc9-source.zip
+            ${{ runner.temp }}\sokna-r1\SOKNA-Agent-2.6.0-source.zip
             ${{ runner.temp }}\sokna-r1\source-manifest.json
             ${{ runner.temp }}\sokna-r1\windows-exact-rc-evidence.json
             artifacts/windows/setup/SOKNA-Agent-Setup-*.exe
@@ -337,6 +349,52 @@ jobs:
       - name: Windows Agent runtime
         shell: powershell
         run: |
-          $profile='${{ inputs.profile }}'
-          if([string]::IsNullOrWhiteSpace($profile)){$profile='quick'}
-          ./tools/ci/Test-WindowsAgentEnvironment.ps1 -Profile $profile -RuntimeVersion '2.5.7'
+          ./tools/ci/Test-WindowsAgentEnvironment.ps1 -Profile $env:SOKNA_VALIDATION_PROFILE -RuntimeVersion '2.5.7'
+
+  release:
+    name: Publish SOKNA Bridge 2.6.0
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/release/2.6.0'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: SOKNA-Agent-2.6.0-${{ github.sha }}
+          path: release-assets
+      - name: Verify release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$(find release-assets -type f -name 'SOKNA-Agent-Setup-2.6.0-x64.exe' -print -quit)"
+          test -f "$(find release-assets -type f -name 'SOKNA-Agent-2.6.0-source.zip' -print -quit)"
+          test -f "$(find release-assets -type f -name 'windows-exact-rc-evidence.json' -print -quit)"
+          test -f "$(find release-assets -type f -name 'source-manifest.json' -print -quit)"
+      - name: Create immutable GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='sokna-agent-2.6.0'
+          setup=$(find release-assets -type f -name 'SOKNA-Agent-Setup-2.6.0-x64.exe' -print -quit)
+          source_zip=$(find release-assets -type f -name 'SOKNA-Agent-2.6.0-source.zip' -print -quit)
+          evidence=$(find release-assets -type f -name 'windows-exact-rc-evidence.json' -print -quit)
+          source_manifest=$(find release-assets -type f -name 'source-manifest.json' -print -quit)
+          if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null); then
+            if [ "$existing" != "$GITHUB_SHA" ]; then
+              echo "::error::RELEASE_TAG_COMMIT_MISMATCH expected=$GITHUB_SHA actual=$existing"
+              exit 1
+            fi
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" "$setup" "$source_zip" "$evidence" "$source_manifest" --clobber
+            else
+              gh release create "$tag" "$setup" "$source_zip" "$evidence" "$source_manifest" --verify-tag --title 'SOKNA Bridge 2.6.0' --notes-file docs/releases/2.6.0.md
+            fi
+          else
+            gh release create "$tag" "$setup" "$source_zip" "$evidence" "$source_manifest" --target "$GITHUB_SHA" --title 'SOKNA Bridge 2.6.0' --notes-file docs/releases/2.6.0.md
+          fi
