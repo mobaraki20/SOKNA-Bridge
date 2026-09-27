@@ -16,8 +16,8 @@ for x in ['JOB_WATCH_KEY','job.get','queueStatusEvent','result_first_barrier','r
 assert 'artifact.begin' not in bg and 'ARTIFACT_CANDIDATE' not in bg
 wf=(root/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
 for x in ['windows-2025','request_id','run-name:','cancel-in-progress: true']: assert x in wf,x
-for x in ['--json-b64 $v3B64','--json-b64 $v4B64','CARRIER_V3_GENERATOR_PROCESS_FAILED','CARRIER_V4_GENERATOR_PROCESS_FAILED']: assert x in wf,x
-assert "' | python tools/sokna_carrier_guard.py" not in wf
+for x in ['R2 semantic reliability and round-trip contracts','test_r2_contract_reliability.py','test_r2_observability.py','test_r2_outbound_artifacts.py','test_r2_browser_audit.py','test_r2_session_continuity.py','test_capability_gate.mjs']: assert x in wf,x
+for x in ['--json-b64 $v3B64','--json-b64 $v4B64','CARRIER_V3_GENERATOR_PROCESS_FAILED','CARRIER_V4_GENERATOR_PROCESS_FAILED','id: carrier','sokna_carrier_guard.py']: assert x not in wf,x
 ci=(root/'tools/ci/Invoke-GitHubWindowsCI.ps1').read_text(encoding='utf-8')
 for x in ['request_id=$requestId','--log-failed','CI_SHA_MISMATCH','displayTitle','expected_commit=$ExpectedCommit','CI_EXPECTED_COMMIT_LOCAL_MISMATCH']: assert x in ci,x
 expected={'quick':(900,1200),'full':(1800,2100)}

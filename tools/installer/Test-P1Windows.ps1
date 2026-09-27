@@ -29,6 +29,11 @@ function New-SyntheticPayload([string]$Source,[string]$Destination,[string]$Vers
   if(-not(Test-Path -LiteralPath $agent -PathType Leaf)){throw 'SYNTHETIC_PAYLOAD_AGENT_MISSING'}
   if($BrokenRuntime){[IO.File]::WriteAllText($agent,'param([string]$ConfigPath=""); throw "CI injected startup failure"',[Text.UTF8Encoding]::new($false))}
   else{$text=Get-Content $agent -Raw;$text=$text.Replace($old,$Version);[IO.File]::WriteAllText($agent,$text,[Text.UTF8Encoding]::new($false))}
+  $caps=Join-Path $Destination 'runtime\AGENT_CAPABILITIES.json'
+  if(-not(Test-Path -LiteralPath $caps -PathType Leaf)){throw 'SYNTHETIC_PAYLOAD_CAPABILITIES_MISSING'}
+  $capsObj=Get-Content $caps -Raw|ConvertFrom-Json
+  $capsObj.agent=$Version
+  Write-Json $caps $capsObj
   $obsolete=Join-Path $Destination 'runtime\obsolete-ci.txt'
   if($AddObsolete){[IO.File]::WriteAllText($obsolete,'obsolete-ci',[Text.UTF8Encoding]::new($false))}
   if($RemoveObsolete -and (Test-Path $obsolete)){Remove-Item $obsolete -Force}

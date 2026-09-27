@@ -11,6 +11,7 @@ function run(pageText,payload,composerText=''){
   const ctx={
     document:{body:{innerText:pageText,textContent:pageText}},
     composer:()=>({value:composerText}),
+    textOf:e=>String(e?.value||e?.innerText||e?.textContent||''),
   };
   ctx.globalThis=ctx;
   vm.runInNewContext(fnSource,ctx,{filename:'content-result-visible.js'});
