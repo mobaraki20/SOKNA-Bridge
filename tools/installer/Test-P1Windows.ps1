@@ -35,14 +35,16 @@ function New-SyntheticPayload([string]$Source,[string]$Destination,[string]$Vers
 
   # Rebuild ownership from the actual destination tree. Never splice entries from
   # the previous manifest: a stale path there must not survive into a synthetic upgrade.
-  # Use Path.GetRelativePath instead of substring math, and convert separators with
-  # a single backslash. PowerShell single-quoted strings do not use C-style escaping,
-  # so '\\' would create two literal separators and can make Test-Path fail on Windows.
+  # Windows PowerShell 5.1 does not expose System.IO.Path.GetRelativePath. Canonicalize
+  # both paths, require a directory-boundary prefix, then derive the relative path.
   $destinationRoot=[IO.Path]::GetFullPath($Destination).TrimEnd('\')
+  $destinationPrefix=$destinationRoot+'\'
   $files=@(Get-ChildItem -LiteralPath $destinationRoot -File -Recurse|Where-Object{
     -not [string]::Equals($_.FullName,$manifestPath,[StringComparison]::OrdinalIgnoreCase)
   }|ForEach-Object{
-    $rel=[IO.Path]::GetRelativePath($destinationRoot,$_.FullName).Replace('\','/')
+    $fullPath=[IO.Path]::GetFullPath($_.FullName)
+    if(-not $fullPath.StartsWith($destinationPrefix,[StringComparison]::OrdinalIgnoreCase)){throw ('SYNTHETIC_PAYLOAD_PATH_ESCAPE: '+$fullPath)}
+    $rel=$fullPath.Substring($destinationPrefix.Length).Replace('\','/')
     $owner=if($rel.StartsWith('runtime/',[StringComparison]::OrdinalIgnoreCase)){'maintenance'}else{'installer'}
     [pscustomobject]@{path=$rel;sha256=(Sha $_.FullName);bytes=$_.Length;owner=$owner}
   }|Sort-Object path)
