@@ -80,7 +80,7 @@ for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', '
     assert marker in windows_acceptance, f'Windows lifecycle acceptance missing {marker}'
 # Synthetic upgrades must rebuild ownership from the actual payload tree; stale
 # paths from the previous manifest are forbidden from surviving into the next one.
-for marker in ['Get-ChildItem -LiteralPath $Destination -File -Recurse', 'SYNTHETIC_PAYLOAD_DUPLICATE_PATH', 'SYNTHETIC_PAYLOAD_UNSAFE_PATH']:
+for marker in ['Get-ChildItem -LiteralPath $destinationRoot -File -Recurse', 'SYNTHETIC_PAYLOAD_DUPLICATE_PATH', 'SYNTHETIC_PAYLOAD_UNSAFE_PATH']:
     assert marker in windows_acceptance, f'synthetic manifest rebuild missing {marker}'
 assert "$manifest.files|Where-Object{[string]$_.owner -ne 'maintenance'}" not in windows_acceptance, 'synthetic payload must not splice stale manifest entries'
 assert not re.search(r'(?im)(^|[;\s])(gci|gc|cp|mv|rm|kill|sleep|gfh)(?=\s|;|$)', windows_acceptance), 'forbidden PowerShell alias in Windows acceptance script'
