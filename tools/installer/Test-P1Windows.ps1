@@ -39,14 +39,14 @@ function New-SyntheticPayload([string]$Source,[string]$Destination,[string]$Vers
   # both paths, require a directory-boundary prefix, then derive the relative path.
   $destinationRoot=[IO.Path]::GetFullPath($Destination).TrimEnd('\')
   $destinationPrefix=$destinationRoot+'\'
-  $files=@(Get-ChildItem -LiteralPath $destinationRoot -File -Recurse|Where-Object{
-    -not [string]::Equals($_.FullName,$manifestPath,[StringComparison]::OrdinalIgnoreCase)
-  }|ForEach-Object{
+  $files=@(Get-ChildItem -LiteralPath $destinationRoot -File -Recurse|ForEach-Object{
     $fullPath=[IO.Path]::GetFullPath($_.FullName)
     if(-not $fullPath.StartsWith($destinationPrefix,[StringComparison]::OrdinalIgnoreCase)){throw ('SYNTHETIC_PAYLOAD_PATH_ESCAPE: '+$fullPath)}
     $rel=$fullPath.Substring($destinationPrefix.Length).Replace('\','/')
-    $owner=if($rel.StartsWith('runtime/',[StringComparison]::OrdinalIgnoreCase)){'maintenance'}else{'installer'}
-    [pscustomobject]@{path=$rel;sha256=(Sha $_.FullName);bytes=$_.Length;owner=$owner}
+    if(-not [string]::Equals($rel,'manifests/installed-manifest.json',[StringComparison]::OrdinalIgnoreCase)){
+      $owner=if($rel.StartsWith('runtime/',[StringComparison]::OrdinalIgnoreCase)){'maintenance'}else{'installer'}
+      [pscustomobject]@{path=$rel;sha256=(Sha $_.FullName);bytes=$_.Length;owner=$owner}
+    }
   }|Sort-Object path)
   $dupes=@($files|Group-Object path|Where-Object Count -gt 1)
   if($dupes.Count -gt 0){throw ('SYNTHETIC_PAYLOAD_DUPLICATE_PATH: '+(($dupes|ForEach-Object Name)-join','))}
