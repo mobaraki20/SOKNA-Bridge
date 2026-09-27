@@ -39,7 +39,7 @@ for forbidden in ['native/host','artifact.begin','sandbox:']:
 assert 'Environment selector and knowledge helpers' in wf
 
 read_first=(root/'00_READ_FIRST_NEW_CHAT.md').read_text(encoding='utf-8')
-for x in ['SOKNA Bridge is the Chat agent\'s access plane','meaningful checkpoint','sokna_carrier_guard.py','Individual PCs may be older']:
+for x in ['SOKNA Bridge is the Chat agent\'s access plane','semantic-only','bridge.bootstrap + persistent work_session + session.resume','No release/live claim without exact Windows evidence.']:
     assert x in read_first,x
 guard=(root/'tools/sokna_carrier_guard.py').read_text(encoding='utf-8')
 for x in ["choices=['v3','v4']",'transport_for_extension','SOKNA3CMD:','SOKNA4CMD:']:
