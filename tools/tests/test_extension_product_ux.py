@@ -30,9 +30,13 @@ assert "setInterval" not in popup_js, "popup must not poll Activity continuously
 background=read(Path("extension/chrome/background.js"))
 for marker in [
     "chatgpt.com","CONNECT_CHAT","instagram.profile.scan","instagram.scan.search",
-    "instagram.scan.get","instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.selection.confirm","bridge.diagnostics.get","POST_USER_TEXT"
+    "instagram.scan.get","instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.selection.confirm","bridge.diagnostics.get","POST_USER_TEXT",
+    "delivery_state_core.js","CHECK_RESULT_VISIBLE","chat.delivery_uncertain","SEMANTIC_RESTORE_PROOF"
 ]:
     assert marker in background, f"background product integration missing {marker}"
+delivery_core=read(Path("extension/chrome/delivery_state_core.js"))
+for marker in ["submitted_awaiting_ack","delivery_uncertain","ACK_DEADLINE_MS","MAX_ACK_POLLS"]:
+    assert marker in delivery_core, f"delivery state core missing {marker}"
 
 bootstrap=read(Path("extension/chrome/background_bootstrap.js"))
 for marker in ["instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm","instagram.selection.reject","instagram.export","bridge.diagnostics.get"]:
