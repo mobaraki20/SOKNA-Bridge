@@ -49,16 +49,17 @@ def test_secret_is_sent_to_helper_over_stdin_not_command_line():
     assert "handleCredentialMessage(m)" in main
 
 
-def test_popup_routes_credentials_directly_to_native_host_and_clears_password_field():
+def test_primary_popup_does_not_expose_credential_secret_ui():
     p = text(POPUP)
-    assert 'chrome.runtime.sendNativeMessage(NATIVE_HOST' in p
-    assert 'type:"credential.store"' in p
-    assert 'type:"credential.list"' in p
-    assert 'type:"credential.delete"' in p
-    assert 'document.getElementById("credSecret").value=""' in p
     html = text(POPUP_HTML)
-    assert 'id="credSecret" type="password"' in html
-    assert "Secrets go directly to the local Native Host" in html
+    for forbidden in ['credential.store', 'credential.list', 'credential.delete', 'credSecret', 'Password / Secret', 'Test Credentials']:
+        assert forbidden not in p + html, f"primary popup must not expose developer credential UI: {forbidden}"
+    # Credential CRUD remains implemented in the local Native Host and continues
+    # to use the Windows user-bound DPAPI store; removing it from the primary
+    # popup is a UX boundary, not removal of the secure credential backend.
+    h = text(HOST)
+    for marker in ['"credential.store"', '"credential.list"', '"credential.delete"']:
+        assert marker in h
 
 
 def test_stored_credential_values_are_in_redaction_set():
