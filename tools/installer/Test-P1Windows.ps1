@@ -83,14 +83,17 @@ function Test-LegacyPing([int]$Port,[string]$Token){
   }catch{return $false}
 }
 function Invoke-UnhealthyCurrentRuntimeSetupAcceptance([string]$Setup,[string]$RepoRoot,[string]$CaseRoot){
-  $install=Join-Path $CaseRoot 'unhealthy-current-app'
+  $install=Join-Path $CaseRoot 'SOKNA Agent'
   $artifact=Join-Path $CaseRoot 'unhealthy-current-artifacts'
   $setupLog=Join-Path $CaseRoot 'unhealthy-current-setup.log'
   $runtime=Join-Path $install 'runtime'
   $proc=$null
   try{
     New-Item -ItemType Directory -Path $runtime -Force|Out-Null
-    $port=Get-FreeTcpPort
+    $port=8766
+    $portProbe=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,$port)
+    try{$portProbe.Start()}catch{throw 'UNHEALTHY_CURRENT_ACCEPTANCE_PORT_8766_NOT_FREE'}
+    finally{try{$portProbe.Stop()}catch{}}
     $tokenBytes=New-Object byte[] 32
     $rng=[Security.Cryptography.RandomNumberGenerator]::Create()
     try{$rng.GetBytes($tokenBytes)}finally{$rng.Dispose()}
@@ -127,7 +130,7 @@ try{
 }finally{$listener.Close()}
 '@
     [IO.File]::WriteAllText($agentPath,$stub,[Text.UTF8Encoding]::new($false))
-    $proc=Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$agentPath,'-ConfigPath',$configPath) -PassThru -WindowStyle Hidden
+    $proc=Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$agentPath+'"'),'-ConfigPath',('"'+$configPath+'"')) -PassThru -WindowStyle Hidden
 
     $ready=$false
     for($i=0;$i-lt40;$i++){
