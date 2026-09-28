@@ -1,7 +1,7 @@
 name: P1 Windows Lifecycle Temporary
 on:
   push:
-    branches: [r2/contract-reliability]
+    branches: [r2/contract-reliability, fix/legacy-runtime-migration]
 permissions:
   contents: read
 concurrency:
