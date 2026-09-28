@@ -10,7 +10,7 @@ ap=json.loads((root/'docs/contracts/ARTIFACT_PROVIDER_POLICY_V1.json').read_text
 assert ap['providers']['chat_attachment']['status']=='candidate-rc9'
 assert ap['providers']['github_actions_artifact']['must_not_back_result_plane'] is True
 manifest=json.loads((root/'extension/chrome/manifest.json').read_text(encoding='utf-8'))
-assert manifest['version']=='3.12.3'
+assert manifest['version']=='3.12.4'
 bg=(root/'extension/chrome/background.js').read_text(encoding='utf-8')
 for x in ['JOB_WATCH_KEY','job.get','queueStatusEvent','result_first_barrier','resumeJobWatches','agent_job_core.js']: assert x in bg,x
 assert 'artifact.begin' not in bg and 'ARTIFACT_CANDIDATE' not in bg
@@ -28,7 +28,7 @@ ids={x['id'] for x in lessons}
 for need in ['KB-CTRL-001','KB-RUNTIME-001','KB-DEV-001','KB-DEV-002','KB-PS-001','KB-PS-002','KB-CI-001','KB-CI-002','KB-ASYNC-001','KB-CTRL-002','KB-SRC-001','KB-ROUTE-001','KB-ROUTE-002','KB-CTRL-003','KB-PC-001','github-windows-python-stdin-explicit-json','KB-ART-CHAT-001']: assert need in ids,need
 
 activate=(root/'tools/activation/Activate-AutonomyBootstrap.ps1').read_text(encoding='utf-8')
-for x in ['ACTIVATION_FULL_CI_NOT_PASSED',"manifest.version -ne '3.12.3'",'source-ci-ticket.json','extension_reload_required']:
+for x in ['ACTIVATION_FULL_CI_NOT_PASSED',"manifest.version -ne '3.12.4'",'source-ci-ticket.json','extension_reload_required']:
     assert x in activate,x
 assert '2.5.7' not in activate
 ci=(root/'tools/ci/Invoke-GitHubWindowsCI.ps1').read_text(encoding='utf-8')
