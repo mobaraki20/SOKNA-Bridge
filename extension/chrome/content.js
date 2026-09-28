@@ -5,7 +5,7 @@ try{globalThis[G]?.dispose?.()}catch{}
 
 const Core=globalThis.__SOKNA_V33_DOM_CORE__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
-const VERSION="3.12.3",DETECTOR="semantic-delivery-v2";
+const VERSION="3.12.4",DETECTOR="semantic-delivery-v2";
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 let armed=false,disposed=false,observer=null,deliveryStateTimer=0;
 let lastPostMethod="",lastPostError="",lastDeliveryGate="",lastDeliveryReadySignalAt=0,lastActivityAt=0,lastVisibilityDecision=null;
@@ -390,6 +390,12 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m?.type==="POST_RESULT"){
     if(window.top!==window){reply({ok:false,error:"POST_RESULT must target top frame"});return}
     post(String(m.envelope||"")).then(r=>{lastPostMethod=r?.method||"";lastPostError=r?.ok?"":(r?.error||"Submit failed");reply(r)}).catch(e=>{lastPostError=String(e);reply({ok:false,error:String(e)})});return true;
+  }
+  if(m?.type==="CHECK_RESULT_VISIBLE"){
+    if(window.top!==window){reply({ok:false,visible:false,error:"CHECK_RESULT_VISIBLE must target top frame"});return}
+    const envelope=String(m.envelope||"");
+    const visible=resultVisibleInUserTurn(envelope);
+    reply({ok:visible,visible,method:visible?"conversation-ack":"",decision:lastVisibilityDecision});return;
   }
   if(m?.type==="POST_USER_TEXT"){
     postUserText(String(m.text||"")).then(r=>reply(r)).catch(e=>reply({ok:false,error:String(e)}));return true;

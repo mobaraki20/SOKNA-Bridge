@@ -1,9 +1,10 @@
-importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js");
+importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js","delivery_state_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
+const DELIVERY=globalThis.__SOKNA_DELIVERY_STATE_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.12.3";
+const VERSION="3.12.4";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -227,7 +228,6 @@ async function arm(tabId){
   a[String(tabId)]={conversationKey:conv(tab.url),url:tab.url,armedAt:now(),baselineCount:Number(sem?.baseline_count||0),reconcileReady:true};await saveArmed(a);
   await setStatus(tabId,{state:"Waiting",detail:"Connected — Transport Unverified",baselineCount:Number(sem?.baseline_count||0),lastError:"",actionRequired:false,transportVerified:false});
   await appendTrace(tabId,"semantic.armed",{conversationKey:conv(tab.url),baselineCount:Number(sem?.baseline_count||0)});
-  retryPending(tabId).catch(()=>{});
   return {ok:true,armed:true,version:VERSION,conversationKey:conv(tab.url),baselineCount:Number(sem?.baseline_count||0),transport_verified:false};
 }
 async function disarm(tabId){
@@ -253,7 +253,7 @@ async function connectChat(tabId){
   try{
     const sc=await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge});
     if(!sc?.ok)return {ok:false,error:sc?.error||"Semantic intake challenge could not be armed."};
-    const all=await armedAll();if(all[String(tabId)]){all[String(tabId)].intakeChallenge=challenge;all[String(tabId)].intakeChallengeAt=now();await saveArmed(all)}
+    const all=await armedAll();if(all[String(tabId)]){all[String(tabId)].intakeChallenge=challenge;all[String(tabId)].intakeChallengeAt=now();delete all[String(tabId)].intakeProof;await saveArmed(all)}
   }catch(e){return {ok:false,error:"Semantic intake challenge failed: "+String(e)}}
   const actions=[
     "bridge.bootstrap","bridge.diagnostics.get","workspace.list","file.read","file.write","process.run","git.status",
@@ -288,42 +288,102 @@ async function connectChat(tabId){
 }
 
 const postFlights=new Map();
-async function postPending(tabId,id,rec){
+async function postPending(tabId,id,rec,force=false){
   const key=`${tabId}:${id}`;
   if(postFlights.has(key))return await postFlights.get(key);
-  const flight=postPendingInner(tabId,id,rec);
+  const flight=postPendingInner(tabId,id,rec,force);
   postFlights.set(key,flight);
   try{return await flight}finally{if(postFlights.get(key)===flight)postFlights.delete(key)}
 }
-async function postPendingInner(tabId,id,rec){
+async function postPendingInner(tabId,id,rec,force=false){
   const a=await isArmed(tabId);
   let tab=null;try{tab=await chrome.tabs.get(tabId)}catch{}
   if(!a.armed||!tab||conv(tab.url)!==rec.conversationKey){
     return {ok:false,stale:true,error:"Conversation changed; stale result was not posted."};
   }
-  if(rec.nextPostAt&&rec.nextPostAt>now()){await scheduleRetryAlarm(tabId,rec.nextPostAt);return {ok:false,waiting:true,reason:"backoff"}};
+
+  let seen=await seenAll();
+  rec=DELIVERY.normalize(seen[id]||rec,now());
+  if(seen[id]&&(!seen[id].deliveryState||seen[id].deliveryState!==rec.deliveryState||seen[id].submitted!==rec.submitted)){
+    seen[id]=rec;await saveSeen(seen);
+  }
+
+  const mode=DELIVERY.mode(rec,now(),force);
+  if(mode==="none")return {ok:true,duplicate:true,reason:"already_acknowledged"};
+  if(mode==="deferred"){
+    if(rec.nextPostAt)await scheduleRetryAlarm(tabId,rec.nextPostAt);
+    return {ok:false,waiting:true,reason:"backoff"};
+  }
+  if(mode==="uncertain"){
+    await setStatus(tabId,{state:"Needs Action",detail:`Delivery uncertain for ${id}`,currentCommandId:id,lastError:"Conversation ACK was not observed before the safety deadline. Result will not be re-submitted automatically.",actionRequired:true});
+    return {ok:false,waiting:false,reason:"delivery_uncertain"};
+  }
+
   const isStatusEvent=rec.kind==="transport-nack"||rec.kind==="status-event";
   const env=isStatusEvent?statusEnvelope({eventId:id,...rec.result}):resultEnvelope({id,...rec.result});
+
+  if(mode==="ack_poll"){
+    await appendTrace(tabId,"chat.delivery_ack_poll",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_poll:Number(rec.ackPolls||0)+1});
+    let p;try{p=await chrome.tabs.sendMessage(tabId,{type:"CHECK_RESULT_VISIBLE",envelope:env},{frameId:0})}catch(e){p={ok:false,visible:false,error:String(e)}}
+    const outcome=DELIVERY.pollResult(rec,!!p?.visible||!!p?.ok,now());
+    seen=await seenAll();
+    if(seen[id]){seen[id]={...seen[id],...outcome.record,postError:p?.error||""};await saveSeen(seen);rec=seen[id]}else rec=outcome.record;
+
+    if(outcome.state==="acknowledged"){
+      await clearRetryAlarm(tabId);
+      await appendTrace(tabId,"chat.delivery_completed",{record_id:id,kind:rec.kind||"result",method:"conversation-ack"});
+      await setStatus(tabId,{state:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,...(isStatusEvent?{}:{lastCompletedCommandId:id}),lastPostMethod:"conversation-ack",currentCommandId:"",lastError:"",actionRequired:false});
+      setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
+      return {ok:true,method:"conversation-ack"};
+    }
+    if(outcome.state==="delivery_uncertain"){
+      await appendTrace(tabId,"chat.delivery_uncertain",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_polls:Number(rec.ackPolls||0),submitted_at:Number(rec.submittedAt||0)});
+      await setStatus(tabId,{state:"Needs Action",detail:`Delivery uncertain for ${id}`,currentCommandId:id,lastError:"Conversation ACK was not observed before the safety deadline. Result was submitted once and will not be sent again automatically.",actionRequired:true});
+      setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
+      return {ok:false,waiting:false,reason:"delivery_uncertain"};
+    }
+    await setStatus(tabId,{state:"Waiting",detail:`Submitted ${id}; waiting for conversation ACK`,currentCommandId:id,lastError:"",actionRequired:false});
+    if(rec.nextPostAt)await scheduleRetryAlarm(tabId,rec.nextPostAt);
+    const delay=Math.max(500,(rec.nextPostAt||now()+DELIVERY.ACK_POLL_MS)-now());
+    setTimeout(()=>retryPending(tabId).catch(()=>{}),delay);
+    return {ok:false,waiting:true,submitted:true,reason:"awaiting_conversation_ack"};
+  }
+
   await appendTrace(tabId,"chat.delivery_started",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id)});
   await setStatus(tabId,{state:"Posting",detail:`Sending ${id}`,currentCommandId:id,actionRequired:false});
   let p;try{p=await chrome.tabs.sendMessage(tabId,{type:"POST_RESULT",envelope:env},{frameId:0})}catch(e){p={ok:false,waiting:true,reason:"page_unavailable",error:String(e)}}
-  const seen=await seenAll();
+
+  seen=await seenAll();
   if(seen[id]){
-    const attempts=(seen[id].postAttempts||0)+(p?.ok||p?.reason==="awaiting_conversation_ack"?0:1);
-    const delay=p?.reason==="awaiting_conversation_ack"?15000:Math.min(RETRY_MAX_MS,RETRY_BASE_MS*Math.pow(2,Math.max(0,attempts-1)));
-    seen[id].posted=seen[id].posted||!!p?.ok;seen[id].postMethod=p?.method||"";seen[id].postError=p?.error||"";
-    seen[id].postAttempts=attempts;seen[id].waitReason=p?.reason||"";
-    seen[id].postedAt=seen[id].posted?(seen[id].postedAt||now()):0;seen[id].nextPostAt=seen[id].posted?0:(now()+delay);
-    await saveSeen(seen);
-    rec=seen[id];
-    if(rec.posted)await clearRetryAlarm(tabId);else await scheduleRetryAlarm(tabId,rec.nextPostAt);
+    let next=DELIVERY.normalize(seen[id],now());
+    if(p?.ok){
+      next=DELIVERY.markAcknowledged(next,p?.method||"posted",now());
+    }else if(p?.submitted===true||p?.reason==="awaiting_conversation_ack"){
+      next=DELIVERY.markSubmitted(next,now());
+      next={...next,postMethod:p?.method||"submitted",postError:p?.error||""};
+    }else{
+      const attempts=(next.postAttempts||0)+1;
+      const delay=Math.min(RETRY_MAX_MS,RETRY_BASE_MS*Math.pow(2,Math.max(0,attempts-1)));
+      next={...next,postAttempts:attempts,waitReason:p?.reason||"",postError:p?.error||"",postMethod:p?.method||"",nextPostAt:now()+delay};
+    }
+    seen[id]=next;await saveSeen(seen);rec=next;
+    if(rec.posted)await clearRetryAlarm(tabId);else if(rec.nextPostAt)await scheduleRetryAlarm(tabId,rec.nextPostAt);
   }
+
   if(p?.ok){
     await appendTrace(tabId,"chat.delivery_completed",{record_id:id,kind:rec.kind||"result",method:String(p.method||"")});
     await setStatus(tabId,{state:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,...(isStatusEvent?{}:{lastCompletedCommandId:id}),lastPostMethod:p.method||"",currentCommandId:"",lastError:"",actionRequired:false});
     setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
     return {ok:true};
   }
+  if(rec?.deliveryState==="submitted_awaiting_ack"){
+    await appendTrace(tabId,"chat.delivery_submitted",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_deadline_at:Number(rec.ackDeadlineAt||0)});
+    await setStatus(tabId,{state:"Waiting",detail:`Submitted ${id}; waiting for conversation ACK`,currentCommandId:id,lastError:"",actionRequired:false});
+    const delay=Math.max(500,(rec.nextPostAt||now()+DELIVERY.ACK_POLL_MS)-now());
+    setTimeout(()=>retryPending(tabId).catch(()=>{}),delay);
+    return {ok:false,waiting:true,submitted:true,reason:"awaiting_conversation_ack"};
+  }
+
   await appendTrace(tabId,"chat.delivery_failed",{record_id:id,kind:rec.kind||"result",reason:String(p?.reason||"retry"),error:String(p?.error||"Submit failed")});
   const exhausted=(rec?.postAttempts||0)>=MAX_POST_ATTEMPTS&&!p?.waiting;
   if(exhausted){
@@ -859,28 +919,39 @@ async function handleCommandInner(tabId,command,meta={}){
   return await postPending(tabId,command.id,seen[command.id]);
 }
 function classifyPending(seen,registered,t=now(),force=false){
-  const retryEligible=[],deferred=[],stale=[],suppressed=[];
+  const retryEligible=[],deferred=[],stale=[],suppressed=[],uncertain=[];
   const conversationKey=registered?.conversationKey||"",armedAt=registered?.armedAt||0;
-  for(const [id,r] of Object.entries(seen||{})){
-    if(r?.state!=="done"||r?.posted)continue;
+  for(const [id,raw] of Object.entries(seen||{})){
+    if(raw?.state!=="done"||raw?.posted)continue;
+    const r=DELIVERY.normalize(raw,t);
     if(r?.suppressed){suppressed.push([id,r,"suppressed"]);continue}
     if(!conversationKey||r?.conversationKey!==conversationKey){stale.push([id,r,"different_conversation"]);continue}
     if(!r?.result){stale.push([id,r,"missing_result"]);continue}
     if(r?.kind==="transport-nack"&&(r?.ts||0)<armedAt){stale.push([id,r,"pre_arm_nack"]);continue}
     if(JOBCORE.shouldBlockStatusEvent(id,r,seen,conversationKey)){deferred.push([id,r,"result_first_barrier"]);continue}
-    if(!force&&r?.nextPostAt&&r.nextPostAt>t){deferred.push([id,r,"backoff"]);continue}
-    retryEligible.push([id,r,"retry_eligible"]);
+    const mode=DELIVERY.mode(r,t,force);
+    if(mode==="uncertain"){uncertain.push([id,r,"delivery_uncertain"]);continue}
+    if(mode==="deferred"){deferred.push([id,r,"backoff"]);continue}
+    if(mode==="none")continue;
+    retryEligible.push([id,r,mode]);
   }
   const byAge=(x,y)=>(x[1].acceptedAt||x[1].ts||0)-(y[1].acceptedAt||y[1].ts||0);
-  retryEligible.sort(byAge);deferred.sort(byAge);stale.sort(byAge);suppressed.sort(byAge);
-  return {retryEligible,deferred,stale,suppressed};
+  retryEligible.sort(byAge);deferred.sort(byAge);stale.sort(byAge);suppressed.sort(byAge);uncertain.sort(byAge);
+  return {retryEligible,deferred,stale,suppressed,uncertain};
 }
 async function retryPending(tabId,force=false){
   const a=await isArmed(tabId);if(!a.armed)return {ok:false,reason:"not_armed"};
-  const seen=await seenAll(),c=classifyPending(seen,a.registered,now(),force);
+  const seen=await seenAll();let migrated=false;
+  for(const [id,r] of Object.entries(seen)){
+    if(r?.state!=="done"||r?.posted)continue;
+    const n=DELIVERY.normalize(r,now());
+    if(!r.deliveryState||r.submitted!==n.submitted||r.ackDeadlineAt!==n.ackDeadlineAt){seen[id]=n;migrated=true}
+  }
+  if(migrated)await saveSeen(seen);
+  const c=classifyPending(seen,a.registered,now(),force);
   const p=c.retryEligible[0];
-  if(p)return await postPending(tabId,p[0],p[1]);
-  return {ok:false,reason:c.deferred.length?c.deferred[0][2]:"no_eligible"};
+  if(p)return await postPending(tabId,p[0],p[1],force);
+  return {ok:false,reason:c.deferred.length?c.deferred[0][2]:(c.uncertain.length?"delivery_uncertain":"no_eligible")};
 }
 
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
@@ -900,6 +971,11 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
       if(m.type==="SEMANTIC_INTAKE_PROVEN"){
         const a=await isArmed(tabId),expected=String(a.registered?.intakeChallenge||"");
         if(!a.armed||!expected||String(m.challenge||"")!==expected)return reply({ok:false,error:"intake challenge mismatch"});
+        const all=await armedAll();
+        if(all[String(tabId)]){
+          all[String(tabId)].intakeProof={challenge:expected,verifiedAt:now(),evidence:String(m.evidence||"challenge-response"),selectorMode:String(m.selectorMode||""),probeSignature:String(m.probeSignature||""),conversationKey:String(a.registered?.conversationKey||"")};
+          await saveArmed(all);
+        }
         await appendTrace(tabId,"semantic.intake_proven",{evidence:String(m.evidence||""),selector_mode:String(m.selectorMode||""),probe_signature:String(m.probeSignature||"")});
         const probe=await connectionProbe(tabId),state=probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action");
         const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable")));
@@ -923,7 +999,16 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           try{
             await messageFrame(tabId,frameId,{type:a.registered?.reconcileReady?"RECONCILE":"BASELINE"});
             if(isTop){
-              if(a.registered?.intakeChallenge)await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge:String(a.registered.intakeChallenge)});
+              const challenge=String(a.registered?.intakeChallenge||"");
+              const proof=a.registered?.intakeProof||null;
+              const sameConversation=!!proof&&String(proof.conversationKey||"")===String(a.registered?.conversationKey||"")&&String(proof.challenge||"")===challenge;
+              if(challenge){
+                if(sameConversation){
+                  const restored=await semanticTop(tabId,"SEMANTIC_RESTORE_PROOF",{proof});
+                  if(!restored?.ok)await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge});
+                  else await appendTrace(tabId,"semantic.intake_proof_restored",{verified_at:Number(proof.verifiedAt||0),selector_mode:String(proof.selectorMode||""),probe_signature:String(proof.probeSignature||"")});
+                }else await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge});
+              }
               await semanticTop(tabId,a.registered?.reconcileReady?"SEMANTIC_RECONCILE":"SEMANTIC_BASELINE");
             }
             const all=await armedAll();if(all[String(tabId)]){all[String(tabId)].reconcileReady=true;await saveArmed(all)}
@@ -954,21 +1039,23 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         const probe=a.armed?await connectionProbe(tabId):{verified:false};
         let status=await getStatus(tabId);
         if(a.armed){
-          const nextState=probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action");
-          const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable")));
-          status=await setStatus(tabId,{state:nextState,detail,transportVerified:!!probe.verified,connectionProbe:probe,actionRequired:nextState==="Needs Action",lastError:probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||"")});
+          const hasUncertain=pending.uncertain.length>0;
+          const nextState=hasUncertain?"Needs Action":(probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action"));
+          const detail=hasUncertain?"Delivery uncertain — review queued result":(probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable"))));
+          const lastError=hasUncertain?"A submitted result was not acknowledged before the safety deadline; automatic re-send is disabled.":(probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||""));
+          status=await setStatus(tabId,{state:nextState,detail,transportVerified:!!probe.verified&&!hasUncertain,connectionProbe:probe,actionRequired:nextState==="Needs Action",lastError});
         }
         const jobWatches=await jobWatchesAll(),jobWatchIds=Object.keys(jobWatches),jobWatchCount=jobWatchIds.length,jobDiag=await jobWatchDiag();
         const chatTransfers=await chatTransfersAll(),chatTransferIds=Object.keys(chatTransfers),chatDiag=await chatTransferDiag();
         const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame),activePostCount=status?.state==="Posting"&&status?.currentCommandId?1:0;
-        const currentRec=(status?.currentCommandId&&seen[status.currentCommandId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||null;
+        const currentRec=(status?.currentCommandId&&seen[status.currentCommandId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||pending.uncertain[0]?.[1]||null;
         const nextRetryAt=Number(currentRec?.nextPostAt||0),dprobe=top?.deliveryProbe||{};
         const child=pageDiagnostics.filter(x=>!x?.topFrame),childReady=child.filter(x=>x?.ok&&x.armed===a.armed).length,childFailed=child.length-childReady;
         const health={
           runtimeVersion:VERSION,armed:a.armed,transportVerified:!!probe.verified,conversationKeySuffix:(registered?.conversationKey||"").slice(-12),
           state:status?.state||"Ready",currentCommandId:status?.currentCommandId||"",
-          pendingRetryEligibleCount:pending.retryEligible.length,deferredPendingCount:pending.deferred.length,staleUnpostedCount:pending.stale.length,suppressedCount:pending.suppressed.length,activePostCount,
-          waitReason:currentRec?.waitReason||"",postAttempts:Number(currentRec?.postAttempts||0),nextRetryAt,nextRetryInMs:nextRetryAt?Math.max(0,nextRetryAt-now()):0,
+          pendingRetryEligibleCount:pending.retryEligible.length,deferredPendingCount:pending.deferred.length,uncertainPendingCount:pending.uncertain.length,staleUnpostedCount:pending.stale.length,suppressedCount:pending.suppressed.length,activePostCount,
+          waitReason:currentRec?.waitReason||"",deliveryState:currentRec?.deliveryState||"",submitted:!!currentRec?.submitted,ackPolls:Number(currentRec?.ackPolls||0),ackDeadlineAt:Number(currentRec?.ackDeadlineAt||0),postAttempts:Number(currentRec?.postAttempts||0),nextRetryAt,nextRetryInMs:nextRetryAt?Math.max(0,nextRetryAt-now()):0,
           sendControlReady:!!dprobe.chosenSend&&!dprobe.chosenSend.disabled&&dprobe.chosenSend.ariaDisabled!=="true",composerTextLen:Number(dprobe.composer?.textLen||0),composerKind:dprobe.composerKind||"",
           lastErrorCode:status?.lastError?"runtime_error":"",lastTransportDiagnosticCode:status?.lastTransportDiagnostic?.reason||status?.lastTransportDiagnostic?.kind||"",
           pageAdapterState:top?(top.armed===a.armed?(childFailed?"ready_with_warning":"ready"):"arm_mismatch"):"unavailable",
