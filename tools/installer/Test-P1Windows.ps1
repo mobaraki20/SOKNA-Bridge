@@ -123,6 +123,14 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
 
     Invoke-ProcessChecked $Setup @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$legacyInstall+'"'),('/ArtifactRoot="'+$legacyArtifacts+'"'),'/TASKS=""',('/LOG="'+$legacySetupLog+'"'))|Out-Null
     Start-Sleep -Milliseconds 300
+    $prepPath=Join-Path $legacyInstall 'state\install-preparation.json'
+    if(-not(Test-Path -LiteralPath $prepPath -PathType Leaf)){throw 'LEGACY_ACCEPTANCE_PREPARATION_FILE_MISSING'}
+    $prep=Get-Content $prepPath -Raw|ConvertFrom-Json
+    Write-Host ('P1_LEGACY_PREPARATION '+($prep|ConvertTo-Json -Compress))
+    $listenerPids=@(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue|Select-Object -ExpandProperty OwningProcess -Unique)
+    Write-Host ('P1_LEGACY_POST_SETUP_LISTENERS '+($listenerPids -join ','))
+    $legacyCim=Get-CimInstance Win32_Process -Filter ('ProcessId='+$legacyProc.Id) -ErrorAction SilentlyContinue
+    if($null-ne$legacyCim){Write-Host ('P1_LEGACY_ORIGINAL_PROCESS pid='+$legacyProc.Id+' command='+[string]$legacyCim.CommandLine)}
     try{$legacyProc.Refresh()}catch{}
     if(-not$legacyProc.HasExited){
       $legacyProc.WaitForExit(3000)|Out-Null
@@ -138,7 +146,6 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
     $newCfg=Get-Content (Join-Path $legacyInstall 'config.json') -Raw|ConvertFrom-Json
     if([int]$newCfg.port-ne$port){throw 'LEGACY_ACCEPTANCE_PORT_NOT_MIGRATED'}
     if([string]$newCfg.token-ne$token){throw 'LEGACY_ACCEPTANCE_TOKEN_NOT_MIGRATED'}
-    $prep=Get-Content (Join-Path $legacyInstall 'state\install-preparation.json') -Raw|ConvertFrom-Json
     if(-not[bool]$prep.legacy_runtime_detected -or -not[bool]$prep.legacy_runtime_stopped){throw 'LEGACY_ACCEPTANCE_PREPARATION_EVIDENCE_MISSING'}
     if(-not[bool]$prep.recovered_untracked_runtime_stopped){throw 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_EVIDENCE_MISSING'}
     if([int]$prep.recovered_untracked_runtime_pid-ne$legacyProc.Id){throw 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_PID_MISMATCH'}
