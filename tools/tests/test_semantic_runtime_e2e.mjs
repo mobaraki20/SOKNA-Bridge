@@ -77,7 +77,7 @@ function runtime(){
   }
   return {ctx,assistant,turns,main,sent,storage,message,addGeneric:(text,cls="turn")=>genericTurn(main,text,cls),setReject:v=>{rejectCommand=v},mutate:async()=>{for(const o of observers)o.cb();await new Promise(r=>setTimeout(r,90))}};
 }
-function command(id,action="ping"){return START+JSON.stringify({id,intent:"exec",action,params:{}})+END}
+function command(id,action="ping",bridgeNonce=""){const spec={id,intent:"exec",action,params:{}};if(bridgeNonce)spec.bridge_nonce=bridgeNonce;return START+JSON.stringify(spec)+END}
 function commands(r){return r.sent.filter(x=>x?.type==="COMMAND")}
 
 {
@@ -176,14 +176,22 @@ function commands(r){return r.sent.filter(x=>x?.type==="COMMAND")}
   assert.equal(d.semantic.selector_mode,"challenge-shell");
   assert.ok(r.sent.some(x=>x?.type==="SEMANTIC_INTAKE_PROVEN"&&x.challenge===challenge),"verified probe must notify background");
 
-  r.addGeneric(command("generic-user-must-not-run"));
+  r.addGeneric(command("generic-no-nonce-must-not-run"));
   await r.mutate();
-  assert.equal(commands(r).length,0,"same-shape adjacent user turn must fail closed by conversation parity");
+  assert.equal(commands(r).length,0,"selectorless marker without the active nonce must fail closed");
 
-  r.addGeneric(command("generic-assistant-ok"));
+  r.addGeneric("UI notice inserted between conversation turns");
+  r.addGeneric(command("generic-wrong-nonce","ping","wrong-nonce"));
   await r.mutate();
-  assert.equal(commands(r).length,1,"next same-shape assistant turn must dispatch after challenge proof");
+  assert.equal(commands(r).length,0,"selectorless marker with a stale/wrong nonce must fail closed");
+
+  r.addGeneric("another unrelated sibling that would break parity-based inference");
+  r.addGeneric(command("generic-assistant-ok","ping",challenge));
+  await r.mutate();
+  assert.equal(commands(r).length,1,"active nonce must allow selectorless dispatch independently of DOM sibling parity");
   assert.equal(commands(r)[0].command.id,"generic-assistant-ok");
+  assert.equal(commands(r)[0].semantic.nonceBound,true);
+  assert.equal(commands(r)[0].semantic.provenance,"challenge-nonce");
   assert.equal(commands(r)[0].semantic.messageIdentity.includes("node-"),true);
 }
 {
@@ -200,14 +208,14 @@ function commands(r){return r.sent.filter(x=>x?.type==="COMMAND")}
 }
 {
   const r=runtime();
-  r.addGeneric(command("historical-generic"));
+  r.addGeneric(command("historical-generic","ping","old-connection-nonce"));
   await r.message({type:"SEMANTIC_BASELINE"});
   const challenge="probe-runtime-003";await r.message({type:"SEMANTIC_SET_CHALLENGE",challenge});
   r.addGeneric("Bridge handshake "+challenge);
   r.addGeneric(PROBE_START+challenge+PROBE_END);
   await r.mutate();
   r.addGeneric("ordinary user follow-up");
-  r.addGeneric(command("fresh-generic"));
+  r.addGeneric(command("fresh-generic","ping",challenge));
   await r.mutate();
   const ids=commands(r).map(x=>x.command.id);
   assert.deepEqual(ids,["fresh-generic"],"historical generic markers present at baseline must never execute after proof");
