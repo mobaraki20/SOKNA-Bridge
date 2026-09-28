@@ -3,7 +3,7 @@ const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.11.0";
+const VERSION="3.12.0";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -22,6 +22,12 @@ const CHAT_TRANSFER_MAX_AGE_MS=30*60*1000;
 const IG_SCANS_KEY="instagram_scans_v1";
 const IG_MAX_SCANS=8;
 const IG_SCAN_MAX_POSTS=100;
+const IG_APPROVALS_KEY="instagram_approvals_v1";
+const IG_MAX_APPROVALS=20;
+const TRANSPORT_TRACE_KEY="transport_trace_v2";
+const SEMANTIC_FALLBACK_KEY="semantic_fallback_diagnostics_v2";
+const CONTENT_FALLBACK_KEY="content_fallback_diagnostics_v1";
+const TRACE_MAX=300;
 const V391_MIGRATION_CUTOFF=1789892342550;
 const RETRY_BASE_MS=3000,RETRY_MAX_MS=60000,MAX_POST_ATTEMPTS=8;
 
@@ -61,6 +67,72 @@ async function chatTransfersAll(){const d=await sget("local",[CHAT_TRANSFER_KEY]
 async function saveChatTransfers(v){await sset("local",{[CHAT_TRANSFER_KEY]:v})}
 async function chatTransferDiag(){const d=await sget("local",[CHAT_TRANSFER_DIAG_KEY]);return d[CHAT_TRANSFER_DIAG_KEY]||{}}
 async function saveChatTransferDiag(patch){const prev=await chatTransferDiag();const next={...prev,...patch};await sset("local",{[CHAT_TRANSFER_DIAG_KEY]:next});return next}
+async function transportTraceAll(){const d=await sget("local",[TRANSPORT_TRACE_KEY]);return Array.isArray(d[TRANSPORT_TRACE_KEY])?d[TRANSPORT_TRACE_KEY]:[]}
+async function appendTrace(tabId,event,extra={}){
+  const a=await transportTraceAll();
+  a.push({ts:now(),tabId:Number.isInteger(Number(tabId))?Number(tabId):null,event:String(event||""),...extra});
+  await sset("local",{[TRANSPORT_TRACE_KEY]:a.slice(-TRACE_MAX)});
+}
+async function semanticFallbackAll(){const d=await sget("local",[SEMANTIC_FALLBACK_KEY]);return Array.isArray(d[SEMANTIC_FALLBACK_KEY])?d[SEMANTIC_FALLBACK_KEY]:[]}
+async function contentFallbackAll(){const d=await sget("local",[CONTENT_FALLBACK_KEY]);return Array.isArray(d[CONTENT_FALLBACK_KEY])?d[CONTENT_FALLBACK_KEY]:[]}
+async function semanticTop(tabId,type,extra={}){
+  return await chrome.tabs.sendMessage(tabId,{type,...extra},{frameId:0});
+}
+function extensionActions(){
+  const x=globalThis.__SOKNA_EXTENSION_ACTIONS_V1__;
+  return Array.isArray(x)?[...new Set(x.map(String).filter(Boolean))]:[
+    "artifact.chat.apply","job.list","job.events","bridge.activity","artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach",
+    "browser.audit.run","bridge.bootstrap","bridge.diagnostics.get","session.open","session.resume","session.checkpoint","session.close","session.list",
+    "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search","instagram.media.download","instagram.media.attach",
+    "instagram.research.plan","instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm","instagram.selection.reject","instagram.export"
+  ];
+}
+function agentActionsFromBootstrap(b){
+  const a=b?.agent_capabilities?.capabilities?.actions||b?.agent_capabilities?.actions||[];
+  return Array.isArray(a)?a.map(String).filter(Boolean):[];
+}
+async function extensionBootstrap(command){
+  const b=await agentExec(command),agent_actions=agentActionsFromBootstrap(b),extension_actions=extensionActions();
+  const effective_actions=[...new Set([...agent_actions,...extension_actions])].sort();
+  return {...b,capabilities:{agent_actions,extension_actions,effective_actions},effective_actions};
+}
+async function connectionProbe(tabId){
+  const out={semantic:{ok:false},background:true,agent:{ok:false},session:{ready:false},delivery:{ready:false},verified:false};
+  try{out.semantic=await semanticTop(tabId,"SEMANTIC_E2E_PROBE")}catch(e){out.semantic={ok:false,error:String(e)}}
+  try{
+    const boot=await agentExec(unifiedLocalCommand("bridge.bootstrap",{}));
+    out.agent={ok:!!boot?.agent_ready,version:String(boot?.agent_capabilities?.version||boot?.agent_capabilities?.agent||"")};
+    out.session={ready:boot?.ready===true,id:String(boot?.active_session?.id||"")};
+  }catch(e){out.agent={ok:false,error:String(e)}}
+  try{
+    const ds=await diagAllFrames(tabId),top=ds.find(x=>x?.ok&&x.topFrame);
+    out.delivery={ready:!!top&&top.armed===true&&!!top.deliveryProbe?.composer,frame:top||null};
+  }catch(e){out.delivery={ready:false,error:String(e)}}
+  out.verified=!!out.semantic?.ok&&!!out.semantic?.background_reachable&&!!out.semantic?.agent_ok&&!!out.agent?.ok&&!!out.session?.ready&&!!out.delivery?.ready;
+  return out;
+}
+async function fullDiagnostics(tabId,conversationKey="",mode="full"){
+  const bounded=mode==="bounded",armed=await isArmed(tabId,conversationKey),status=await getStatus(tabId),pageDiagnostics=await diagAllFrames(tabId);
+  let semantic={ok:false,error:"semantic adapter unavailable"};try{semantic=await semanticTop(tabId,"SEMANTIC_DIAG")}catch(e){semantic={ok:false,error:String(e)}}
+  let host={ok:false},agent={ok:false},bootstrap={ok:false};
+  try{host=await hostPing()}catch(e){host={ok:false,error:String(e)}}
+  try{agent=await agentExec(unifiedLocalCommand("ping",{}))}catch(e){agent={ok:false,error:String(e)}}
+  try{bootstrap=await extensionBootstrap(unifiedLocalCommand("bridge.bootstrap",{}))}catch(e){bootstrap={ok:false,error:String(e)}}
+  const traces=(await transportTraceAll()).filter(x=>!Number.isInteger(tabId)||x.tabId===tabId).slice(bounded?-24:-80);
+  const fallback=(await semanticFallbackAll()).slice(bounded?-12:-40),contentFallback=(await contentFallbackAll()).slice(bounded?-12:-40);
+  const extensionVersion=chrome.runtime.getManifest?.().version||VERSION;
+  return {
+    ok:true,schema:"sokna-bridge-diagnostics-v1",generated_at:new Date().toISOString(),
+    extension:{manifest_version:extensionVersion,background_version:VERSION,content_version:String(pageDiagnostics.find(x=>x?.ok&&x.topFrame)?.version||""),semantic_version:String(semantic?.semantic?.version||"")},
+    chat:{tab_id:tabId,armed:armed.armed,conversation_key:armed.registered?.conversationKey||conversationKey||"",status:status||null,page_diagnostics:bounded?pageDiagnostics.filter(x=>x?.topFrame).slice(0,1):pageDiagnostics},
+    semantic_transport:{adapter:semantic?.semantic||null,fallback_diagnostics:fallback,content_fallback_diagnostics:contentFallback,trace:traces},
+    delivery:{top_frame:pageDiagnostics.find(x=>x?.ok&&x.topFrame)||null},
+    agent:{host_ok:!!host?.ok,ping:agent,bootstrap_ready:bootstrap?.ready===true,active_session:bootstrap?.active_session||null,capabilities:bootstrap?.capabilities||null},
+    instagram:{scan_count:Object.keys(await igScansAll()).length,approval_count:Object.keys(await igApprovalsAll()).length},
+    recent_errors:traces.filter(x=>/failed|rejected|error|duplicate/.test(String(x.event||""))).slice(bounded?-12:-30),bounded
+  };
+}
+
 function badgeFor(s){
   if(s==="Working"||s==="Posting")return {t:"RUN",c:"#2563eb"};
   if(s==="Waiting")return {t:"WAIT",c:"#d97706"};
@@ -145,15 +217,17 @@ function unifiedLocalCommand(action,params={}){
 }
 async function arm(tabId){
   const tab=await chrome.tabs.get(tabId);if(!isSupportedChatUrl(tab?.url))return {ok:false,error:"Open chatgpt.com in this tab first."};
-  await setStatus(tabId,{state:"Working",detail:"Creating baseline"});
-  let base;try{base=await baselineAllFrames(tabId)}catch(e){return {ok:false,error:"Bridge page adapter is not ready. Reload this chat page once. "+String(e)}}
-  if(!base?.ok)return {ok:false,error:base?.error||"Baseline failed"};
-  const seen=await seenAll();for(const c of (base.commands||[]))seen[c.id]={state:"baseline",ts:now(),conversationKey:conv(tab.url),action:c.action};await saveSeen(seen);
+  await setStatus(tabId,{state:"Working",detail:"Preparing page adapters"});
+  let base,sem;
+  try{base=await baselineAllFrames(tabId);sem=await semanticTop(tabId,"SEMANTIC_BASELINE")}
+  catch(e){await appendTrace(tabId,"semantic.arm_failed",{error:String(e)});return {ok:false,error:"Bridge page adapter is not ready. Reload this chat page once. "+String(e)}}
+  if(!base?.ok||!sem?.ok)return {ok:false,error:base?.error||sem?.error||"Baseline failed"};
   const a=await armedAll();for(const [tid,r] of Object.entries(a)){if(Number(tid)!==tabId&&r?.conversationKey===conv(tab.url))return {ok:false,error:"This conversation is already armed in another tab."}}
-  a[String(tabId)]={conversationKey:conv(tab.url),url:tab.url,armedAt:now(),baselineCount:(base.commands||[]).length,reconcileReady:true};await saveArmed(a);
-  await setStatus(tabId,{state:"Ready",detail:"Armed",baselineCount:(base.commands||[]).length,lastError:"",actionRequired:false});
+  a[String(tabId)]={conversationKey:conv(tab.url),url:tab.url,armedAt:now(),baselineCount:Number(sem?.baseline_count||0),reconcileReady:true};await saveArmed(a);
+  await setStatus(tabId,{state:"Waiting",detail:"Connected — Transport Unverified",baselineCount:Number(sem?.baseline_count||0),lastError:"",actionRequired:false,transportVerified:false});
+  await appendTrace(tabId,"semantic.armed",{conversationKey:conv(tab.url),baselineCount:Number(sem?.baseline_count||0)});
   retryPending(tabId).catch(()=>{});
-  return {ok:true,armed:true,version:VERSION,conversationKey:conv(tab.url),baselineCount:(base.commands||[]).length};
+  return {ok:true,armed:true,version:VERSION,conversationKey:conv(tab.url),baselineCount:Number(sem?.baseline_count||0),transport_verified:false};
 }
 async function disarm(tabId){
   try{
@@ -175,24 +249,29 @@ async function connectChat(tabId){
     boot=await agentExec(unifiedLocalCommand("bridge.bootstrap",{}));
   }
   const actions=[
-    "bridge.bootstrap","workspace.list","file.read","file.write","process.run","git.status",
-    "browser.audit.run","instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download","instagram.media.attach"
+    "bridge.bootstrap","bridge.diagnostics.get","workspace.list","file.read","file.write","process.run","git.status",
+    "browser.audit.run","instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.attach","instagram.media.download"
   ];
   const text=[
-    "SOKNA Bridge has been connected to this Chat by the user.",
-    "The local Agent and work-session handshake are ready.",
-    "When local execution is needed, emit one standalone semantic command block in this exact form:",
-    '[SOKNA-INTENT]{"intent":"exec","action":"bridge.bootstrap","params":{}}[/SOKNA-INTENT]',
-    "Read the returned bootstrap before mutations and treat it as the source of truth for capabilities, routes, workspaces and session state.",
-    "For Instagram research, use instagram.profile.scan, instagram.scan.search, instagram.scan.get, instagram.media.attach and instagram.media.download through the same semantic exec form.",
-    "Do not invent local results. Wait for the Bridge result before continuing.",
+    "SOKNA Bridge is connected to this Chat by the user.",
+    "The local Agent and work session are available through the Bridge extension.",
+    "For local execution, emit one standalone Bridge semantic command as the entire assistant message.",
+    "Opening token is: [ + SOKNA-INTENT + ]",
+    "Closing token is: [ + /SOKNA-INTENT + ]",
+    'The body is one JSON object such as {"id":"unique-attempt-id","intent":"exec","action":"bridge.bootstrap","params":{}}.',
+    "Do not copy an executable raw marker from this user message; construct the tokens only when actually executing.",
+    "Always use a unique id for a new attempt. Wait for STATUS/RESULT before continuing.",
+    "Use bridge.diagnostics.get for bounded diagnostics when transport is healthy.",
     "Advertised examples: "+actions.join(", ")+"."
   ].join("\n");
   let posted;
-  try{posted=await chrome.tabs.sendMessage(tabId,{type:"POST_USER_TEXT",text},{frameId:0})}
-  catch(e){posted={ok:false,error:String(e)}}
-  await setStatus(tabId,{state:posted?.ok?"Ready":"Needs Action",detail:posted?.ok?"Connected to ChatGPT":"Connected; bootstrap note could not be posted",lastError:posted?.ok?"":String(posted?.error||""),actionRequired:!posted?.ok});
-  return {ok:true,armed:true,connected:true,bootstrap_ready:boot?.ready===true,session_id:String(session?.id||boot?.active_session?.id||""),handshake_posted:!!posted?.ok,handshake:posted};
+  try{posted=await chrome.tabs.sendMessage(tabId,{type:"POST_USER_TEXT",text},{frameId:0})}catch(e){posted={ok:false,error:String(e)}}
+  const probe=await connectionProbe(tabId);
+  const state=probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action");
+  const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable"));
+  await setStatus(tabId,{state,detail,lastError:probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||""),actionRequired:state==="Needs Action",transportVerified:probe.verified,connectionProbe:probe});
+  await appendTrace(tabId,probe.verified?"connection.verified":"connection.unverified",{detail,handshake_posted:!!posted?.ok});
+  return {ok:true,armed:true,connected:true,bootstrap_ready:boot?.ready===true,session_id:String(session?.id||boot?.active_session?.id||""),handshake_posted:!!posted?.ok,handshake:posted,transport_verified:probe.verified,probe};
 }
 
 const postFlights=new Map();
@@ -212,6 +291,7 @@ async function postPendingInner(tabId,id,rec){
   if(rec.nextPostAt&&rec.nextPostAt>now()){await scheduleRetryAlarm(tabId,rec.nextPostAt);return {ok:false,waiting:true,reason:"backoff"}};
   const isStatusEvent=rec.kind==="transport-nack"||rec.kind==="status-event";
   const env=isStatusEvent?statusEnvelope({eventId:id,...rec.result}):resultEnvelope({id,...rec.result});
+  await appendTrace(tabId,"chat.delivery_started",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id)});
   await setStatus(tabId,{state:"Posting",detail:`Sending ${id}`,currentCommandId:id,actionRequired:false});
   let p;try{p=await chrome.tabs.sendMessage(tabId,{type:"POST_RESULT",envelope:env},{frameId:0})}catch(e){p={ok:false,waiting:true,reason:"page_unavailable",error:String(e)}}
   const seen=await seenAll();
@@ -226,10 +306,12 @@ async function postPendingInner(tabId,id,rec){
     if(rec.posted)await clearRetryAlarm(tabId);else await scheduleRetryAlarm(tabId,rec.nextPostAt);
   }
   if(p?.ok){
-    await setStatus(tabId,{state:"Ready",detail:"Armed",...(isStatusEvent?{}:{lastCompletedCommandId:id}),lastPostMethod:p.method||"",currentCommandId:"",lastError:"",actionRequired:false});
+    await appendTrace(tabId,"chat.delivery_completed",{record_id:id,kind:rec.kind||"result",method:String(p.method||"")});
+    await setStatus(tabId,{state:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,...(isStatusEvent?{}:{lastCompletedCommandId:id}),lastPostMethod:p.method||"",currentCommandId:"",lastError:"",actionRequired:false});
     setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
     return {ok:true};
   }
+  await appendTrace(tabId,"chat.delivery_failed",{record_id:id,kind:rec.kind||"result",reason:String(p?.reason||"retry"),error:String(p?.error||"Submit failed")});
   const exhausted=(rec?.postAttempts||0)>=MAX_POST_ATTEMPTS&&!p?.waiting;
   if(exhausted){
     await setStatus(tabId,{state:"Needs Action",detail:"Queued result needs attention",currentCommandId:id,lastError:p?.error||"Submit failed",actionRequired:true});
@@ -441,7 +523,7 @@ function igPostSummary(p,index){
 async function inspectInstagramPostPrivate(url){
   url=String(url||"").trim();if(!/^https:\/\/(www\.)?instagram\.com\/(p|reel)\//i.test(url))throw new Error("INSTAGRAM_POST_URL_REQUIRED");
   const tab=await chrome.tabs.create({url,active:false});
-  try{await waitTabComplete(tab.id);const snap=await igTabMessage(tab.id,{type:"IG_POST_SNAPSHOT"});if(!snap?.ok)throw new Error(snap?.error||"INSTAGRAM_POST_INSPECT_FAILED");return igPrivatePost(snap,0)}
+  try{await waitTabComplete(tab.id);const ready=await igTabMessage(tab.id,{type:"IG_READY"});if(!ready?.ok)throw new Error("INSTAGRAM_ADAPTER_NOT_READY:"+String(ready?.reason||ready?.error||"unknown"));const snap=await igTabMessage(tab.id,{type:"IG_POST_SNAPSHOT"});if(!snap?.ok)throw new Error(snap?.error||"INSTAGRAM_POST_INSPECT_FAILED");return igPrivatePost(snap,0)}
   finally{try{await chrome.tabs.remove(tab.id)}catch{}}
 }
 async function instagramPostInspect(params={}){return igPostSummary(await inspectInstagramPostPrivate(params.url),0)}
@@ -451,6 +533,7 @@ async function instagramProfileScan(params={}){
   const posts=[];
   try{
     await waitTabComplete(tab.id);
+    const ready=await igTabMessage(tab.id,{type:"IG_READY"});if(!ready?.ok)throw new Error("INSTAGRAM_ADAPTER_NOT_READY:"+String(ready?.reason||ready?.error||"unknown"));
     const links=await igTabMessage(tab.id,{type:"IG_PROFILE_LINKS",limit});
     if(!links?.ok)throw new Error(links?.error||"INSTAGRAM_PROFILE_LINKS_FAILED");
     const cards=Array.isArray(links.cards)?links.cards.slice(0,limit):[];
@@ -523,6 +606,83 @@ async function instagramMediaDownload(params={}){
 
 
 
+
+async function igApprovalsAll(){const d=await sget("local",[IG_APPROVALS_KEY]);return d[IG_APPROVALS_KEY]||{}}
+async function saveIgApprovals(v){const ordered=Object.values(v).sort((a,b)=>Number(b.updated_at||b.created_at||0)-Number(a.updated_at||a.created_at||0));await sset("local",{[IG_APPROVALS_KEY]:Object.fromEntries(ordered.slice(0,IG_MAX_APPROVALS).map(x=>[x.id,x]))})}
+async function getIgApproval(id){const a=await igApprovalsAll(),x=a[String(id||"")];if(!x)throw new Error("INSTAGRAM_APPROVAL_NOT_FOUND");return x}
+function igCandidatePublic(x){return {id:x.id,post_index:x.post_index,media_index:x.media_index,post_url:x.post_url,type:x.type,alt:String(x.alt||"").slice(0,1000),caption_excerpt:String(x.caption_excerpt||"").slice(0,900),width:Number(x.width)||0,height:Number(x.height)||0,metadata_score:Number(x.metadata_score)||0}}
+async function instagramAdapterStatus(params={}){
+  const url=igProfileUrl(params),tab=await chrome.tabs.create({url,active:false});
+  try{await waitTabComplete(tab.id);const r=await igTabMessage(tab.id,{type:"IG_READY"});return {ok:!!r?.ok,schema:"sokna-instagram-adapter-status-v1",url,ready:!!r?.ready,logged_in:r?.logged_in??null,reason:String(r?.reason||""),profile:String(r?.profile||"")}}
+  finally{try{await chrome.tabs.remove(tab.id)}catch{}}
+}
+function igCriteriaText(params){const c=params?.criteria&&typeof params.criteria==="object"?params.criteria:{};return [params?.query,c?.query,c?.subject,c?.topic].map(x=>String(x||"").trim()).filter(Boolean).join(" ").toLocaleLowerCase()}
+async function instagramResearchPlan(params={}){
+  const scan=await getIgScan(params.scan_id),criteria=params?.criteria&&typeof params.criteria==="object"?params.criteria:{},mediaType=String(criteria.media_type||params.media_type||"image").toLowerCase();
+  const q=igCriteriaText(params),terms=q.split(/\s+/).filter(Boolean),candidates=[];
+  for(const p of scan.posts){
+    const caption=String(p.caption||""),captionLower=caption.toLocaleLowerCase(),media=Array.isArray(p.media)?p.media:[];
+    for(let i=0;i<media.length;i++){
+      const m=media[i],type=String(m.type||"");
+      if(mediaType==="image"&&type!=="image")continue;if(mediaType==="video"&&type!=="video")continue;
+      const alt=String(m.alt||""),hay=(caption+"\n"+alt+"\n"+(p.hashtags||[]).join(" ")+"\n"+(p.mentions||[]).join(" ")).toLocaleLowerCase();
+      const matches=terms.length?terms.filter(t=>hay.includes(t)).length:0;
+      if(terms.length&&matches===0&&params.strict_text_filter===true)continue;
+      const id="igc-"+String(p.index)+"-"+String(i);
+      candidates.push({id,post_index:Number(p.index),media_index:i,post_url:String(p.url||""),type,alt,caption_excerpt:caption.slice(0,1200),width:Number(m.width)||0,height:Number(m.height)||0,metadata_score:terms.length?matches/terms.length:0});
+      if(candidates.length>=120)break;
+    }
+    if(candidates.length>=120)break;
+  }
+  candidates.sort((a,b)=>b.metadata_score-a.metadata_score||a.post_index-b.post_index||a.media_index-b.media_index);
+  const id="approval-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8),nowTs=now();
+  const identitySensitive=!!criteria.identity_sensitive||/person|singer|artist|owner|primary person|فرد|خواننده|صاحب|شخص/.test(String(criteria.subject||params.subject||"").toLowerCase());
+  const approval={schema:"sokna-approval-request-v1",id,kind:"instagram-selection",status:"pending",scan_id:scan.id,created_at:nowTs,updated_at:nowTs,criteria:{...criteria,media_type:mediaType,query:q},identity_sensitive:identitySensitive,summary:String(candidates.length)+" media candidates found; visual/identity-sensitive selection requires user approval before export.",candidate_count:candidates.length,candidates,approved_ids:[],rejected_ids:[],allowed_decisions:["approve_all","approve_selected","reject","modify_criteria"]};
+  const all=await igApprovalsAll();all[id]=approval;await saveIgApprovals(all);
+  return {ok:true,schema:"sokna-instagram-research-plan-v1",scan_id:scan.id,approval_required:true,approval_id:id,candidate_count:candidates.length,identity_sensitive:identitySensitive,selection_policy:identitySensitive?"Do not infer real-person identity from face alone; ask the user to confirm ambiguous candidates.":"User approval required before export.",candidates:candidates.slice(0,12).map(igCandidatePublic),next:["instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm"]};
+}
+async function instagramCandidatesGet(params={}){
+  const a=await getIgApproval(params.approval_id),offset=Math.max(Number(params.offset)||0,0),limit=Math.min(Math.max(Number(params.limit)||12,1),30),items=a.candidates.slice(offset,offset+limit).map(igCandidatePublic);
+  return {ok:true,approval_id:a.id,status:a.status,scan_id:a.scan_id,candidate_count:a.candidates.length,offset,limit,has_more:offset+items.length<a.candidates.length,identity_sensitive:!!a.identity_sensitive,candidates:items,approved_ids:a.approved_ids||[],rejected_ids:a.rejected_ids||[]};
+}
+async function instagramSelectionConfirm(params={}){
+  const a=await getIgApproval(params.approval_id),allIds=new Set(a.candidates.map(x=>x.id)),requested=Array.isArray(params.candidate_ids)?params.candidate_ids.map(String):[];
+  const decision=String(params.decision|| (requested.length?"approve_selected":"approve_all"));
+  let approved=decision==="approve_all"?[...allIds]:requested.filter(x=>allIds.has(x));
+  if(!approved.length)throw new Error("INSTAGRAM_APPROVAL_SELECTION_EMPTY");
+  a.approved_ids=[...new Set(approved)];a.status="approved";a.updated_at=now();const all=await igApprovalsAll();all[a.id]=a;await saveIgApprovals(all);
+  return {ok:true,approval_id:a.id,status:a.status,approved_count:a.approved_ids.length,approved_ids:a.approved_ids};
+}
+async function instagramSelectionReject(params={}){
+  const a=await getIgApproval(params.approval_id),allIds=new Set(a.candidates.map(x=>x.id)),requested=Array.isArray(params.candidate_ids)?params.candidate_ids.map(String):[];
+  if(requested.length){a.rejected_ids=[...new Set([...(a.rejected_ids||[]),...requested.filter(x=>allIds.has(x))])];a.approved_ids=(a.approved_ids||[]).filter(x=>!a.rejected_ids.includes(x));a.status=a.approved_ids.length?"approved":"pending"}
+  else{a.rejected_ids=[...allIds];a.approved_ids=[];a.status="rejected"}
+  a.updated_at=now();const all=await igApprovalsAll();all[a.id]=a;await saveIgApprovals(all);
+  return {ok:true,approval_id:a.id,status:a.status,rejected_count:a.rejected_ids.length,approved_count:a.approved_ids.length};
+}
+async function igApprovalSelection(params={},max=30){
+  const a=await getIgApproval(params.approval_id),scan=await getIgScan(a.scan_id),ids=Array.isArray(params.candidate_ids)&&params.candidate_ids.length?params.candidate_ids.map(String):(a.approved_ids||[]);
+  if(!ids.length)throw new Error("INSTAGRAM_APPROVAL_REQUIRED");
+  const wanted=new Set(ids),selected=[];
+  for(const cand of a.candidates){
+    if(!wanted.has(cand.id))continue;const p=scan.posts.find(x=>Number(x.index)===Number(cand.post_index)),m=p?.media?.[Number(cand.media_index)];
+    if(p&&m&&igAllowedMediaUrl(m.url))selected.push({post:p,media:m,candidate_id:cand.id,media_index:Number(cand.media_index)});
+    if(selected.length>=max)break;
+  }
+  if(!selected.length)throw new Error("INSTAGRAM_APPROVED_MEDIA_NOT_AVAILABLE");
+  return {approval:a,scan,selected};
+}
+async function instagramExport(params={}){
+  const approval=await getIgApproval(params.approval_id);if(approval.status!=="approved"||!(approval.approved_ids||[]).length)throw new Error("INSTAGRAM_APPROVAL_REQUIRED");
+  const {scan,selected}=await igApprovalSelection({approval_id:approval.id},60),folder=String(params.folder||("SOKNA-Instagram-"+(scan.profile||"export"))).replace(/[\\:*?"<>|]/g,"_").replace(/^\/+|\/+$/g,"")||"SOKNA-Instagram",downloads=[];
+  for(const item of selected){
+    const m=item.media,p=item.post,url=String(m.url||"");if(!url)continue;
+    const base=(p.shortcode||("post-"+p.index)).replace(/[^A-Za-z0-9._-]/g,"_"),filename=folder+"/"+base+"-"+String(item.media_index+1).padStart(2,"0")+"."+igExt(m);
+    try{const id=await chrome.downloads.download({url,filename,saveAs:false,conflictAction:"uniquify"});downloads.push({download_id:id,candidate_id:item.candidate_id,post_url:p.url,filename})}
+    catch(e){downloads.push({candidate_id:item.candidate_id,post_url:p.url,filename,error:String(e)})}
+  }
+  return {ok:true,approval_id:approval.id,scan_id:scan.id,approved_count:selected.length,downloaded:downloads.filter(x=>x.download_id).length,folder,downloads};
+}
 function igAllowedMediaUrl(raw){
   try{
     const u=new URL(String(raw||""));if(u.protocol!=="https:")return false;
@@ -563,9 +723,8 @@ async function igAttachSelection(params={}){
   if(!selected.length)throw new Error("INSTAGRAM_ATTACH_NO_SUPPORTED_MEDIA");
   return {scan,selected};
 }
-async function instagramMediaAttach(tabId,params={}){
+async function instagramMediaAttachSelected(tabId,scan,selected,label="Instagram visual evidence"){
   const armed=await isArmed(tabId);if(!armed.armed)throw new Error("INSTAGRAM_ATTACH_CHAT_NOT_CONNECTED");
-  const {scan,selected}=await igAttachSelection(params);
   const prepared=[];let total=0;
   for(const item of selected){
     const media=item.media,url=String(media.url||"");
@@ -582,7 +741,7 @@ async function instagramMediaAttach(tabId,params={}){
   }
   const sources=[...new Set(prepared.map(x=>x.post_url).filter(Boolean))];
   const note=[
-    "SOKNA Bridge Instagram visual evidence",
+    "SOKNA Bridge "+label,
     "Scan: "+scan.id,
     "Please inspect the attached media visually and use only the source posts below for attribution:",
     ...sources.map(x=>"- "+x)
@@ -610,6 +769,14 @@ async function instagramMediaAttach(tabId,params={}){
   }
   return {ok:true,scan_id:scan.id,attached:results.length,total_bytes:total,sources,attachments:results,visual_review_ready:true};
 }
+async function instagramMediaAttach(tabId,params={}){
+  const {scan,selected}=await igAttachSelection(params);return await instagramMediaAttachSelected(tabId,scan,selected);
+}
+async function instagramCandidatesAttach(tabId,params={}){
+  const {approval,scan,selected}=await igApprovalSelection(params,6);
+  const r=await instagramMediaAttachSelected(tabId,scan,selected,"Instagram candidate review");
+  return {...r,approval_id:approval.id,candidate_ids:selected.map(x=>x.candidate_id),approval_required:true};
+}
 
 async function queueTransportNack(t,d){
   const a=await isArmed(t);if(!a.armed)return{ok:false,ignored:true};
@@ -624,31 +791,58 @@ async function queueTransportNack(t,d){
   await saveSeen(s);return await postPending(t,k,s[k]);
 }
 const commandTails=new Map();
-async function handleCommand(tabId,command){
+async function handleCommand(tabId,command,meta={}){
   const key=String(tabId);
   const prev=commandTails.get(key)||Promise.resolve();
-  const run=prev.catch(()=>{}).then(()=>handleCommandInner(tabId,command));
+  const run=prev.catch(()=>{}).then(()=>handleCommandInner(tabId,command,meta));
   commandTails.set(key,run);
   try{return await run}finally{if(commandTails.get(key)===run)commandTails.delete(key)}
 }
-async function handleCommandInner(tabId,command){
+function resultRefOf(rec,id){
+  const r=rec?.result||{};
+  return String(r?.result_ref?.id||r?.artifact_ref?.id||r?.artifact_id||("command:"+id));
+}
+async function handleCommandInner(tabId,command,meta={}){
   const a=await isArmed(tabId);if(!a.armed)return {ok:false,ignored:true};
-  let seen=await seenAll();if(seen[command.id])return {ok:true,duplicate:true,state:seen[command.id].state};
+  await appendTrace(tabId,"background.received",{command_id:String(command?.id||""),action:String(command?.action||""),trigger:String(meta?.trigger||""),attempt_key:String(meta?.attemptKey||"")});
+  let seen=await seenAll();
+  if(seen[command.id]){
+    const original=seen[command.id];
+    await appendTrace(tabId,"semantic.duplicate",{command_id:command.id,action:command.action,original_state:String(original?.state||""),trigger:String(meta?.trigger||"")});
+    if(String(meta?.trigger||"")==="reconcile")return {ok:true,duplicate:true,state:original.state,reconcile_duplicate:true};
+    const result={kind:"duplicate",status:"duplicate",commandId:command.id,correlationId:command.correlationId||command.id,action:command.action,executed:false,original_command_id:command.id,original_state:String(original?.state||""),original_result_ref:resultRefOf(original,command.id)};
+    const key="duplicate:"+command.id+":"+(String(meta?.attemptKey||"")||now());
+    const q=await queueStatusEvent(tabId,a.registered.conversationKey,key,command.id,result);
+    return {ok:true,duplicate:true,state:original.state,status_event:q};
+  }
   const acceptedAt=now();seen[command.id]={state:"running",ts:acceptedAt,acceptedAt,ackAt:acceptedAt,conversationKey:a.registered.conversationKey,sessionId:a.registered.conversationKey,sequence:acceptedAt,action:command.action,posted:false};await saveSeen(seen);
   await setStatus(tabId,{state:"Working",detail:`Executing ${command.action}`,currentCommandId:command.id,etaMs:null,etaConfidence:"unknown"});
+  await appendTrace(tabId,"agent.forward_started",{command_id:command.id,action:command.action});
+  await queueStatusEvent(tabId,a.registered.conversationKey,"accepted:"+command.id,command.id,{kind:"command-accepted",status:"accepted",commandId:command.id,correlationId:command.correlationId||command.id,action:command.action,accepted_at:acceptedAt});
   let result;
   try{
     if(command.action==="artifact.chat.apply")result=await registerChatArtifactApply(tabId,command,a.registered.conversationKey);
+    else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command);
+    else if(command.action==="bridge.diagnostics.get")result=await fullDiagnostics(tabId,a.registered.conversationKey,"bounded");
+    else if(command.action==="instagram.adapter.status")result=await instagramAdapterStatus(command.params||{});
     else if(command.action==="instagram.profile.scan")result=await instagramProfileScan(command.params||{});
     else if(command.action==="instagram.post.inspect")result=await instagramPostInspect(command.params||{});
     else if(command.action==="instagram.scan.get")result=await instagramScanGet(command.params||{});
     else if(command.action==="instagram.scan.search")result=await instagramScanSearch(command.params||{});
     else if(command.action==="instagram.media.download")result=await instagramMediaDownload(command.params||{});
     else if(command.action==="instagram.media.attach")result=await instagramMediaAttach(tabId,command.params||{});
+    else if(command.action==="instagram.research.plan")result=await instagramResearchPlan(command.params||{});
+    else if(command.action==="instagram.candidates.get")result=await instagramCandidatesGet(command.params||{});
+    else if(command.action==="instagram.candidates.attach")result=await instagramCandidatesAttach(tabId,command.params||{});
+    else if(command.action==="instagram.selection.confirm")result=await instagramSelectionConfirm(command.params||{});
+    else if(command.action==="instagram.selection.reject")result=await instagramSelectionReject(command.params||{});
+    else if(command.action==="instagram.export")result=await instagramExport(command.params||{});
     else result=await agentExec(command);
-  }catch(e){result={ok:false,error:String(e)}}
+    await appendTrace(tabId,"agent.accepted",{command_id:command.id,action:command.action,ok:result?.ok!==false});
+  }catch(e){result={ok:false,error:String(e)};await appendTrace(tabId,"agent.forward_failed",{command_id:command.id,action:command.action,error:String(e)})}
   for(const submitted of JOBCORE.findSubmittedJobs(command.action,result)){try{await registerJobWatch(tabId,command.id,submitted,a.registered.conversationKey)}catch{}}
   seen=await seenAll();seen[command.id]={...(seen[command.id]||{}),state:"done",completedAt:now(),result,posted:false};await saveSeen(seen);
+  await appendTrace(tabId,"result.received",{command_id:command.id,action:command.action,ok:result?.ok!==false});
   return await postPending(tabId,command.id,seen[command.id]);
 }
 function classifyPending(seen,registered,t=now(),force=false){
@@ -683,7 +877,13 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
       if(m.type==="CONNECT_CHAT")return reply(await connectChat(tabId));
       if(m.type==="ARM")return reply(await arm(tabId));
       if(m.type==="DISARM")return reply(await disarm(tabId));
-      if(m.type==="COMMAND")return reply(await handleCommand(tabId,m.command));
+      if(m.type==="COMMAND")return reply(await handleCommand(tabId,m.command,m.semantic||{}));
+      if(m.type==="SEMANTIC_TRACE"){const t=m.trace||{};await appendTrace(tabId,String(t.event||"semantic.trace"),{...t});return reply({ok:true,recorded:true})}
+      if(m.type==="SEMANTIC_PROBE_REQUEST"){
+        await appendTrace(tabId,"semantic.probe_started",{probe_id:String(m.probeId||"")});
+        try{const p=await agentExec(unifiedLocalCommand("ping",{}));await appendTrace(tabId,"semantic.probe_completed",{probe_id:String(m.probeId||""),ok:p?.ok!==false});return reply({ok:true,agent_ok:p?.ok!==false,agent_version:String(p?.version||"")})}
+        catch(e){await appendTrace(tabId,"semantic.probe_failed",{probe_id:String(m.probeId||""),error:String(e)});return reply({ok:false,agent_ok:false,error:String(e)})}
+      }
       if(m.type==="TRANSPORT_DIAG"){
         const d=m.diagnostic||{};await setStatus(tabId,{lastTransportDiagnostic:d});
         const hard=new Set(["contract_budget_exceeded","contract_payload_budget_exceeded","invalid_base64url","invalid_json","invalid_compact_command","invalid_outer_id","outer_id_mismatch","carrier_parse_failed","carrier_incomplete"]);
@@ -696,82 +896,73 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         const a=await isArmed(tabId);
         if(a.armed){
           const currentKey=conv(sender.tab?.url||m.url||"");
-          if(currentKey&&a.registered?.conversationKey&&currentKey!==a.registered.conversationKey){
-            return reply({ok:true,armed:false,reason:"conversation changed"});
-          }
-          // Critical re-arm fix: a newly loaded content script starts unarmed.
-          // Re-send BASELINE immediately to THIS frame so its MutationObserver is restored.
+          if(currentKey&&a.registered?.conversationKey&&currentKey!==a.registered.conversationKey)return reply({ok:true,armed:false,reason:"conversation changed"});
+          const frameId=Number.isInteger(sender.frameId)?sender.frameId:0,isTop=frameId===0||m.topFrame===true;
           try{
-            const frameId=Number.isInteger(sender.frameId)?sender.frameId:0;
-            if(a.registered?.reconcileReady){
-              const rr=await messageFrame(tabId,frameId,{type:"RECONCILE"});
-              const persisted=await seenAll();
-              const fresh=(rr?.commands||[]).filter(c=>c?.id&&!persisted[c.id]);
-              for(const c of fresh)await handleCommand(tabId,c);
-            }else{
-              const br=await messageFrame(tabId,frameId,{type:"BASELINE"});
-              const persisted=await seenAll();
-              for(const c of(br?.commands||[]))if(c?.id&&!persisted[c.id])persisted[c.id]={state:"baseline",ts:now(),conversationKey:a.registered.conversationKey,action:c.action};
-              await saveSeen(persisted);
-              const all=await armedAll();
-              if(all[String(tabId)]){all[String(tabId)].reconcileReady=true;await saveArmed(all)}
-            }
+            await messageFrame(tabId,frameId,{type:a.registered?.reconcileReady?"RECONCILE":"BASELINE"});
+            if(isTop)await semanticTop(tabId,a.registered?.reconcileReady?"SEMANTIC_RECONCILE":"SEMANTIC_BASELINE");
+            const all=await armedAll();if(all[String(tabId)]){all[String(tabId)].reconcileReady=true;await saveArmed(all)}
+            await appendTrace(tabId,"page.rearm_completed",{frame_id:frameId,top_frame:isTop});
           }catch(e){
-            await setStatus(tabId,{state:"Needs Action",detail:"Page adapter re-arm failed",lastError:String(e),actionRequired:true});
-            return reply({ok:false,armed:true,error:"re-arm failed: "+String(e)});
+            await appendTrace(tabId,isTop?"page.rearm_failed":"page.child_frame_transient_failed",{frame_id:frameId,top_frame:isTop,error:String(e)});
+            if(isTop){
+              await setStatus(tabId,{state:"Needs Action",detail:"Needs Re-arm",lastError:String(e),actionRequired:true,transportVerified:false});
+              return reply({ok:false,armed:true,error:"re-arm failed: "+String(e)});
+            }
+            return reply({ok:true,armed:true,warning:"child frame re-arm transient failure"});
           }
-          await paint(tabId,await getStatus(tabId)||{state:"Ready",detail:"Armed"});
           retryPending(tabId).catch(()=>{});
         }
         return reply({ok:true,armed:a.armed});
       }
       if(m.type==="STATUS"){
-        const a=await isArmed(tabId,m.conversationKey||"");const seen=await seenAll();
+        const a=await isArmed(tabId,m.conversationKey||""),seen=await seenAll();
         const registered=a.registered||{conversationKey:m.conversationKey||"",armedAt:0};
         const pending=classifyPending(seen,registered,now(),false);
         let pageDiagnostics=await diagAllFrames(tabId);
-        if(a.armed && pageDiagnostics.some(x=>x?.ok && x.topFrame && x.armed===false)){
-          try{
-            await reconcileAllFrames(tabId);
-            pageDiagnostics=await diagAllFrames(tabId);
-            await setStatus(tabId,{state:"Ready",detail:"Armed",lastError:"",actionRequired:false});
-          }catch{}
+        const top0=pageDiagnostics.find(x=>x?.ok&&x.topFrame);
+        if(a.armed&&top0?.armed===false){
+          try{await messageFrame(tabId,0,{type:"RECONCILE"});await semanticTop(tabId,"SEMANTIC_RECONCILE");pageDiagnostics=await diagAllFrames(tabId)}
+          catch(e){await appendTrace(tabId,"page.top_reconcile_failed",{error:String(e)})}
         }
-        const status=await getStatus(tabId);
-        const jobWatches=await jobWatchesAll();const jobWatchIds=Object.keys(jobWatches);const jobWatchCount=jobWatchIds.length;const jobDiag=await jobWatchDiag();
-        const chatTransfers=await chatTransfersAll();const chatTransferIds=Object.keys(chatTransfers);const chatDiag=await chatTransferDiag();
-        const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame);
-        const activePostCount=status?.state==="Posting"&&status?.currentCommandId?1:0;
+        let semantic={ok:false,error:"unavailable"};try{semantic=await semanticTop(tabId,"SEMANTIC_DIAG")}catch(e){semantic={ok:false,error:String(e)}}
+        const probe=a.armed?await connectionProbe(tabId):{verified:false};
+        let status=await getStatus(tabId);
+        if(a.armed){
+          const nextState=probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action");
+          const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable"));
+          status=await setStatus(tabId,{state:nextState,detail,transportVerified:!!probe.verified,connectionProbe:probe,actionRequired:nextState==="Needs Action",lastError:probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||"")});
+        }
+        const jobWatches=await jobWatchesAll(),jobWatchIds=Object.keys(jobWatches),jobWatchCount=jobWatchIds.length,jobDiag=await jobWatchDiag();
+        const chatTransfers=await chatTransfersAll(),chatTransferIds=Object.keys(chatTransfers),chatDiag=await chatTransferDiag();
+        const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame),activePostCount=status?.state==="Posting"&&status?.currentCommandId?1:0;
         const currentRec=(status?.currentCommandId&&seen[status.currentCommandId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||null;
-        const nextRetryAt=Number(currentRec?.nextPostAt||0);
-        const probe=top?.deliveryProbe||{};
+        const nextRetryAt=Number(currentRec?.nextPostAt||0),dprobe=top?.deliveryProbe||{};
+        const child=pageDiagnostics.filter(x=>!x?.topFrame),childReady=child.filter(x=>x?.ok&&x.armed===a.armed).length,childFailed=child.length-childReady;
         const health={
-          runtimeVersion:VERSION,armed:a.armed,conversationKeySuffix:(registered?.conversationKey||"").slice(-12),
+          runtimeVersion:VERSION,armed:a.armed,transportVerified:!!probe.verified,conversationKeySuffix:(registered?.conversationKey||"").slice(-12),
           state:status?.state||"Ready",currentCommandId:status?.currentCommandId||"",
-          pendingRetryEligibleCount:pending.retryEligible.length,deferredPendingCount:pending.deferred.length,
-          staleUnpostedCount:pending.stale.length,suppressedCount:pending.suppressed.length,activePostCount,
-          waitReason:currentRec?.waitReason||"",postAttempts:Number(currentRec?.postAttempts||0),
-          nextRetryAt,nextRetryInMs:nextRetryAt?Math.max(0,nextRetryAt-now()):0,
-          sendControlReady:!!probe.chosenSend&&!probe.chosenSend.disabled&&probe.chosenSend.ariaDisabled!=="true",
-          composerTextLen:Number(probe.composer?.textLen||0),composerKind:probe.composerKind||"",
-          lastErrorCode:status?.lastError?"runtime_error":"",
-          lastTransportDiagnosticCode:status?.lastTransportDiagnostic?.reason||status?.lastTransportDiagnostic?.kind||"",
-          pageAdapterState:top?(top.armed===a.armed?"ready":"arm_mismatch"):"unavailable",jobWatchCount,jobWatchIds:jobWatchIds.slice(0,8),
-          lastJobWatchRegisteredAt:Number(jobDiag.lastRegisteredAt||0),lastJobWatchRegisteredId:String(jobDiag.lastRegisteredJobId||""),
-          lastJobPollAt:Number(jobDiag.lastPollAt||0),lastJobPollStatus:String(jobDiag.lastPollStatus||""),lastJobWatchError:String(jobDiag.lastWatchError||""),
-          lastTerminalEventAt:Number(jobDiag.lastTerminalAt||0),lastTerminalJobId:String(jobDiag.lastTerminalJobId||""),lastTerminalJobStatus:String(jobDiag.lastTerminalStatus||""),
-          lastTerminalQueueAt:Number(jobDiag.lastQueueAt||0),lastTerminalQueueOk:!!jobDiag.lastQueueOk,lastTerminalDeliveryOk:!!jobDiag.lastQueueDeliveryOk,
-          chatArtifactTransferCount:chatTransferIds.length,chatArtifactTransferIds:chatTransferIds.slice(0,8),
-          lastChatArtifactRegisteredAt:Number(chatDiag.lastRegisteredAt||0),lastChatArtifactTransferId:String(chatDiag.lastRegisteredTransferId||""),
-          lastChatArtifactCompletedAt:Number(chatDiag.lastCompletedDownloadAt||0),
-          lastChatArtifactTerminalAt:Number(chatDiag.lastTerminalAt||0),lastChatArtifactTerminalStatus:String(chatDiag.lastTerminalStatus||""),
-          lastChatArtifactError:String(chatDiag.lastTransferError||""),lastChatArtifactDeliveryOk:!!chatDiag.lastQueueDeliveryOk
+          pendingRetryEligibleCount:pending.retryEligible.length,deferredPendingCount:pending.deferred.length,staleUnpostedCount:pending.stale.length,suppressedCount:pending.suppressed.length,activePostCount,
+          waitReason:currentRec?.waitReason||"",postAttempts:Number(currentRec?.postAttempts||0),nextRetryAt,nextRetryInMs:nextRetryAt?Math.max(0,nextRetryAt-now()):0,
+          sendControlReady:!!dprobe.chosenSend&&!dprobe.chosenSend.disabled&&dprobe.chosenSend.ariaDisabled!=="true",composerTextLen:Number(dprobe.composer?.textLen||0),composerKind:dprobe.composerKind||"",
+          lastErrorCode:status?.lastError?"runtime_error":"",lastTransportDiagnosticCode:status?.lastTransportDiagnostic?.reason||status?.lastTransportDiagnostic?.kind||"",
+          pageAdapterState:top?(top.armed===a.armed?(childFailed?"ready_with_warning":"ready"):"arm_mismatch"):"unavailable",
+          semanticAdapterState:semantic?.ok&&semantic?.semantic?.armed&&semantic?.semantic?.observer_active?"ready":"unavailable",
+          childFrames:{ready:childReady,transient_failed:childFailed},
+          connectionProbe:probe,jobWatchCount,jobWatchIds:jobWatchIds.slice(0,8),
+          lastJobWatchRegisteredAt:Number(jobDiag.lastRegisteredAt||0),lastJobWatchRegisteredId:String(jobDiag.lastRegisteredJobId||""),lastJobPollAt:Number(jobDiag.lastPollAt||0),lastJobPollStatus:String(jobDiag.lastPollStatus||""),lastJobWatchError:String(jobDiag.lastWatchError||""),
+          lastTerminalEventAt:Number(jobDiag.lastTerminalAt||0),lastTerminalJobId:String(jobDiag.lastTerminalJobId||""),lastTerminalJobStatus:String(jobDiag.lastTerminalStatus||""),lastTerminalQueueAt:Number(jobDiag.lastQueueAt||0),lastTerminalQueueOk:!!jobDiag.lastQueueOk,lastTerminalDeliveryOk:!!jobDiag.lastQueueDeliveryOk,
+          chatArtifactTransferCount:chatTransferIds.length,chatArtifactTransferIds:chatTransferIds.slice(0,8),lastChatArtifactRegisteredAt:Number(chatDiag.lastRegisteredAt||0),lastChatArtifactTransferId:String(chatDiag.lastRegisteredTransferId||""),lastChatArtifactCompletedAt:Number(chatDiag.lastCompletedDownloadAt||0),lastChatArtifactTerminalAt:Number(chatDiag.lastTerminalAt||0),lastChatArtifactTerminalStatus:String(chatDiag.lastTerminalStatus||""),lastChatArtifactError:String(chatDiag.lastTransferError||""),lastChatArtifactDeliveryOk:!!chatDiag.lastQueueDeliveryOk
         };
-        return reply({ok:true,version:VERSION,armed:a.armed,registered:a.registered,status,
-          pendingPostCount:health.pendingRetryEligibleCount,pendingRetryEligibleCount:health.pendingRetryEligibleCount,
-          deferredPendingCount:health.deferredPendingCount,staleUnpostedCount:health.staleUnpostedCount,
-          suppressedPendingCount:health.suppressedCount,activePostCount,health,pageDiagnostics});
+        return reply({ok:true,version:VERSION,armed:a.armed,registered:a.registered,status,pendingPostCount:health.pendingRetryEligibleCount,pendingRetryEligibleCount:health.pendingRetryEligibleCount,deferredPendingCount:health.deferredPendingCount,staleUnpostedCount:health.staleUnpostedCount,suppressedPendingCount:health.suppressedCount,activePostCount,health,pageDiagnostics,semanticDiagnostics:semantic});
       }
+      if(m.type==="FULL_DIAGNOSTICS")return reply(await fullDiagnostics(tabId,m.conversationKey||""));
+      if(m.type==="SEND_DIAGNOSTICS_TO_CHAT"){
+        const d=await fullDiagnostics(tabId,m.conversationKey||""),payload="SOKNA Bridge diagnostics (redacted)\n"+JSON.stringify(d);
+        const p=await chrome.tabs.sendMessage(tabId,{type:"POST_USER_TEXT",text:payload},{frameId:0});return reply({ok:!!p?.ok,delivery:p,diagnostics:d});
+      }
+      if(m.type==="CREATE_SUPPORT_BUNDLE")return reply(await nativeMessage({type:"support.bundle.create",request_id:uid()}));
+      if(m.type==="OPEN_LOGS")return reply(await nativeMessage({type:"logs.open",request_id:uid()}));
       if(m.type==="IG_POPUP_DOWNLOAD")return reply(await instagramMediaDownload({url:String(m.url||"")}));
       if(m.type==="IG_POPUP_SCAN")return reply(await instagramProfileScan({url:String(m.url||""),limit:Number(m.limit)||10}));
       if(m.type==="OPEN_CONTROL_CENTER")return reply(await nativeMessage({type:"control.open",request_id:uid()}));

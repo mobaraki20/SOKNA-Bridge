@@ -38,8 +38,11 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            log.Event(action, "failed", false, ex.Message, "inspect maintenance logs/support bundle");
-            Console.Error.WriteLine(JsonSerializer.Serialize(new OperationResult(false, action, log.SessionId, Error: ex.Message, NextAction: "inspect maintenance logs/support bundle"), JsonFiles.Options));
+            var next = action == "support-bundle"
+                ? "open maintenance logs or run diagnostics; retry the best-effort bundle"
+                : "inspect maintenance logs or create a support bundle";
+            log.Event(action, "failed", false, ex.Message, next);
+            Console.Error.WriteLine(JsonSerializer.Serialize(new OperationResult(false, action, log.SessionId, Error: ex.Message, NextAction: next), JsonFiles.Options));
             return 10;
         }
     }

@@ -9,7 +9,7 @@ def read(path):
     return p.read_text(encoding="utf-8")
 
 manifest=json.loads(read(Path("extension/chrome/manifest.json")))
-assert manifest["version"]=="3.11.0"
+assert manifest["version"]=="3.12.0"
 matches=set()
 for cs in manifest.get("content_scripts",[]):
     matches.update(cs.get("matches",[]))
@@ -30,12 +30,12 @@ assert "setInterval" not in popup_js, "popup must not poll Activity continuously
 background=read(Path("extension/chrome/background.js"))
 for marker in [
     "chatgpt.com","CONNECT_CHAT","instagram.profile.scan","instagram.scan.search",
-    "instagram.scan.get","instagram.media.download","instagram.media.attach","POST_USER_TEXT"
+    "instagram.scan.get","instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.selection.confirm","bridge.diagnostics.get","POST_USER_TEXT"
 ]:
     assert marker in background, f"background product integration missing {marker}"
 
 bootstrap=read(Path("extension/chrome/background_bootstrap.js"))
-for marker in ["instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download","instagram.media.attach"]:
+for marker in ["instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm","instagram.selection.reject","instagram.export","bridge.diagnostics.get"]:
     assert marker in bootstrap, f"extension capability gate missing {marker}"
 
 content=read(Path("extension/chrome/content.js"))
@@ -78,3 +78,9 @@ for marker in ['append===true','submit===false','ATTACHMENT_EXISTING_FILES_PRESE
 assert 'INSTAGRAM_ATTACH_BATCH_TOO_LARGE' in background
 assert 'visual_review_ready:true' in background
 assert 'media:media.slice(0,10).map(x=>({type:' in background and 'url:String(x?.url||"")' not in background.split('function igPostSummary',1)[1].split('async function inspectInstagramPostPrivate',1)[0], 'public Instagram scan summary must not expose CDN URLs'
+
+for marker in ['FULL_DIAGNOSTICS','SEND_DIAGNOSTICS_TO_CHAT','transportVerified','Connected — End-to-End Verified']:
+    assert marker in background, f'missing diagnostic/verified UX contract: {marker}'
+assert 'document.body.innerText' not in read(Path("extension/chrome/semantic_intent.js"))
+assert '[data-message-author-role="assistant"]' in read(Path("extension/chrome/semantic_intent.js"))
+assert 'semantic_fallback_diagnostics_v2' in read(Path("extension/chrome/semantic_intent.js"))

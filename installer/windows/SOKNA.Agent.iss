@@ -1,5 +1,5 @@
 #define MyAppName "SOKNA Bridge"
-#define MyAppVersion "2.7.0"
+#define MyAppVersion "2.7.1"
 #define MyPublisher "SOKNA"
 #define MyExeName "Sokna.Bridge.ControlCenter.exe"
 #define MaintenanceExeName "Sokna.Agent.Maintenance.exe"
@@ -121,7 +121,7 @@ begin
   if CurStep = ssPostInstall then
   begin
     RunRequired('initialize', '--artifact-root "' + GetArtifactRoot('') + '"');
-    RunRequired('start', '--expected-version "2.7.0"');
+    RunRequired('start', '--expected-version "2.7.1"');
   end;
   if CurStep = ssDone then
   begin

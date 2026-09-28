@@ -137,14 +137,19 @@ internal static partial class SecretRedactor
 
     internal static JsonNode? Redact(JsonNode? node)
     {
+        // Mutate children in place. Re-assigning a non-secret JsonNode that is
+        // already parented by obj/arr throws "The node already has a parent".
         if (node is JsonObject obj)
         {
             foreach (var key in obj.Select(x => x.Key).ToList())
-                obj[key] = SecretKeys.Contains(key) ? "[REDACTED]" : Redact(obj[key]);
+            {
+                if (SecretKeys.Contains(key)) obj[key] = "[REDACTED]";
+                else Redact(obj[key]);
+            }
         }
         else if (node is JsonArray arr)
         {
-            for (var i = 0; i < arr.Count; i++) arr[i] = Redact(arr[i]);
+            foreach (var child in arr) Redact(child);
         }
         return node;
     }

@@ -134,7 +134,7 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
     if(-not[bool]$prep.legacy_runtime_detected -or -not[bool]$prep.legacy_runtime_stopped){throw 'LEGACY_ACCEPTANCE_PREPARATION_EVIDENCE_MISSING'}
     if(-not[bool]$prep.legacy_autostart_removed){throw 'LEGACY_ACCEPTANCE_AUTOSTART_EVIDENCE_MISSING'}
     $legacyMaint=Join-Path $legacyInstall 'Sokna.Agent.Maintenance.exe'
-    Invoke-Maint $legacyMaint $legacyInstall @('health','--expected-version','2.7.0')|Out-Null
+    Invoke-Maint $legacyMaint $legacyInstall @('health','--expected-version','2.7.1')|Out-Null
 
     $uninstaller=Get-ChildItem $legacyInstall -Filter 'unins*.exe' -File|Select-Object -First 1
     if(-not$uninstaller){throw 'LEGACY_ACCEPTANCE_UNINSTALLER_MISSING'}
@@ -169,9 +169,9 @@ try{
   if(-not(Test-Path $ccSelf)){throw 'CONTROL_CENTER_SELF_TEST_OUTPUT_MISSING'}
   $ccObj=Get-Content $ccSelf -Raw|ConvertFrom-Json;if(-not[bool]$ccObj.ok){throw 'CONTROL_CENTER_SELF_TEST_FAILED'}
   Write-Host 'P1_CONTROL_CENTER_SELF_TEST_PASS'
-  Invoke-Maint $maint $install @('health','--expected-version','2.7.0')|Out-Null
+  Invoke-Maint $maint $install @('health','--expected-version','2.7.1')|Out-Null
   Invoke-ProcessChecked $SetupPath @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$install+'"'),('/ArtifactRoot="'+$artifact+'"'),'/TASKS=""',('/LOG="'+(Join-Path $caseRoot 'active-reinstall.log')+'"'))|Out-Null
-  Invoke-Maint $maint $install @('health','--expected-version','2.7.0')|Out-Null
+  Invoke-Maint $maint $install @('health','--expected-version','2.7.1')|Out-Null
   $prep=Get-Content (Join-Path $install 'state\install-preparation.json') -Raw|ConvertFrom-Json
   if(-not[bool]$prep.current_runtime_stopped){throw 'ACTIVE_REINSTALL_DID_NOT_STOP_OWNED_RUNTIME'}
   Write-Host 'P1_ACTIVE_RUNTIME_REINSTALL_ACCEPTANCE_PASS'
@@ -185,33 +185,54 @@ try{
   $bundleText=(Get-ChildItem $bundleDir -File -Recurse|ForEach-Object{Get-Content $_.FullName -Raw -ErrorAction SilentlyContinue}) -join "`n"
   if($bundleText.Contains($probeSecret) -or $bundleText.Contains($configToken)){throw 'SUPPORT_BUNDLE_SECRET_LEAK'}
   foreach($stateName in 'workspaces.json','workspace-grants.json','components.json','automations.json'){if(-not(Test-Path (Join-Path (Join-Path $bundleDir 'state') $stateName))){throw ('SUPPORT_BUNDLE_WHOLE_PRODUCT_STATE_MISSING: '+$stateName)}}
+
+  # Fault-injection: one malformed state file + one locked/non-readable runtime log must not kill the bundle.
+  $workspaceState=Join-Path $install 'state\workspaces.json';$workspaceBackup=[IO.File]::ReadAllBytes($workspaceState)
+  $lockedLog=Join-Path $install 'logs\runtime\ci-locked.log';[IO.File]::WriteAllText($lockedLog,'locked',[Text.UTF8Encoding]::new($false))
+  $lock=[IO.File]::Open($lockedLog,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+  try{
+    [IO.File]::WriteAllText($workspaceState,'{"broken":',[Text.UTF8Encoding]::new($false))
+    $partialBundle=Join-Path $caseRoot 'support-partial.zip';Invoke-Maint $maint $install @('support-bundle','--output',$partialBundle)|Out-Null
+    if(-not(Test-Path $partialBundle)){throw 'SUPPORT_BUNDLE_PARTIAL_MISSING'}
+    $partialDir=Join-Path $caseRoot 'support-partial-expanded';Expand-Archive -LiteralPath $partialBundle -DestinationPath $partialDir -Force
+    $bundleManifest=Get-Content (Join-Path $partialDir 'bundle-manifest.json') -Raw|ConvertFrom-Json
+    $bundleErrors=Get-Content (Join-Path $partialDir 'bundle-errors.json') -Raw|ConvertFrom-Json
+    if(-not[bool]$bundleManifest.partial){throw 'SUPPORT_BUNDLE_PARTIAL_FLAG_MISSING'}
+    if([int]$bundleManifest.error_count -lt 1){throw 'SUPPORT_BUNDLE_PARTIAL_ERROR_COUNT_MISSING'}
+    if(@($bundleErrors).Count -lt 1){throw 'SUPPORT_BUNDLE_ERRORS_MISSING'}
+    Write-Host 'P1_SUPPORT_BUNDLE_PARTIAL_PASS'
+  }finally{
+    if($lock){$lock.Dispose()}
+    [IO.File]::WriteAllBytes($workspaceState,$workspaceBackup)
+  }
+
   $agent=Join-Path $install 'runtime\agent.ps1';Add-Content -LiteralPath $agent -Value '# CI corruption'
   $payload=Join-Path $RepoRoot 'artifacts\windows\installer-payload';$manifest=Join-Path $payload 'manifests\installed-manifest.json'
   Invoke-Maint $maint $install @('repair','--manifest',$manifest,'--payload-root',$payload)|Out-Null
   if((Sha $agent)-ne(Sha (Join-Path $payload 'runtime\agent.ps1'))){throw 'REPAIR_DID_NOT_RESTORE_RUNTIME'}
 
-  $v271=Join-Path $caseRoot 'payload-2.7.1';$m271=New-SyntheticPayload $payload $v271 '2.7.1' -AddObsolete
-  Invoke-Maint $maint $install @('upgrade','--manifest',$m271,'--payload-root',$v271)|Out-Null
+  $v272=Join-Path $caseRoot 'payload-2.7.2';$m272=New-SyntheticPayload $payload $v272 '2.7.2' -AddObsolete
+  Invoke-Maint $maint $install @('upgrade','--manifest',$m272,'--payload-root',$v272)|Out-Null
   if(-not(Test-Path (Join-Path $install 'runtime\obsolete-ci.txt'))){throw 'UPGRADE_ADD_FILE_FAILED'}
 
-  $v272=Join-Path $caseRoot 'payload-2.7.2';$m272=New-SyntheticPayload $v271 $v272 '2.7.2' -RemoveObsolete
-  Invoke-Maint $maint $install @('upgrade','--manifest',$m272,'--payload-root',$v272)|Out-Null
+  $v273=Join-Path $caseRoot 'payload-2.7.3';$m273=New-SyntheticPayload $v272 $v273 '2.7.3' -RemoveObsolete
+  Invoke-Maint $maint $install @('upgrade','--manifest',$m273,'--payload-root',$v273)|Out-Null
   if(Test-Path (Join-Path $install 'runtime\obsolete-ci.txt')){throw 'UPGRADE_REMOVED_FILE_STALE'}
   $status=& $maint status --install-root $install|ConvertFrom-Json;$tx=[string]$status.data.ownership.activation_tx_id
   if([string]::IsNullOrWhiteSpace($tx)){throw 'UPGRADE_TX_ID_MISSING'}
   Invoke-Maint $maint $install @('rollback','--tx-id',$tx)|Out-Null
   if(-not(Test-Path (Join-Path $install 'runtime\obsolete-ci.txt'))){throw 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE'}
 
-  $bad=Join-Path $caseRoot 'payload-bad';$mbad=New-SyntheticPayload $v271 $bad '2.7.2' -AddObsolete -BrokenRuntime
+  $bad=Join-Path $caseRoot 'payload-bad';$mbad=New-SyntheticPayload $v272 $bad '2.7.3' -AddObsolete -BrokenRuntime
   Invoke-Maint $maint $install @('upgrade','--manifest',$mbad,'--payload-root',$bad) @(10)|Out-Null
-  Invoke-Maint $maint $install @('health','--expected-version','2.7.1')|Out-Null
+  Invoke-Maint $maint $install @('health','--expected-version','2.7.2')|Out-Null
 
   $uninstaller=Get-ChildItem $install -Filter 'unins*.exe' -File|Select-Object -First 1;if(-not $uninstaller){throw 'UNINSTALLER_MISSING'}
   Invoke-ProcessChecked $uninstaller.FullName @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART')|Out-Null
   if(-not(Test-Path $artifact)){throw 'UNINSTALL_REMOVED_ARTIFACT_ROOT'}
   $locator=Join-Path $env:LOCALAPPDATA 'SOKNA\Agent\install-locator.json'
   if(Test-Path $locator){$l=Get-Content $locator -Raw|ConvertFrom-Json;if([string]$l.install_root -eq $install){throw 'UNINSTALL_LEFT_ACTIVE_LOCATOR'}}
-  [ordered]@{ok=$true;case_root=$caseRoot;artifact_root_preserved=$true;repair=$true;upgrade=$true;rollback=$true;automatic_rollback=$true;legacy_running_setup=$true;active_runtime_reinstall=$true;control_center=$true;uninstall=$true}|ConvertTo-Json -Compress
+  [ordered]@{ok=$true;case_root=$caseRoot;artifact_root_preserved=$true;repair=$true;upgrade=$true;rollback=$true;automatic_rollback=$true;legacy_running_setup=$true;active_runtime_reinstall=$true;control_center=$true;support_bundle_partial=$true;uninstall=$true}|ConvertTo-Json -Compress
 }
 finally{
   if(Test-Path $install){try{$m=Join-Path $install 'Sokna.Agent.Maintenance.exe';if(Test-Path $m){& $m stop --install-root $install|Out-Null}}catch{}}

@@ -82,7 +82,7 @@ type ActivityEvent struct {
 	Source        string `json:"source"`
 }
 
-const version = "3.1.0-r2c"
+const version = "3.1.1-r2c"
 const maxIn = 64 * 1024 * 1024
 const maxOut = 900 * 1024
 const maxActivityBytes = 5 * 1024 * 1024
@@ -124,6 +124,17 @@ func resolveConfigPath() (string, error) {
 
 func installRoot()(string,error){p,err:=resolveConfigPath();if err!=nil{return "",err};return filepath.Dir(p),nil}
 func openControlCenter()error{root,err:=installRoot();if err!=nil{return err};exe:=filepath.Join(root,"Sokna.Bridge.ControlCenter.exe");if st,e:=os.Stat(exe);e!=nil||st.IsDir(){return fmt.Errorf("control center not installed: %s",exe)};cmd:=exec.Command(exe);cmd.Dir=root;return cmd.Start()}
+func openLogs()error{root,err:=installRoot();if err!=nil{return err};dir:=filepath.Join(root,"logs");if err:=os.MkdirAll(dir,0o700);err!=nil{return err};return exec.Command("explorer.exe",dir).Start()}
+func defaultSupportBundlePath()(string,error){home,err:=os.UserHomeDir();if err!=nil{return "",err};dir:=filepath.Join(home,"Documents");if st,e:=os.Stat(dir);e!=nil||!st.IsDir(){dir=home};name:="SOKNA-Bridge-Support-"+time.Now().UTC().Format("20060102-150405")+".zip";return filepath.Join(dir,name),nil}
+func createSupportBundle()(json.RawMessage,error){
+  root,err:=installRoot();if err!=nil{return nil,err};maintenance:=filepath.Join(root,"Sokna.Agent.Maintenance.exe");if st,e:=os.Stat(maintenance);e!=nil||st.IsDir(){return nil,fmt.Errorf("maintenance executable not installed: %s",maintenance)}
+  output,err:=defaultSupportBundlePath();if err!=nil{return nil,err};cmd:=exec.Command(maintenance,"support-bundle","--install-root",root,"--output",output);cmd.Dir=root;var stderr bytes.Buffer;cmd.Stderr=&stderr;stdout,err:=cmd.Output()
+  if err!=nil{return nil,fmt.Errorf("support bundle failed: %s %s",trimError(err),trimError(stderr.String()))}
+  var op map[string]any;if json.Unmarshal(stdout,&op)!=nil{return nil,errors.New("support bundle returned invalid JSON")}
+  data, _:=op["data"].(map[string]any);path:=output;partial:=false;errorCount:=0.0;filesWritten:=0.0
+  if data!=nil{if v:=strings.TrimSpace(fmt.Sprint(data["path"]));v!=""{path=v};if v,ok:=data["partial"].(bool);ok{partial=v};if v,ok:=data["error_count"].(float64);ok{errorCount=v};if v,ok:=data["files_written"].(float64);ok{filesWritten=v}}
+  result:=map[string]any{"ok":true,"path":path,"partial":partial,"error_count":int(errorCount),"files_written":int(filesWritten)};b,_:=json.Marshal(result);return json.RawMessage(b),nil
+}
 func jobsDir()(string,error){root,err:=installRoot();if err!=nil{return "",err};return filepath.Join(root,"runtime","jobs"),nil}
 func activityDir()(string,error){local:=strings.TrimSpace(os.Getenv("LOCALAPPDATA"));if local==""{return "",errors.New("LOCALAPPDATA not found")};return filepath.Join(local,"SOKNA","Bridge","activity"),nil}
 func activityPath()(string,error){d,err:=activityDir();if err!=nil{return "",err};return filepath.Join(d,"events.jsonl"),nil}
@@ -161,7 +172,7 @@ var quietActivityActions=map[string]bool{
 func shouldRecordCommandActivity(action string)bool{return !quietActivityActions[strings.ToLower(strings.TrimSpace(action))]}
 func recordCommandEvent(c CommandEnvelope,kind,errText string){if !shouldRecordCommandActivity(c.Action){return};ev:=newEvent(kind);ev.CommandID=c.ID;ev.CorrelationID=c.CorrelationID;ev.ParentID=c.ParentID;ev.Action=c.Action;ev.Error=trimError(errText);if kind=="command.accepted"{ev.State="accepted"};if kind=="command.completed"{ev.State="completed"};if kind=="command.failed"{ev.State="failed"};_ = appendActivity(ev)}
 
-func handle(m InMsg)OutMsg{if r,handled:=handleCredentialMessage(m);handled{return r};switch m.Type{case "host.ping":return OutMsg{OK:true,Type:"host.pong",RequestID:m.RequestID,Version:version};case "control.open":if err:=openControlCenter();err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};return OutMsg{OK:true,Type:"control.opened",RequestID:m.RequestID,Version:version};case "agent.exec":c,err:=parseCommand(m.Command);if err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.accepted","");if r,handled,err:=localObservability(c);handled{if err!=nil{recordCommandEvent(c,"command.failed",err.Error());return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.completed","");return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r}};r,err:=proxy(m.Command);if err!=nil{recordCommandEvent(c,"command.failed",err.Error());return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.completed","");if c.Action=="job.get"||c.Action=="job.submit"||c.Action=="job.batch"{if jobs,e:=readJobs();e==nil{observeJobStates(jobs)}};return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r};default:return OutMsg{OK:false,RequestID:m.RequestID,Error:"unknown native message type"}}}
+func handle(m InMsg)OutMsg{if r,handled:=handleCredentialMessage(m);handled{return r};switch m.Type{case "host.ping":return OutMsg{OK:true,Type:"host.pong",RequestID:m.RequestID,Version:version};case "control.open":if err:=openControlCenter();err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};return OutMsg{OK:true,Type:"control.opened",RequestID:m.RequestID,Version:version};case "logs.open":if err:=openLogs();err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};return OutMsg{OK:true,Type:"logs.opened",RequestID:m.RequestID,Version:version};case "support.bundle.create":r,err:=createSupportBundle();if err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};return OutMsg{OK:true,Type:"support.bundle.created",RequestID:m.RequestID,Version:version,Result:r};case "agent.exec":c,err:=parseCommand(m.Command);if err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.accepted","");if r,handled,err:=localObservability(c);handled{if err!=nil{recordCommandEvent(c,"command.failed",err.Error());return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.completed","");return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r}};r,err:=proxy(m.Command);if err!=nil{recordCommandEvent(c,"command.failed",err.Error());return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.completed","");if c.Action=="job.get"||c.Action=="job.submit"||c.Action=="job.batch"{if jobs,e:=readJobs();e==nil{observeJobStates(jobs)}};return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r};default:return OutMsg{OK:false,RequestID:m.RequestID,Error:"unknown native message type"}}}
 
 func main(){_ = runtime.GOOS;for{b,err:=readMessage(os.Stdin);if err!=nil{if errors.Is(err,io.EOF){return};fmt.Fprintln(os.Stderr,"read:",err);return};var m InMsg;if err:=json.Unmarshal(b,&m);err!=nil{_ = writeMessage(os.Stdout,OutMsg{OK:false,Error:"invalid JSON"});continue};if err:=writeMessage(os.Stdout,handle(m));err!=nil{fmt.Fprintln(os.Stderr,"write:",err);return}}}
 

@@ -77,7 +77,7 @@ for marker in ['SOKNA_AGENT_CONFIG_PATH', 'install-locator.json', 'SOKNA-Bridge-
     assert marker in host, f'native host migration marker missing {marker}'
 
 build = (ROOT / 'tools/installer/Build-P1Installer.ps1').read_text(encoding='utf-8')
-for marker in ['dotnet publish', 'go build', 'installed-manifest.json', "product_version='2.7.0'", "owner=$owner", 'ISCC.exe', 'DIRTY_SOURCE_NOT_REPRODUCIBLE', 'Sokna.Bridge.ControlCenter', 'DOTNET_CONTROL_CENTER_PUBLISH_FAILED']:
+for marker in ['dotnet publish', 'go build', 'installed-manifest.json', "product_version='2.7.1'", "owner=$owner", 'ISCC.exe', 'DIRTY_SOURCE_NOT_REPRODUCIBLE', 'Sokna.Bridge.ControlCenter', 'DOTNET_CONTROL_CENTER_PUBLISH_FAILED']:
     assert marker in build, f'build marker missing {marker}'
 assert not re.search(r'(?im)(^|[;\s])(gci|gc|cp|mv|rm|kill|sleep|gfh)(?=\s|;|$)', build), 'forbidden PowerShell alias in release build script'
 
@@ -86,7 +86,7 @@ assert '$buildOutput=@(' in workflow and 'Select-Object -Last 1' in workflow
 assert 'timeout-minutes: 30' in workflow
 
 windows_acceptance = (ROOT / 'tools/installer/Test-P1Windows.ps1').read_text(encoding='utf-8')
-for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime', 'PROCESS_TIMEOUT:', 'P1_PROCESS_START', 'P1_PROCESS_EXIT', 'P1_LEGACY_RUNNING_SETUP_ACCEPTANCE_PASS', 'P1_ACTIVE_RUNTIME_REINSTALL_ACCEPTANCE_PASS', 'P1_CONTROL_CENTER_SELF_TEST_PASS', 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING']:
+for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime', 'PROCESS_TIMEOUT:', 'P1_PROCESS_START', 'P1_PROCESS_EXIT', 'P1_LEGACY_RUNNING_SETUP_ACCEPTANCE_PASS', 'P1_ACTIVE_RUNTIME_REINSTALL_ACCEPTANCE_PASS', 'P1_CONTROL_CENTER_SELF_TEST_PASS', 'P1_SUPPORT_BUNDLE_PARTIAL_PASS', 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING']:
     assert marker in windows_acceptance, f'Windows lifecycle acceptance missing {marker}'
 # Synthetic upgrades must rebuild ownership from the actual payload tree; stale
 # paths from the previous manifest are forbidden from surviving into the next one.
@@ -118,3 +118,10 @@ for marker in ['<OutputType>WinExe</OutputType>','<TargetFramework>net8.0-window
 control=(ROOT/'maintenance/Sokna.Bridge.ControlCenter/MainForm.cs').read_text(encoding='utf-8')
 for marker in ['SOKNA Bridge Control Center','Workspace','Getting Started','settings-apply','Support Bundle']:
     assert marker in control, f'Control Center implementation missing {marker}'
+
+core=(ROOT/'maintenance/Sokna.Agent.Maintenance/Core.cs').read_text(encoding='utf-8')
+assert 'else Redact(obj[key]);' in core
+assert 'arr[i] = Redact(arr[i])' not in core
+support=(ROOT/'maintenance/Sokna.Agent.Maintenance/SupportBundle.cs').read_text(encoding='utf-8')
+for marker in ['bundle-errors.json','bundle-manifest.json','SupportBundleResult','Partial','TryCopyRedactedJson','TryCopyRedactedText']:
+    assert marker in support, f'best-effort support bundle missing {marker}'

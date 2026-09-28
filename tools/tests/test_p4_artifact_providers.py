@@ -27,9 +27,9 @@ for x in ['ed25519-sha256','required signature material missing','artifact signa
 for x in ['.provider-','staging','os.Rename','verifyFile','os.Remove(sidecar)']:
     assert x in main or x in provider,x
 
-ps=(root/'native/runtime/v2.7.0/Sokna.ArtifactProvider.psm1').read_text(encoding='utf-8')
-agent=(root/'native/runtime/v2.7.0/agent.ps1').read_text(encoding='utf-8')
-caps=json.loads((root/'native/runtime/v2.7.0/AGENT_CAPABILITIES.json').read_text(encoding='utf-8'))
+ps=(root/'native/runtime/v2.7.1/Sokna.ArtifactProvider.psm1').read_text(encoding='utf-8')
+agent=(root/'native/runtime/v2.7.1/agent.ps1').read_text(encoding='utf-8')
+caps=json.loads((root/'native/runtime/v2.7.1/AGENT_CAPABILITIES.json').read_text(encoding='utf-8'))
 for x in ['Initialize-SoknaArtifactProviders','Invoke-SoknaArtifactProviderProbe','Invoke-SoknaArtifactProviderAcquire','Invoke-SoknaArtifactProviderVerify','auto_execute=$false','quota_remaining_bytes','managed_folders','url_env','$finalOwned=$false','$metaOwned=$false','ARTIFACT_PROVIDER_METADATA_EXISTS',"phase='started'","phase='failed'"]:
     assert x in ps,x
 for action in ['artifact.provider.status','artifact.provider.probe','artifact.provider.acquire','artifact.provider.verify','artifact.chat.import.download']:
@@ -42,9 +42,9 @@ build=(root/'tools/installer/Build-P1Installer.ps1').read_text(encoding='utf-8')
 for x in ["$providerDest",'native\\provider','sokna-artifact-provider.exe','GO_ARTIFACT_PROVIDER_TEST_FAILED']:
     assert x in build,x
 wf=(root/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
-for x in ['test_p4_artifact_providers.py','Native artifact provider tests','Test-ArtifactProviders270.ps1',"native/provider/**"]:
+for x in ['test_p4_artifact_providers.py','Native artifact provider tests','Test-ArtifactProviders271.ps1',"native/provider/**"]:
     assert x in wf,x
-win=(root/'tools/runtime/releases/2.7.0/Test-ArtifactProviders270.ps1').read_text(encoding='utf-8')
+win=(root/'tools/runtime/releases/2.7.1/Test-ArtifactProviders271.ps1').read_text(encoding='utf-8')
 for x in ['hash mismatch accepted','raw credential URL accepted','cloud provider bypassed url_env boundary','required signature missing accepted','managed source was modified','artifact id collision accepted','collision cleanup modified existing artifact']:
     assert x in win,x
 

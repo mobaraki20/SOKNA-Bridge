@@ -5,22 +5,22 @@ import json, re
 ROOT=Path(__file__).resolve().parents[2]
 required=[
  'native/browser/go.mod','native/browser/main.go','native/browser/model.go','native/browser/cdp.go','native/browser/chromium.go','native/browser/pngdiff.go','native/browser/browser_test.go',
- 'native/runtime/v2.7.0/Sokna.Browser.psm1','docs/contracts/BROWSER_VISUAL_QA_CONTRACT_V1_FA.md','docs/browser/P3_ACCEPTANCE_RECIPE_V1.json',
- 'tools/runtime/releases/2.7.0/Test-BrowserQA270.ps1'
+ 'native/runtime/v2.7.1/Sokna.Browser.psm1','docs/contracts/BROWSER_VISUAL_QA_CONTRACT_V1_FA.md','docs/browser/P3_ACCEPTANCE_RECIPE_V1.json',
+ 'tools/runtime/releases/2.7.1/Test-BrowserQA271.ps1'
 ]
 for rel in required:
     assert (ROOT/rel).is_file(), f'missing {rel}'
 
-agent=(ROOT/'native/runtime/v2.7.0/agent.ps1').read_text(encoding='utf-8')
+agent=(ROOT/'native/runtime/v2.7.1/agent.ps1').read_text(encoding='utf-8')
 for marker in ['Sokna.Browser.psm1','Initialize-SoknaBrowserQA','"browser.qa.status"','"browser.recipe.run"','"browser.baseline.promote"','"browser.live.capture.policy"',"AssertWorkspaceTool $w 'browser'","SafePath $w $rel 'read'"]:
     assert marker in agent, f'agent browser integration missing {marker}'
 
-caps=json.loads((ROOT/'native/runtime/v2.7.0/AGENT_CAPABILITIES.json').read_text(encoding='utf-8'))
+caps=json.loads((ROOT/'native/runtime/v2.7.1/AGENT_CAPABILITIES.json').read_text(encoding='utf-8'))
 for action in ['browser.qa.status','browser.recipe.run','browser.baseline.promote','browser.live.capture.policy']:
     assert action in caps['actions'], f'capability missing {action}'
 assert 'browser_qa=sokna-browser-qa-report-v1' in caps['schema']
 
-browser=(ROOT/'native/runtime/v2.7.0/Sokna.Browser.psm1').read_text(encoding='utf-8')
+browser=(ROOT/'native/runtime/v2.7.1/Sokna.Browser.psm1').read_text(encoding='utf-8')
 for marker in ["Join-Path 'browser' (Join-Path 'runs'", "Join-Path 'browser' (Join-Path 'baselines'",'BROWSER_RUN_SIZE_LIMIT','ARTIFACT_ROOT_QUOTA_EXCEEDED','BROWSER_REPARSE_POINT_BLOCKED','Set-SoknaArtifactMetadata','Write-SoknaArtifactAudit','permission_required=$true','hidden_capture=$false','credential_export=$false','BROWSER_BASELINE_ALREADY_EXISTS','BROWSER_BASELINE_WORKSPACE_MISMATCH','BROWSER_RUN_WORKSPACE_MISMATCH','sokna-browser-run-manifest-v1']:
     assert marker in browser, f'PowerShell browser contract missing {marker}'
 assert 'Downloads' not in browser, 'browser output must not fall back to Downloads'
@@ -43,14 +43,14 @@ for marker in ["Join-Path $RepoRoot 'native\\browser'",'GO_BROWSER_QA_TEST_FAILE
     assert marker in build, f'installer browser build missing {marker}'
 
 workflow=(ROOT/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
-for marker in ['P3 browser and visual QA source contracts','Native browser QA tests','Browser QA 2.7.0 Windows acceptance']:
+for marker in ['P3 browser and visual QA source contracts','Native browser QA tests','Browser QA 2.7.1 Windows acceptance']:
     assert marker in workflow, f'CI browser gate missing {marker}'
 
 recipe=json.loads((ROOT/'docs/browser/P3_ACCEPTANCE_RECIPE_V1.json').read_text(encoding='utf-8'))
 assert recipe['schema']=='sokna-browser-recipe-v1'
 assert len(recipe['viewports'])>=2 and recipe['captures']['full_page'] and recipe['captures']['a11y']
 
-win=(ROOT/'tools/runtime/releases/2.7.0/Test-BrowserQA270.ps1').read_text(encoding='utf-8')
+win=(ROOT/'tools/runtime/releases/2.7.1/Test-BrowserQA271.ps1').read_text(encoding='utf-8')
 for marker in ['P3_BROWSER_SECRET_LEAK','P3_BASELINE_CROSS_WORKSPACE_ALLOWED','P3_VISUAL_CHANGE_NOT_DETECTED','P3_UNSAFE_URL_VALIDATION_BYPASSED']:
     assert marker in win, f'Windows P3 acceptance missing {marker}'
 

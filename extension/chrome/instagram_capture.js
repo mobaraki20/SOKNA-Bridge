@@ -28,6 +28,17 @@ function extractMedia(root=document){
   return out;
 }
 function rootArticle(){return document.querySelector('[role="dialog"] article')||document.querySelector("main article")||document.querySelector("article")}
+function adapterReadiness(){
+  const path=location.pathname.toLowerCase();
+  const loginForm=!!document.querySelector('input[name="username"],input[name="password"],form[action*="/accounts/login"]');
+  const loginPath=path.startsWith("/accounts/login")||path.startsWith("/accounts/signup");
+  const challenge=path.startsWith("/challenge/")||/challenge|required verification|confirm your identity/i.test(safe(document.body?.innerText).slice(0,3000));
+  if(loginForm||loginPath)return {ready:false,logged_in:false,reason:"login_required"};
+  if(challenge)return {ready:false,logged_in:null,reason:"challenge_or_verification"};
+  const main=!!document.querySelector("main");
+  if(!main)return {ready:false,logged_in:null,reason:"instagram_dom_not_ready"};
+  return {ready:true,logged_in:true,reason:"ready"};
+}
 function linksOf(root){
   const mentions=new Set(),hashtags=new Set();
   for(const a of root.querySelectorAll("a[href]")){
@@ -40,6 +51,7 @@ function linksOf(root){
   return {mentions:[...mentions].slice(0,80),hashtags:[...hashtags].slice(0,80)};
 }
 function postSnapshot(){
+  const rd=adapterReadiness();if(!rd.ready)return {ok:false,error:"INSTAGRAM_ADAPTER_NOT_READY",...rd,url:location.href,profile:pageUser()};
   const article=rootArticle(),root=article||document.querySelector("main")||document.body;
   const url=location.href,media=extractMedia(root),rels=linksOf(root);
   const og=safe(document.querySelector('meta[property="og:description"]')?.content);
@@ -70,6 +82,7 @@ function profileCards(){
   return out;
 }
 async function collectProfileLinks(limit){
+  const rd=adapterReadiness();if(!rd.ready)throw new Error("INSTAGRAM_ADAPTER_NOT_READY:"+rd.reason);
   limit=Math.min(Math.max(Number(limit)||10,1),100);
   const found=new Map();let stable=0,last=-1;
   for(let round=0;round<30&&found.size<limit;round++){
@@ -81,7 +94,7 @@ async function collectProfileLinks(limit){
   return [...found.values()].slice(0,limit);
 }
 chrome.runtime.onMessage.addListener((m,s,reply)=>{
-  if(m?.type==="IG_READY"){reply({ok:true,url:location.href,profile:pageUser(),post:!!rootArticle(),media_count:extractMedia(rootArticle()||document).length});return}
+  if(m?.type==="IG_READY"){const rd=adapterReadiness();reply({ok:rd.ready,url:location.href,profile:pageUser(),post:!!rootArticle(),media_count:rd.ready?extractMedia(rootArticle()||document).length:0,...rd});return}
   if(m?.type==="IG_POST_SNAPSHOT"){reply(postSnapshot());return}
   if(m?.type==="IG_PROFILE_LINKS"){collectProfileLinks(m.limit).then(cards=>reply({ok:true,url:location.href,profile:pageUser(),cards}),e=>reply({ok:false,error:String(e)}));return true}
 });

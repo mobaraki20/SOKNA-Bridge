@@ -27,7 +27,8 @@ internal static class Program
             var configPath = Path.Combine(root, "config.json");
             var manifestPath = Path.Combine(root, "manifests", "installed-manifest.json");
             var extensionPath = Path.Combine(root, "extension", "manifest.json");
-            var ok = File.Exists(configPath) && File.Exists(manifestPath) && File.Exists(extensionPath);
+            var maintenancePath = Path.Combine(root, "Sokna.Agent.Maintenance.exe");
+            var ok = File.Exists(configPath) && File.Exists(manifestPath) && File.Exists(extensionPath) && File.Exists(maintenancePath);
             var result = new
             {
                 ok,
@@ -35,7 +36,8 @@ internal static class Program
                 install_root = root,
                 config = File.Exists(configPath),
                 manifest = File.Exists(manifestPath),
-                extension = File.Exists(extensionPath)
+                extension = File.Exists(extensionPath),
+                maintenance = File.Exists(maintenancePath)
             };
             if (!string.IsNullOrWhiteSpace(output))
                 File.WriteAllText(Path.GetFullPath(output), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));

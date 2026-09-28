@@ -4,10 +4,10 @@ ROOT=Path(__file__).resolve().parents[2]
 manifest=json.loads((ROOT/'extension/chrome/manifest.json').read_text(encoding='utf-8'))
 bg=(ROOT/'extension/chrome/background.js').read_text(encoding='utf-8')
 content=(ROOT/'extension/chrome/content.js').read_text(encoding='utf-8')
-agent=(ROOT/'native/runtime/v2.7.0/agent.ps1').read_text(encoding='utf-8')
-provider=(ROOT/'native/runtime/v2.7.0/Sokna.ArtifactProvider.psm1').read_text(encoding='utf-8')
+agent=(ROOT/'native/runtime/v2.7.1/agent.ps1').read_text(encoding='utf-8')
+provider=(ROOT/'native/runtime/v2.7.1/Sokna.ArtifactProvider.psm1').read_text(encoding='utf-8')
 policy=json.loads((ROOT/'docs/contracts/ARTIFACT_PROVIDER_POLICY_V1.json').read_text(encoding='utf-8'))
-assert manifest['version']=='3.11.0'
+assert manifest['version']=='3.12.0'
 assert 'downloads' in manifest.get('permissions',[]), 'Instagram direct media download requires Chrome downloads permission'
 assert 'chat_artifact_core.js' in manifest['background'].get('service_worker','') or 'chat_artifact_core.js' in bg
 assert 'chat_artifact_core.js' in manifest['content_scripts'][0]['js']

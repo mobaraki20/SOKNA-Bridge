@@ -5,10 +5,23 @@ try{globalThis[G]?.dispose?.()}catch{}
 
 const Core=globalThis.__SOKNA_V33_DOM_CORE__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
-const VERSION="3.10.9",DETECTOR="semantic-delivery-v1";
+const VERSION="3.12.0",DETECTOR="semantic-delivery-v2";
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 let armed=false,disposed=false,observer=null,deliveryStateTimer=0;
 let lastPostMethod="",lastPostError="",lastDeliveryGate="",lastDeliveryReadySignalAt=0,lastActivityAt=0;
+const CONTENT_FALLBACK_KEY="content_fallback_diagnostics_v1";
+async function persistContentFallback(event,error,extra={}){
+  try{
+    const d=await chrome.storage.local.get([CONTENT_FALLBACK_KEY]),a=Array.isArray(d[CONTENT_FALLBACK_KEY])?d[CONTENT_FALLBACK_KEY]:[];
+    a.push({ts:Date.now(),event:String(event||""),error:String(error||""),url:location.href,topFrame:window.top===window,...extra});
+    await chrome.storage.local.set({[CONTENT_FALLBACK_KEY]:a.slice(-80)});
+  }catch{}
+}
+async function runtimeSendSafe(message,event){
+  try{return await chrome.runtime.sendMessage(message)}
+  catch(e){await persistContentFallback(event||"content.runtime_send_failed",e,{message_type:String(message?.type||"")});return {ok:false,error:String(e),runtime_unavailable:true}}
+}
+
 
 function pageBroken(){
   return (document.body?.innerText||"").toLowerCase().includes("content failed to load");
@@ -188,7 +201,7 @@ function scheduleDeliveryStateCheck(){
     const now=Date.now();
     if((prev&&prev!=="ready"&&gate==="ready")||(bridgeReady&&now-lastDeliveryReadySignalAt>=1500)){
       lastDeliveryReadySignalAt=now;
-      chrome.runtime.sendMessage({type:"DELIVERY_READY",from:prev,to:gate,force:!bridgeReady,bridgeDraft:bridgeReady,ts:now,frameHref:location.href}).catch(()=>{});
+      runtimeSendSafe({type:"DELIVERY_READY",from:prev,to:gate,force:!bridgeReady,bridgeDraft:bridgeReady,ts:now,frameHref:location.href},"content.delivery_ready_failed");
     }
   },250);
 }
@@ -330,5 +343,5 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
 
 function dispose(){if(disposed)return;disposed=true;stop()}
 globalThis[G]={version:VERSION,dispose};
-chrome.runtime.sendMessage({type:"CONTENT_READY",url:location.href,topFrame:window.top===window,detector:DETECTOR}).catch(()=>{});
+runtimeSendSafe({type:"CONTENT_READY",url:location.href,topFrame:window.top===window,detector:DETECTOR},"content.ready_failed");
 })();

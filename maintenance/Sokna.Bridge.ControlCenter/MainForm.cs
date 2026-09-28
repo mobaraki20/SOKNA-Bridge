@@ -16,6 +16,12 @@ internal sealed class MainForm : Form
     private readonly Label _artifact = new();
     private readonly Label _workspaceCount = new();
     private readonly Label _lastError = new();
+    private readonly TextBox _errorDetails = new();
+    private readonly Panel _errorPanel = new();
+    private readonly TextBox _diagnosticsBox = new();
+    private readonly Label _diagnosticsStatus = new();
+    private string _lastMaintenanceAction = "";
+    private string[] _lastMaintenanceArgs = Array.Empty<string>();
     private readonly NumericUpDown _portInput = new();
     private readonly TextBox _artifactInput = new();
     private readonly CheckBox _autostart = new();
@@ -38,14 +44,15 @@ internal sealed class MainForm : Form
         Height = 740;
         MinimumSize = new Size(900, 620);
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 10f);
+        Font = new Font("Tahoma", 10f);
         RightToLeft = RightToLeft.Yes;
         RightToLeftLayout = true;
 
-        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var tabs = new TabControl { Dock = DockStyle.Fill, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, Padding = new Point(14, 6) };
         tabs.TabPages.Add(BuildHomeTab());
-        tabs.TabPages.Add(BuildSettingsTab());
         tabs.TabPages.Add(BuildWorkspaceTab());
+        tabs.TabPages.Add(BuildSettingsTab());
+        tabs.TabPages.Add(BuildDiagnosticsTab());
         tabs.TabPages.Add(BuildGettingStartedTab());
         Controls.Add(tabs);
 
@@ -54,55 +61,72 @@ internal sealed class MainForm : Form
 
     private TabPage BuildHomeTab()
     {
-        var page = NewPage("وضعیت / Status");
+        var page = NewPage("وضعیت");
         var root = Stack();
 
-        var title = new Label
-        {
-            Text = "SOKNA Bridge",
-            AutoSize = true,
-            Font = new Font(Font.FontFamily, 22f, FontStyle.Bold),
-            Margin = new Padding(8, 18, 8, 4)
-        };
-        root.Controls.Add(title);
+        root.Controls.Add(new Label { Text = "SOKNA Bridge", AutoSize = true, Font = new Font(Font.FontFamily, 22f, FontStyle.Bold), Margin = new Padding(8, 14, 8, 2) });
+        root.Controls.Add(new Label { Text = "وضعیت کلی، عملیات اصلی و آخرین خطای قابل اقدام را از این صفحه ببین.", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8, 0, 8, 16) });
 
-        _status.AutoSize = true;
-        _status.Font = new Font(Font.FontFamily, 14f, FontStyle.Bold);
-        _status.Text = "در حال بررسی وضعیت Agent…";
-        _status.Margin = new Padding(8, 8, 8, 16);
-        root.Controls.Add(_status);
+        var health = Card("سلامت Agent");
+        _status.AutoSize = true; _status.Font = new Font(Font.FontFamily, 14f, FontStyle.Bold); _status.Text = "در حال بررسی…"; _status.Margin = new Padding(8, 8, 8, 12);
+        health.Controls.Add(_status);
+        var info = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Padding = new Padding(8), Margin = new Padding(8), Width = 860 };
+        info.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220)); info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        AddInfo(info, 0, "نسخه", _version); AddInfo(info, 1, "پورت محلی", _port); AddInfo(info, 2, "ArtifactRoot", _artifact); AddInfo(info, 3, "تعداد Workspace", _workspaceCount);
+        health.Controls.Add(info);
+        root.Controls.Add(health);
 
-        root.Controls.Add(InfoRow("نسخه / Version", _version));
-        root.Controls.Add(InfoRow("پورت / Port", _port));
-        root.Controls.Add(InfoRow("ArtifactRoot", _artifact));
-        root.Controls.Add(InfoRow("Workspaceها", _workspaceCount));
+        var primary = Card("عملیات اصلی");
+        var actions = ButtonRow();
+        actions.Controls.Add(StyledButton("تازه‌سازی", async () => await RefreshAllAsync(), "primary"));
+        actions.Controls.Add(StyledButton("شروع Agent", async () => await LifecycleAsync("start"), "secondary"));
+        actions.Controls.Add(StyledButton("راه‌اندازی مجدد", async () => { await RunMaintenanceAsync("stop"); await RunMaintenanceAsync("start", "--expected-version", ReadProductVersion()); await RefreshAllAsync(); }, "secondary"));
+        actions.Controls.Add(StyledButton("توقف Agent", async () => await LifecycleAsync("stop"), "danger"));
+        primary.Controls.Add(actions);
+        root.Controls.Add(primary);
 
-        var buttons = ButtonRow();
-        buttons.Controls.Add(ActionButton("تازه‌سازی", async () => await RefreshAllAsync()));
-        buttons.Controls.Add(ActionButton("شروع Agent", async () => await LifecycleAsync("start")));
-        buttons.Controls.Add(ActionButton("توقف Agent", async () => await LifecycleAsync("stop")));
-        buttons.Controls.Add(ActionButton("راه‌اندازی مجدد", async () =>
-        {
-            await RunMaintenanceAsync("stop");
-            await RunMaintenanceAsync("start", "--expected-version", ReadProductVersion());
-            await RefreshAllAsync();
-        }));
-        root.Controls.Add(buttons);
+        var maintenance = Card("نگهداری و پشتیبانی");
+        var tools = ButtonRow();
+        tools.Controls.Add(StyledButton("باز کردن Logها", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
+        tools.Controls.Add(StyledButton("باز کردن ArtifactRoot", () => OpenFolder(CurrentArtifactRoot()), "secondary"));
+        tools.Controls.Add(StyledButton("ساخت Support Bundle", CreateSupportBundleAsync, "secondary"));
+        tools.Controls.Add(StyledButton("Diagnostics", async () => await RefreshDiagnosticsAsync(), "secondary"));
+        maintenance.Controls.Add(tools);
+        root.Controls.Add(maintenance);
 
-        var folders = ButtonRow();
-        folders.Controls.Add(ActionButton("باز کردن ArtifactRoot", () => OpenFolder(CurrentArtifactRoot())));
-        folders.Controls.Add(ActionButton("باز کردن Logها", () => OpenFolder(Path.Combine(_installRoot, "logs"))));
-        folders.Controls.Add(ActionButton("ساخت Support Bundle", CreateSupportBundleAsync));
-        root.Controls.Add(folders);
-
-        _lastError.AutoSize = true;
-        _lastError.MaximumSize = new Size(900, 0);
-        _lastError.ForeColor = Color.Firebrick;
-        _lastError.Margin = new Padding(8, 18, 8, 8);
-        root.Controls.Add(_lastError);
+        _errorPanel.AutoSize = true; _errorPanel.Width = 900; _errorPanel.Padding = new Padding(12); _errorPanel.Margin = new Padding(8); _errorPanel.BorderStyle = BorderStyle.FixedSingle; _errorPanel.Visible = false;
+        var errorTitle = new Label { Text = "آخرین عملیات ناموفق بود", AutoSize = true, Font = new Font(Font.FontFamily, 12f, FontStyle.Bold), ForeColor = Color.Firebrick, Top = 10, Left = 690 };
+        _lastError.AutoSize = false; _lastError.Width = 840; _lastError.Height = 46; _lastError.Top = 40; _lastError.Left = 20; _lastError.TextAlign = ContentAlignment.TopRight;
+        _errorDetails.Multiline = true; _errorDetails.ReadOnly = true; _errorDetails.ScrollBars = ScrollBars.Vertical; _errorDetails.Width = 840; _errorDetails.Height = 110; _errorDetails.Top = 92; _errorDetails.Left = 20; _errorDetails.RightToLeft = RightToLeft.No; _errorDetails.Font = new Font("Consolas", 9f);
+        var errButtons = new FlowLayoutPanel { Width = 840, Height = 48, Top = 208, Left = 20, FlowDirection = FlowDirection.RightToLeft };
+        errButtons.Controls.Add(StyledButton("کپی جزئیات", () => Clipboard.SetText(_errorDetails.Text), "secondary"));
+        errButtons.Controls.Add(StyledButton("باز کردن Logها", () => OpenFolder(Path.Combine(_installRoot, "logs", "maintenance")), "secondary"));
+        errButtons.Controls.Add(StyledButton("Minimal Diagnostics", async () => await CreateMinimalDiagnosticsAsync(), "secondary"));
+        errButtons.Controls.Add(StyledButton("تلاش مجدد", RetryLastMaintenanceAsync, "primary"));
+        _errorPanel.Height = 272; _errorPanel.Controls.Add(errorTitle); _errorPanel.Controls.Add(_lastError); _errorPanel.Controls.Add(_errorDetails); _errorPanel.Controls.Add(errButtons);
+        root.Controls.Add(_errorPanel);
 
         page.Controls.Add(root);
         return page;
+    }
+
+    private TabPage BuildDiagnosticsTab()
+    {
+        var page = NewPage("Diagnostics");
+        var root = Stack();
+        root.Controls.Add(SectionTitle("Diagnostics و خروجی پشتیبانی"));
+        root.Controls.Add(new Label { Text = "این بخش برای عیب‌یابی است. خروجی‌ها Token و secret را نمایش نمی‌دهند.", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8) });
+        var actions = ButtonRow();
+        actions.Controls.Add(StyledButton("Refresh Diagnostics", RefreshDiagnosticsAsync, "primary"));
+        actions.Controls.Add(StyledButton("Copy for AI", () => { if (!string.IsNullOrWhiteSpace(_diagnosticsBox.Text)) Clipboard.SetText(_diagnosticsBox.Text); }, "secondary"));
+        actions.Controls.Add(StyledButton("Save JSON", SaveDiagnosticsAsync, "secondary"));
+        actions.Controls.Add(StyledButton("Support Bundle", CreateSupportBundleAsync, "secondary"));
+        actions.Controls.Add(StyledButton("Open Logs", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
+        root.Controls.Add(actions);
+        _diagnosticsStatus.AutoSize = true; _diagnosticsStatus.Margin = new Padding(8); root.Controls.Add(_diagnosticsStatus);
+        _diagnosticsBox.Multiline = true; _diagnosticsBox.ReadOnly = true; _diagnosticsBox.ScrollBars = ScrollBars.Both; _diagnosticsBox.WordWrap = false; _diagnosticsBox.RightToLeft = RightToLeft.No; _diagnosticsBox.Font = new Font("Consolas", 9f); _diagnosticsBox.Width = 900; _diagnosticsBox.Height = 430; _diagnosticsBox.Margin = new Padding(8);
+        root.Controls.Add(_diagnosticsBox);
+        page.Controls.Add(root); return page;
     }
 
     private TabPage BuildSettingsTab()
@@ -174,13 +198,15 @@ internal sealed class MainForm : Form
         _workspaces.Columns.Add("نام", 160);
         _workspaces.Columns.Add("مسیر", 430);
         _workspaces.Columns.Add("دسترسی", 120);
-        _workspaces.Columns.Add("ابزارها", 220);
+        _workspaces.Columns.Add("ابزارها", 200);
+        _workspaces.Columns.Add("وضعیت", 100);
         panel.Controls.Add(_workspaces);
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 58, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 8) };
         top.Controls.Add(ActionButton("افزودن Workspace", AddWorkspaceAsync));
         top.Controls.Add(ActionButton("حذف از Bridge", RemoveWorkspaceAsync));
         top.Controls.Add(ActionButton("تازه‌سازی", async () => await RefreshWorkspacesAsync()));
+        top.Controls.Add(ActionButton("بررسی انتخاب‌شده", InspectWorkspaceAsync));
         panel.Controls.Add(top);
 
         var note = new Label
@@ -207,7 +233,8 @@ internal sealed class MainForm : Form
         root.Controls.Add(Step("۱", "Agent باید Healthy باشد", "در تب Status وضعیت Agent باید سبز باشد. اگر نیست، دکمه «شروع Agent» را بزن."));
         root.Controls.Add(Step("۲", "Extension مرورگر را Load کن", "Chrome یا Edge را باز کن، Developer mode را روشن کن، Load unpacked را بزن و پوشه Extension نصب‌شده را انتخاب کن."));
         root.Controls.Add(Step("۳", "Workspace تعریف کن", "در تب Workspace پوشه‌ای را که ChatGPT اجازه کار روی آن دارد اضافه کن. برای پروژه نرم‌افزاری می‌توانی preset توسعه را انتخاب کنی."));
-        root.Controls.Add(Step("۴", "ChatGPT را باز کن", "بعد از فعال‌شدن Extension، chatgpt.com را باز یا Refresh کن و کار را در همان گفتگو درخواست کن."));
+        root.Controls.Add(Step("۴", "ChatGPT را باز و همان Chat را Connect کن", "در chatgpt.com روی آیکن SOKNA Bridge بزن و Connect this Chat را انتخاب کن. سبز کامل فقط بعد از End-to-End Verify نمایش داده می‌شود."));
+        root.Controls.Add(Step("۵", "در صورت خطا Diagnostics را بگیر", "از Popup بخش Advanced Diagnostics یا تب Diagnostics همین برنامه استفاده کن؛ raw خطا را لازم نیست دستی پیدا کنی."));
 
         var extPath = Path.Combine(_installRoot, "extension");
         _extensionInfo.Text = "مسیر Extension: " + extPath;
@@ -296,6 +323,7 @@ internal sealed class MainForm : Form
                     item.SubItems.Add(w["path"]?.GetValue<string>() ?? "");
                     item.SubItems.Add(access);
                     item.SubItems.Add(toolText);
+                    item.SubItems.Add("ثبت‌شده");
                     item.Tag = w["id"]?.GetValue<string>() ?? w["name"]?.GetValue<string>() ?? "";
                     _workspaces.Items.Add(item);
                 }
@@ -341,6 +369,67 @@ internal sealed class MainForm : Form
             await AgentCallAsync("workspace.unregister", new { id });
             await RefreshWorkspacesAsync();
         }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private async Task InspectWorkspaceAsync()
+    {
+        if (_workspaces.SelectedItems.Count != 1) { MessageBox.Show(this, "یک Workspace را انتخاب کن.", Text); return; }
+        var id = _workspaces.SelectedItems[0].Tag?.ToString() ?? "";
+        try
+        {
+            var r = await AgentCallAsync("workspace.inspect", new { workspace = id });
+            _diagnosticsBox.Text = r.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            _diagnosticsStatus.Text = "جزئیات Workspace «" + id + "» در تب Diagnostics آماده است.";
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private async Task RefreshDiagnosticsAsync()
+    {
+        var output = Path.Combine(Path.GetTempPath(), "sokna-diagnostics-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            await RunMaintenanceAsync("diagnostics", "--output", output);
+            _diagnosticsBox.Text = File.Exists(output) ? File.ReadAllText(output, Encoding.UTF8) : "{}";
+            _diagnosticsStatus.Text = "Diagnostic در " + DateTime.Now.ToString("HH:mm:ss") + " به‌روز شد.";
+        }
+        catch (Exception ex)
+        {
+            await CreateMinimalDiagnosticsAsync(ex);
+        }
+        finally { try { if (File.Exists(output)) File.Delete(output); } catch { } }
+    }
+
+    private async Task CreateMinimalDiagnosticsAsync(Exception? cause = null)
+    {
+        var minimal = new JsonObject
+        {
+            ["schema"] = "sokna-control-center-minimal-diagnostics-v1",
+            ["generated_at"] = DateTimeOffset.UtcNow.ToString("O"),
+            ["install_root"] = _installRoot,
+            ["product_version"] = ReadProductVersion(),
+            ["config_exists"] = File.Exists(Path.Combine(_installRoot, "config.json")),
+            ["manifest_exists"] = File.Exists(Path.Combine(_installRoot, "manifests", "installed-manifest.json")),
+            ["logs_exists"] = Directory.Exists(Path.Combine(_installRoot, "logs")),
+            ["error"] = cause?.Message ?? _errorDetails.Text
+        };
+        try { var ping = await AgentCallAsync("ping", new { }); minimal["agent_ping"] = ping.DeepClone(); } catch (Exception ex) { minimal["agent_error"] = ex.Message; }
+        _diagnosticsBox.Text = minimal.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        _diagnosticsStatus.Text = "Minimal Diagnostics آماده است.";
+    }
+
+    private async Task SaveDiagnosticsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_diagnosticsBox.Text)) await RefreshDiagnosticsAsync();
+        using var dlg = new SaveFileDialog { Filter = "JSON (*.json)|*.json", FileName = "SOKNA-Bridge-Diagnostics.json", InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) };
+        if (dlg.ShowDialog(this) == DialogResult.OK) File.WriteAllText(dlg.FileName, _diagnosticsBox.Text, new UTF8Encoding(false));
+    }
+
+    private async Task RetryLastMaintenanceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_lastMaintenanceAction)) { await RefreshAllAsync(); return; }
+        try { await RunMaintenanceAsync(_lastMaintenanceAction, _lastMaintenanceArgs); _errorPanel.Visible = false; await RefreshAllAsync(); }
         catch (Exception ex) { ShowError(ex); }
     }
 
@@ -390,8 +479,11 @@ internal sealed class MainForm : Form
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         try
         {
-            await RunMaintenanceAsync("support-bundle", "--output", dlg.FileName);
-            MessageBox.Show(this, "Support Bundle ساخته شد:\n" + dlg.FileName, Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            var op = await RunMaintenanceAsync("support-bundle", "--output", dlg.FileName);
+            var data = op?["data"] as JsonObject;
+            var partial = data?["partial"]?.GetValue<bool>() == true;
+            var count = data?["error_count"]?.GetValue<int>() ?? 0;
+            MessageBox.Show(this, partial ? $"Support Bundle ساخته شد، اما {count} فایل قابل خواندن نبود و در bundle-errors.json ثبت شد.\n{dlg.FileName}" : "Support Bundle کامل ساخته شد:\n" + dlg.FileName, Text, MessageBoxButtons.OK, partial ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
         }
         catch (Exception ex) { ShowError(ex); }
     }
@@ -447,23 +539,17 @@ internal sealed class MainForm : Form
         return obj;
     }
 
-    private async Task RunMaintenanceAsync(string action, params string[] args)
+    private async Task<JsonObject?> RunMaintenanceAsync(string action, params string[] args)
     {
+        _lastMaintenanceAction = action; _lastMaintenanceArgs = args.ToArray();
         var exe = Path.Combine(_installRoot, "Sokna.Agent.Maintenance.exe");
         if (!File.Exists(exe)) throw new FileNotFoundException("Maintenance executable پیدا نشد.", exe);
         var psi = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = _installRoot };
-        psi.ArgumentList.Add(action);
-        psi.ArgumentList.Add("--install-root");
-        psi.ArgumentList.Add(_installRoot);
-        foreach (var a in args) psi.ArgumentList.Add(a);
+        psi.ArgumentList.Add(action); psi.ArgumentList.Add("--install-root"); psi.ArgumentList.Add(_installRoot); foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi) ?? throw new InvalidOperationException("Maintenance اجرا نشد.");
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
-        await p.WaitForExitAsync();
-        var o = await stdout;
-        var e = await stderr;
-        if (p.ExitCode != 0)
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(e) ? o : e);
+        var stdout = p.StandardOutput.ReadToEndAsync(); var stderr = p.StandardError.ReadToEndAsync(); await p.WaitForExitAsync(); var o = await stdout; var e = await stderr;
+        if (p.ExitCode != 0) throw new InvalidOperationException(string.IsNullOrWhiteSpace(e) ? o : e);
+        try { return JsonNode.Parse(o)?.AsObject(); } catch { return null; }
     }
 
     private static void OpenFolder(string path)
@@ -485,8 +571,24 @@ internal sealed class MainForm : Form
 
     private void ShowError(Exception ex)
     {
-        _lastError.Text = ex.Message;
-        MessageBox.Show(this, ex.Message, "SOKNA Bridge", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        var raw = ex.Message;
+        var summary = "عملیات انجام نشد. جزئیات فنی در پنل خطا ثبت شده است.";
+        try
+        {
+            var obj = JsonNode.Parse(raw)?.AsObject();
+            var action = obj?["action"]?.GetValue<string>() ?? "";
+            var error = obj?["error"]?.GetValue<string>() ?? "";
+            var session = obj?["session_id"]?.GetValue<string>() ?? "";
+            if (!string.IsNullOrWhiteSpace(error)) summary = (string.IsNullOrWhiteSpace(action) ? "عملیات" : action) + ": " + error;
+            if (!string.IsNullOrWhiteSpace(session)) summary += "\nError/Session ID: " + session;
+        }
+        catch
+        {
+            var first = raw.Replace("\r", "").Split('\n').FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim();
+            if (!string.IsNullOrWhiteSpace(first)) summary = first.Length > 240 ? first[..240] + "…" : first;
+        }
+        _lastError.Text = summary; _errorDetails.Text = raw; _errorPanel.Visible = true;
+        MessageBox.Show(this, summary, "SOKNA Bridge — عملیات ناموفق", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
 
     private static TabPage NewPage(string title) => new(title) { Padding = new Padding(8) };
@@ -547,13 +649,39 @@ internal sealed class MainForm : Form
         Margin = new Padding(8, 22, 8, 10)
     };
 
+    private static FlowLayoutPanel Card(string title)
+    {
+        var g = new FlowLayoutPanel { AutoSize = true, Width = 900, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(12), Margin = new Padding(8), BorderStyle = BorderStyle.FixedSingle, RightToLeft = RightToLeft.Yes };
+        g.Controls.Add(new Label { Text = title, AutoSize = true, Font = new Font("Tahoma", 12f, FontStyle.Bold), Margin = new Padding(8, 4, 8, 8) });
+        return g;
+    }
+
+    private static void AddInfo(TableLayoutPanel table, int row, string name, Label value)
+    {
+        while (table.RowCount <= row) { table.RowStyles.Add(new RowStyle(SizeType.AutoSize)); table.RowCount++; }
+        table.Controls.Add(new Label { Text = name, AutoSize = true, Font = new Font("Tahoma", 9.5f, FontStyle.Bold), Margin = new Padding(6) }, 0, row);
+        value.Text = "—"; value.AutoSize = true; value.MaximumSize = new Size(620, 0); value.Margin = new Padding(6);
+        table.Controls.Add(value, 1, row);
+    }
+
+    private Button StyledButton(string text, Action action, string style) => Style(ActionButton(text, action), style);
+    private Button StyledButton(string text, Func<Task> action, string style) => Style(ActionButton(text, action), style);
+    private static Button Style(Button b, string style)
+    {
+        b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderSize = 1;
+        if (style == "primary") { b.BackColor = Color.FromArgb(34, 103, 209); b.ForeColor = Color.White; b.FlatAppearance.BorderColor = b.BackColor; }
+        else if (style == "danger") { b.ForeColor = Color.Firebrick; b.FlatAppearance.BorderColor = Color.FromArgb(220, 150, 145); }
+        else { b.BackColor = Color.White; b.FlatAppearance.BorderColor = Color.FromArgb(205, 210, 218); }
+        return b;
+    }
+
     private static Control Step(string number, string title, string detail)
     {
-        var p = new Panel { Width = 880, Height = 82, Margin = new Padding(8) };
-        var n = new Label { Text = number, AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, Width = 45, Height = 45, Left = 815, Top = 10, Font = new Font("Segoe UI", 14f, FontStyle.Bold), BorderStyle = BorderStyle.FixedSingle };
-        var t = new Label { Text = title, AutoSize = true, Left = 20, Top = 8, Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
-        var d = new Label { Text = detail, AutoSize = false, Left = 20, Top = 34, Width = 770, Height = 42 };
-        p.Controls.Add(n); p.Controls.Add(t); p.Controls.Add(d);
-        return p;
-    }
-}
+        var table = new TableLayoutPanel { Width = 880, AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Margin = new Padding(8), Padding = new Padding(10), BorderStyle = BorderStyle.FixedSingle };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64)); table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var n = new Label { Text = number, AutoSize = false, Width = 42, Height = 42, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Tahoma", 13f, FontStyle.Bold), BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(6) };
+        var text = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(6) };
+        text.Controls.Add(new Label { Text = title, AutoSize = true, Font = new Font("Tahoma", 10.5f, FontStyle.Bold) });
+        text.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(750, 0), ForeColor = Color.DimGray, Margin = new Padding(0, 6, 0, 0) });
+        table.Controls.Add(n, 0, 0); table.Controls.Add(text, 1, 0); return table;
+    }}

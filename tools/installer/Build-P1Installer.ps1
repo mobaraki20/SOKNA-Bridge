@@ -42,7 +42,7 @@ Copy-Item (Join-Path $launcherOut 'Sokna.Agent.Launcher.exe') (Join-Path $payloa
 Copy-Item (Join-Path $controlOut 'Sokna.Bridge.ControlCenter.exe') (Join-Path $payload 'Sokna.Bridge.ControlCenter.exe') -Force
 Remove-Item $maintenanceOut,$launcherOut,$controlOut -Recurse -Force
 
-$runtimeDest=Join-Path $payload 'runtime';Copy-Tree (Join-Path $RepoRoot 'native\runtime\v2.7.0') $runtimeDest
+$runtimeDest=Join-Path $payload 'runtime';Copy-Tree (Join-Path $RepoRoot 'native\runtime\v2.7.1') $runtimeDest
 $extensionDest=Join-Path $payload 'extension';Copy-Tree (Join-Path $RepoRoot 'extension\chrome') $extensionDest
 $hostDest=Join-Path $payload 'native-host';New-Item -ItemType Directory -Path $hostDest -Force|Out-Null
 Push-Location (Join-Path $RepoRoot 'native\host')
@@ -70,7 +70,7 @@ $files=@(Get-ChildItem $payload -File -Recurse|Where-Object{$_.Name-ne'installed
   $rel=$_.FullName.Substring($payload.Length).TrimStart('\').Replace('\','/')
   $owner=if($rel.StartsWith('runtime/',[StringComparison]::OrdinalIgnoreCase)){'maintenance'}else{'installer'};[ordered]@{path=$rel;sha256=(Sha $_.FullName);bytes=$_.Length;owner=$owner}
 }|Sort-Object path)
-$manifest=[ordered]@{schema='sokna-agent-install-manifest-v1';product_version='2.7.0';launcher_version='1.0.0';source_commit=$sourceCommit;files=$files}
+$manifest=[ordered]@{schema='sokna-agent-install-manifest-v1';product_version='2.7.1';launcher_version='1.0.0';source_commit=$sourceCommit;files=$files}
 $manifestDir=Join-Path $payload 'manifests';New-Item -ItemType Directory -Path $manifestDir -Force|Out-Null
 [IO.File]::WriteAllText((Join-Path $manifestDir 'installed-manifest.json'),($manifest|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
 

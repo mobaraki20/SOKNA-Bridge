@@ -12,7 +12,7 @@ def need(path,*terms):
         assert t in s, f'{path}: missing {t}'
     return s
 
-agent=need(Path('native/runtime/v2.7.0/agent.ps1'),
+agent=need(Path('native/runtime/v2.7.1/agent.ps1'),
     'Sokna.ArtifactRoot.psm1','Sokna.Workspace.psm1','Sokna.Browser.psm1','Sokna.ArtifactProvider.psm1','Sokna.Component.psm1',
     'Initialize-SoknaArtifactRoot','Initialize-SoknaWorkspaceRegistry','Initialize-SoknaBrowserQA','Initialize-SoknaArtifactProviders','Initialize-SoknaComponentManager',
     'New-SoknaWorkspaceGrant','RevokeAutomationGrantForJob','Release-SoknaAutomationRun')
@@ -21,7 +21,7 @@ init_terms=['Initialize-SoknaArtifactRoot','Initialize-SoknaWorkspaceRegistry','
 pos=[agent.rfind(x) for x in init_terms]
 assert pos==sorted(pos) and min(pos)>=0, f'init order invalid: {pos}'
 
-caps=json.loads(text(Path('native/runtime/v2.7.0/AGENT_CAPABILITIES.json')))
+caps=json.loads(text(Path('native/runtime/v2.7.1/AGENT_CAPABILITIES.json')))
 required_actions={
     'artifact.root.status','artifact.provider.status','workspace.registry.status','browser.qa.status','component.registry.status',
     'artifact.provider.acquire','artifact.provider.verify','browser.recipe.run','workspace.grant.create','workspace.remote.exec',
@@ -33,10 +33,10 @@ build=need(Path('tools/installer/Build-P1Installer.ps1'),
     "Copy-Tree (Join-Path $RepoRoot 'native\\runtime\\v2.7.0') $runtimeDest",
     "native\\browser",'sokna-browser-qa.exe',"native\\provider",'sokna-artifact-provider.exe',
     "StartsWith('runtime/'", "'maintenance'", "'installer'")
-iss=need(Path('installer/windows/SOKNA.Agent.iss'), 'recursesubdirs createallsubdirs','--expected-version "2.7.0"')
+iss=need(Path('installer/windows/SOKNA.Agent.iss'), 'recursesubdirs createallsubdirs','--expected-version "2.7.1"')
 # The installed runner lookup used by runtime must match the payload layout produced by Build-P1Installer.
-need(Path('native/runtime/v2.7.0/Sokna.Browser.psm1'), "Join-Path $installRoot 'browser'", 'sokna-browser-qa.exe')
-need(Path('native/runtime/v2.7.0/Sokna.ArtifactProvider.psm1'), "Join-Path $installRoot 'provider'", 'sokna-artifact-provider.exe')
+need(Path('native/runtime/v2.7.1/Sokna.Browser.psm1'), "Join-Path $installRoot 'browser'", 'sokna-browser-qa.exe')
+need(Path('native/runtime/v2.7.1/Sokna.ArtifactProvider.psm1'), "Join-Path $installRoot 'provider'", 'sokna-artifact-provider.exe')
 
 health=need(Path('maintenance/Sokna.Agent.Maintenance/HealthDiagnostics.cs'),
     'artifact.root.status','workspace.registry.status','browser.qa.status','artifact.provider.status','component.registry.status',
@@ -48,7 +48,7 @@ support=need(Path('maintenance/Sokna.Agent.Maintenance/SupportBundle.cs'),
     'SecretRedactor.RedactText','CopyRedactedJsonDir')
 assert 'Path.Combine(stateDir, "jobs")' not in support and 'Path.Combine(installRoot, "jobs")' not in support, 'support bundle must not copy jobs'
 
-component=need(Path('native/runtime/v2.7.0/Sokna.Component.psm1'),
+component=need(Path('native/runtime/v2.7.1/Sokna.Component.psm1'),
     'Artifact Provider + verified ArtifactRoot only','COMPONENT_PROCESS_OWNERSHIP_MISMATCH','COMPONENT_SERVICE_OWNERSHIP_MISMATCH',
     'stage->verify->activate->health->commit','pending_run_key','Test-SoknaWorkspaceGrantPolicy')
 apply_block=agent.split('"component.release.apply"',1)[1].split('"component.start"',1)[0]
@@ -63,7 +63,7 @@ revoke=agent.split('function RevokeAutomationGrantForJob',1)[1].split('function 
 assert 'Revoke-SoknaWorkspaceGrant' in revoke and 'Release-SoknaAutomationRun' in revoke
 
 win=need(Path('tools/installer/Test-P1Windows.ps1'),
-    'SUPPORT_BUNDLE_WHOLE_PRODUCT_STATE_MISSING','health','--expected-version','2.7.0')
+    'SUPPORT_BUNDLE_WHOLE_PRODUCT_STATE_MISSING','health','--expected-version','2.7.1')
 wf=need(Path('.github/workflows/windows-agent-validation.yml'),
-    'test_p6_component_automation.py','Test-ComponentAutomation270.ps1','Test-P1Windows.ps1')
+    'test_p6_component_automation.py','Test-ComponentAutomation271.ps1','Test-P1Windows.ps1')
 print('R0_WHOLE_PRODUCT_CONTRACTS_PASS')

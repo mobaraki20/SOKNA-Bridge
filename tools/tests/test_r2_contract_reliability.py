@@ -103,3 +103,11 @@ assert 'if(!VALID_COMMAND_ID.test(cid))return{ok:true,ignored:true,uncorrelated:
 assert 'executed:false' in BACKGROUND
 
 print("R2_CONTRACT_RELIABILITY_PASS")
+
+semantic=(ROOT/'extension/chrome/semantic_intent.js').read_text(encoding='utf-8')
+background=(ROOT/'extension/chrome/background.js').read_text(encoding='utf-8')
+for marker in ['[data-message-author-role="assistant"]','SEMANTIC_RECONCILE','semantic_fallback_diagnostics_v2','semantic.dispatch_failed','SEMANTIC_E2E_PROBE']:
+    assert marker in semantic, f'semantic live contract missing {marker}'
+assert 'document.body.innerText' not in semantic
+for marker in ['semantic.duplicate','original_result_ref','connectionProbe','bridge.diagnostics.get','Connected — End-to-End Verified','page.child_frame_transient_failed']:
+    assert marker in background, f'background no-silent-failure contract missing {marker}'

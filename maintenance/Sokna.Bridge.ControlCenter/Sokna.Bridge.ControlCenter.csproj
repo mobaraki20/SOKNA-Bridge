@@ -12,6 +12,6 @@
     <Deterministic>true</Deterministic>
     <AssemblyName>Sokna.Bridge.ControlCenter</AssemblyName>
     <RootNamespace>Sokna.Bridge.ControlCenter</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>2.7.1</Version>
   </PropertyGroup>
 </Project>
