@@ -30,7 +30,7 @@ required_actions={
 assert required_actions.issubset(set(caps['actions'])), sorted(required_actions-set(caps['actions']))
 
 build=need(Path('tools/installer/Build-P1Installer.ps1'),
-    "Copy-Tree (Join-Path $RepoRoot 'native\\runtime\\v2.7.0') $runtimeDest",
+    "Copy-Tree (Join-Path $RepoRoot 'native\\runtime\\v2.7.1') $runtimeDest",
     "native\\browser",'sokna-browser-qa.exe',"native\\provider",'sokna-artifact-provider.exe',
     "StartsWith('runtime/'", "'maintenance'", "'installer'")
 iss=need(Path('installer/windows/SOKNA.Agent.iss'), 'recursesubdirs createallsubdirs','--expected-version "2.7.1"')

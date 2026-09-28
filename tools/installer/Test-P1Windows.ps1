@@ -186,7 +186,7 @@ try{
   if($bundleText.Contains($probeSecret) -or $bundleText.Contains($configToken)){throw 'SUPPORT_BUNDLE_SECRET_LEAK'}
   foreach($stateName in 'workspaces.json','workspace-grants.json','components.json','automations.json'){if(-not(Test-Path (Join-Path (Join-Path $bundleDir 'state') $stateName))){throw ('SUPPORT_BUNDLE_WHOLE_PRODUCT_STATE_MISSING: '+$stateName)}}
 
-  # Fault-injection: one malformed state file + one locked/non-readable runtime log must not kill the bundle.
+  # Fault-injection: one malformed state file + one locked/non-readable runtime log must not abort the bundle.
   $workspaceState=Join-Path $install 'state\workspaces.json';$workspaceBackup=[IO.File]::ReadAllBytes($workspaceState)
   $lockedLog=Join-Path $install 'logs\runtime\ci-locked.log';[IO.File]::WriteAllText($lockedLog,'locked',[Text.UTF8Encoding]::new($false))
   $lock=[IO.File]::Open($lockedLog,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)

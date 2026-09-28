@@ -34,7 +34,6 @@ async function persistFallback(entry){
 async function sendRuntime(message,fallbackEvent="runtime.send_failed"){
   try{
     const r=await chrome.runtime.sendMessage(message);
-    state.last_send_error="";
     return r;
   }catch(e){
     const error=String(e?.message||e);
@@ -89,6 +88,7 @@ async function dispatchCandidate(c,trigger){
   await trace("semantic.detected",{command_id:cid,action:compiled.command.action,attempt_key:c.attempt_key,message_identity:c.message_identity,trigger});
   await trace("semantic.dispatch_started",{command_id:cid,action:compiled.command.action,attempt_key:c.attempt_key,message_identity:c.message_identity,trigger});
   const meta={intent:compiled.intent,route:compiled.route,bytes:compiled.bytes,trigger,attemptKey:c.attempt_key,messageIdentity:c.message_identity,semanticVersion:VERSION};
+  state.last_send_error="";
   const r=await sendRuntime({type:"COMMAND",command:compiled.command,detector:"semantic-v2",source:"semantic:"+compiled.route,semantic:meta},"semantic.dispatch_failed");
   const ok=!!r?.ok&&!r?.runtime_unavailable;
   state.last_dispatch_ok=ok;attempts.get(c.attempt_key).state=ok?"dispatched":"dispatch_failed";
