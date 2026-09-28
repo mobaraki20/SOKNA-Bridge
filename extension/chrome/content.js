@@ -8,7 +8,7 @@ const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
 const VERSION="3.12.2",DETECTOR="semantic-delivery-v2";
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 let armed=false,disposed=false,observer=null,deliveryStateTimer=0;
-let lastPostMethod="",lastPostError="",lastDeliveryGate="",lastDeliveryReadySignalAt=0,lastActivityAt=0;
+let lastPostMethod="",lastPostError="",lastDeliveryGate="",lastDeliveryReadySignalAt=0,lastActivityAt=0,lastVisibilityDecision=null;
 const CONTENT_FALLBACK_KEY="content_fallback_diagnostics_v1";
 async function persistContentFallback(event,error,extra={}){
   try{
@@ -151,21 +151,81 @@ async function enterAttempt(el,payload){
   }catch{return false}
   return await sent(payload);
 }
+function parseBridgeEnvelope(text){
+  const t=String(text||"").trim();
+  const m=t.match(/^\[(SOKNA-V2-(?:RESULT|STATUS))\]([\s\S]*?)\[\/\1\]$/);
+  if(!m)return null;
+  try{
+    const payload=JSON.parse(m[2]);
+    return {kind:m[1]==="SOKNA-V2-RESULT"?"result":"status",tag:m[1],payload,raw:t};
+  }catch{return null}
+}
+function conversationTextsForVisibility(){
+  const roots=[];
+  try{
+    for(const q of [
+      '[data-message-author-role="user"]',
+      '[data-testid*="user-message" i]',
+      '[data-testid*="conversation-turn" i][data-message-author-role="user"]'
+    ]){
+      const found=[...document.querySelectorAll(q)];
+      for(const el of found)if(!roots.includes(el))roots.push(el);
+    }
+  }catch{}
+  if(roots.length)return {scope:"user-turns",texts:roots.map(el=>String(el.innerText||el.textContent||""))};
+  const b=document.body;
+  return {scope:"body-fallback",texts:b?[String(b.innerText||b.textContent||"")]:[]};
+}
+function extractBridgeEnvelopes(text){
+  const out=[],re=/\[(SOKNA-V2-(?:RESULT|STATUS))\]([\s\S]*?)\[\/\1\]/g;
+  let m;
+  while((m=re.exec(String(text||"")))!==null){
+    try{
+      const payload=JSON.parse(m[2]);
+      out.push({kind:m[1]==="SOKNA-V2-RESULT"?"result":"status",tag:m[1],payload,raw:m[0]});
+    }catch{}
+    if(m.index===re.lastIndex)re.lastIndex++;
+  }
+  return out;
+}
 function resultVisibleInUserTurn(payload){
   try{
-    const p=String(payload||"");
-    const m=p.match(/"eventId"\s*:\s*"([^"]+)"/)||p.match(/"id"\s*:\s*"([^"]+)"/)||p.match(/"commandId"\s*:\s*"([^"]+)"/);
-    const id=m?.[1]||"";if(!id)return false;
-    const b=document.body;if(!b)return false;
-    const s=b.innerText||b.textContent||"";
-    const isEventId=p.includes('"eventId"');
-    const hit=isEventId
-      ?(s.includes('"eventId":"'+id+'"')||s.includes('"eventId": "'+id+'"'))
-      :(s.includes('"id":"'+id+'"')||s.includes('"id": "'+id+'"')||s.includes('"commandId":"'+id+'"')||s.includes('"commandId": "'+id+'"'));
-    if(!hit)return false;
-    const el=composer();if(!el)return true;
-    return !textOf(el).includes(id);
-  }catch{return false}
+    const expected=parseBridgeEnvelope(payload);
+    if(!expected){
+      lastVisibilityDecision={expectedKind:"unknown",expectedId:"",matchedKind:"",matchedId:"",decision:"not-visible",reason:"invalid-expected-envelope",scope:"none",ts:Date.now()};
+      return false;
+    }
+    const expectedId=expected.kind==="result"
+      ?String(expected.payload?.id||"")
+      :String(expected.payload?.eventId||"");
+    const conv=conversationTextsForVisibility();
+    let matched=null;
+    for(const text of conv.texts){
+      for(const env of extractBridgeEnvelopes(text)){
+        if(env.kind!==expected.kind)continue;
+        if(expected.kind==="result"){
+          if(expectedId&&String(env.payload?.id||"")===expectedId){matched=env;break}
+        }else if(expectedId){
+          if(String(env.payload?.eventId||"")===expectedId){matched=env;break}
+        }else if(JSON.stringify(env.payload)===JSON.stringify(expected.payload)){
+          matched=env;break;
+        }
+      }
+      if(matched)break;
+    }
+    const matchedId=matched?(matched.kind==="result"?String(matched.payload?.id||""):String(matched.payload?.eventId||"")):"";
+    if(!matched){
+      lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:"",matchedId:"",decision:"not-visible",reason:"no-type-aware-envelope-match",scope:conv.scope,ts:Date.now()};
+      return false;
+    }
+    const el=composer();
+    const stillDraft=!!el&&samePayload(textOf(el),String(payload||""));
+    lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched.kind,matchedId,decision:stillDraft?"not-visible":"existing-bubble",reason:stillDraft?"payload-still-in-composer":"exact-envelope-match",scope:conv.scope,ts:Date.now()};
+    return !stillDraft;
+  }catch(e){
+    lastVisibilityDecision={expectedKind:"unknown",expectedId:"",matchedKind:"",matchedId:"",decision:"not-visible",reason:"visibility-exception:"+String(e),scope:"unknown",ts:Date.now()};
+    return false;
+  }
 }
 async function waitForResultVisible(payload,timeoutMs=8000){
   const end=Date.now()+timeoutMs;
@@ -337,7 +397,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m?.type==="STOP"){stop();reply({ok:true});return}
   if(m?.type==="DIAG"){
     lastActivityAt=Date.now();
-    reply({ok:true,version:VERSION,armed,frameHref:location.href,topFrame:window.top===window,detector:DETECTOR,commandCount:0,commandIds:[],diagnostics:{commandDiscovery:"semantic-intent-only",legacyCommandParsers:false,deliveryObserver:!!observer,lastActivityAt},lastPostMethod,lastPostError,hasChromeDom:!!chrome?.dom?.openOrClosedShadowRoot,deliveryProbe:deliveryProbe()});return;
+    reply({ok:true,version:VERSION,armed,frameHref:location.href,topFrame:window.top===window,detector:DETECTOR,commandCount:0,commandIds:[],diagnostics:{commandDiscovery:"semantic-intent-only",legacyCommandParsers:false,deliveryObserver:!!observer,lastActivityAt,lastVisibilityDecision},lastPostMethod,lastPostError,hasChromeDom:!!chrome?.dom?.openOrClosedShadowRoot,deliveryProbe:deliveryProbe()});return;
   }
 });
 
