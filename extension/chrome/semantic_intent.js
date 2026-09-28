@@ -118,9 +118,21 @@ function markerWitnesses(){
   return deepest;
 }
 function resetChallenge(challenge){
-  intakeChallenge=String(challenge||"").trim();challengeSetAt=now();probeVerified=false;probeVerifiedAt=0;probeSignature="";probeParent=null;probeOrdinal=-1;
+  const next=String(challenge||"").trim();
+  if(next&&next===intakeChallenge&&probeVerified){
+    challengeSetAt=now();state.challenge_set=true;state.challenge_set_at=challengeSetAt;return;
+  }
+  intakeChallenge=next;challengeSetAt=now();probeVerified=false;probeVerifiedAt=0;probeSignature="";probeParent=null;probeOrdinal=-1;
   state.challenge_set=!!intakeChallenge;state.challenge_set_at=challengeSetAt;state.probe_verified=false;state.probe_verified_at=0;state.probe_signature="";state.provenance_mode="";
   if(!state.last_role_evidence)state.selector_ready=false;
+}
+function restoreChallengeProof(proof){
+  const challenge=String(proof?.challenge||"").trim();
+  const verifiedAt=Number(proof?.verifiedAt||0);
+  if(!/^[A-Za-z0-9._-]{8,96}$/.test(challenge)||verifiedAt<=0)return {ok:false,error:"invalid restored intake proof"};
+  intakeChallenge=challenge;challengeSetAt=now();probeVerified=true;probeVerifiedAt=verifiedAt;probeSignature=String(proof?.probeSignature||"");probeParent=null;probeOrdinal=-1;
+  state.challenge_set=true;state.challenge_set_at=challengeSetAt;state.probe_verified=true;state.probe_verified_at=probeVerifiedAt;state.probe_signature=probeSignature;state.selector_ready=true;state.selector_mode="restored-session-proof";state.intake_verified_at=probeVerifiedAt;state.last_role_evidence=String(proof?.evidence||"restored-session-proof");state.provenance_mode="restored-session-proof";
+  return {ok:true,restored:true,semantic:diagSnapshot()};
 }
 async function verifyProbeNode(n,trigger){
   if(probeVerified||!intakeChallenge||hasUnsafeAncestor(n))return false;
@@ -309,6 +321,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   if(m?.type==="SEMANTIC_BASELINE"){baseline().then(reply,e=>reply({ok:false,error:String(e),semantic:diagSnapshot()}));return true}
   if(m?.type==="SEMANTIC_RECONCILE"){reconcile().then(reply,e=>reply({ok:false,error:String(e),semantic:diagSnapshot()}));return true}
   if(m?.type==="SEMANTIC_SET_CHALLENGE"){const c=String(m?.challenge||"").trim();if(!/^[A-Za-z0-9._-]{8,96}$/.test(c)){reply({ok:false,error:"invalid intake challenge",semantic:diagSnapshot()});return}resetChallenge(c);reply({ok:true,challenge_set:true,semantic:diagSnapshot()});return}
+  if(m?.type==="SEMANTIC_RESTORE_PROOF"){reply(restoreChallengeProof(m?.proof||{}));return}
   if(m?.type==="SEMANTIC_DIAG"){reply({ok:true,semantic:diagSnapshot(),frameHref:location.href});return}
   if(m?.type==="SEMANTIC_E2E_PROBE"){e2eProbe().then(reply,e=>reply({ok:false,error:String(e),semantic:diagSnapshot()}));return true}
   if(m?.type==="SEMANTIC_STOP"){armed=false;state.armed=false;stopObserver();reply?.({ok:true});return}
