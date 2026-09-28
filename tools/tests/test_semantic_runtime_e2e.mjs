@@ -8,13 +8,26 @@ const START="[SOKNA-INTENT]",END="[/SOKNA-INTENT]";
 const sleep=()=>new Promise(r=>setTimeout(r,0));
 
 function node(id,text){
-  return {innerText:text,textContent:text,getAttribute:(k)=>k==="data-message-id"?id:(k==="data-message-author-role"?"assistant":"")};
+  return {innerText:text,textContent:text,className:"",getAttribute:(k)=>k==="data-message-id"?id:(k==="data-message-author-role"?"assistant":""),querySelector:()=>null,querySelectorAll:()=>[]};
+}
+function turn(id,text,label){
+  const body={innerText:text,textContent:text,className:"markdown",getAttribute:()=>"",querySelector:()=>null,querySelectorAll:()=>[]};
+  return {
+    innerText:text,textContent:text,className:"",
+    getAttribute(k){if(k==="data-testid")return "conversation-turn-"+id;if(k==="aria-label")return label||"";return""},
+    querySelector(){return null},
+    querySelectorAll(){return [body]}
+  };
 }
 function runtime(){
-  const assistant=[],sent=[],listeners=[],storage={},observers=[];
+  const assistant=[],turns=[],sent=[],listeners=[],storage={},observers=[];
   let rejectCommand=false;
   const document={
-    querySelectorAll(sel){return sel==='[data-message-author-role="assistant"]'?[...assistant]:[]},
+    querySelectorAll(sel){
+      if(sel==='[data-message-author-role="assistant"]')return [...assistant];
+      if(sel==='[data-testid^="conversation-turn-"]')return [...turns];
+      return [];
+    },
     body:{innerText:"",textContent:""},documentElement:{textContent:""}
   };
   class MO{constructor(cb){this.cb=cb;observers.push(this)}observe(){}disconnect(){}}
@@ -37,7 +50,7 @@ function runtime(){
       try{const asyncFlag=fn(m,{},reply);if(asyncFlag!==true&&!settled)resolve(undefined)}catch(e){reject(e)}
     });
   }
-  return {ctx,assistant,sent,storage,message,setReject:v=>{rejectCommand=v},mutate:async()=>{for(const o of observers)o.cb();await new Promise(r=>setTimeout(r,90))}};
+  return {ctx,assistant,turns,sent,storage,message,setReject:v=>{rejectCommand=v},mutate:async()=>{for(const o of observers)o.cb();await new Promise(r=>setTimeout(r,90))}};
 }
 function command(id,action="ping"){return START+JSON.stringify({id,intent:"exec",action,params:{}})+END}
 function commands(r){return r.sent.filter(x=>x?.type==="COMMAND")}
@@ -58,6 +71,22 @@ function commands(r){return r.sent.filter(x=>x?.type==="COMMAND")}
   assert.equal(commands(r)[0].command.id,"unique-1");
   await r.mutate();
   assert.equal(commands(r).length,1,"same message node must not re-dispatch");
+}
+{
+  const r=runtime();await r.message({type:"SEMANTIC_BASELINE"});
+  r.turns.push(turn("fallback-assistant",command("fallback-1"),"ChatGPT said:"));
+  await r.mutate();
+  assert.equal(commands(r).length,1,"role-evidence fallback must detect an assistant turn when the legacy role attribute is absent");
+  assert.equal(commands(r)[0].command.id,"fallback-1");
+  const d=await r.message({type:"SEMANTIC_DIAG"});
+  assert.equal(d.semantic.selector_ready,true);
+  assert.equal(d.semantic.selector_mode,"role-evidence-fallback");
+}
+{
+  const r=runtime();await r.message({type:"SEMANTIC_BASELINE"});
+  r.turns.push(turn("fallback-user",command("must-not-run"),"You said:"));
+  await r.mutate();
+  assert.equal(commands(r).length,0,"fallback role detection must never execute a user turn");
 }
 {
   const r=runtime();await r.message({type:"SEMANTIC_BASELINE"});

@@ -3,11 +3,11 @@
 const G="__SOKNA_SEMANTIC_INTENT_V1__";
 try{globalThis[G]?.dispose?.()}catch{}
 const Core=globalThis.__SOKNA_SEMANTIC_CORE_V1__;
-const VERSION="2.0.0",START="[SOKNA-INTENT]",END="[/SOKNA-INTENT]";
+const VERSION="2.0.1",START="[SOKNA-INTENT]",END="[/SOKNA-INTENT]";
 const FALLBACK_KEY="semantic_fallback_diagnostics_v2";
 const attempts=new Map(),nodeIds=new WeakMap();
 let nodeSeq=0,armed=false,disposed=false,observer=null,scanTimer=0,baselineCount=0;
-const state={loaded:true,armed:false,observer_active:false,last_scan_at:0,last_marker_seen_at:0,last_command_id:"",last_dispatch_at:0,last_dispatch_ok:null,last_parse_error:"",last_send_error:"",seen_count:0,assistant_message_count:0,selector_ready:false,last_trigger:"",version:VERSION};
+const state={loaded:true,armed:false,observer_active:false,last_scan_at:0,last_marker_seen_at:0,last_command_id:"",last_dispatch_at:0,last_dispatch_ok:null,last_parse_error:"",last_send_error:"",seen_count:0,assistant_message_count:0,selector_ready:false,selector_mode:"",role_candidate_count:0,unknown_role_candidate_count:0,last_role_evidence:"",intake_verified_at:0,last_trigger:"",version:VERSION};
 function now(){return Date.now()}
 function hash(s){s=String(s||"");let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0).toString(16).padStart(8,"0")}
 function idFor(raw){return "sem-"+hash(raw)}
@@ -18,11 +18,61 @@ function nodeIdentity(n,index){
   if(!nodeIds.has(n))nodeIds.set(n,"node-"+(++nodeSeq));
   return nodeIds.get(n)+"-idx-"+index;
 }
+function classifyTurnRole(n){
+  const direct=String(n?.getAttribute?.("data-message-author-role")||"").trim().toLowerCase();
+  if(direct==="assistant")return {role:"assistant",evidence:"data-message-author-role"};
+  if(direct==="user")return {role:"user",evidence:"data-message-author-role"};
+  try{
+    const nested=n?.querySelector?.('[data-message-author-role="assistant"],[data-message-author-role="user"]');
+    const role=String(nested?.getAttribute?.("data-message-author-role")||"").trim().toLowerCase();
+    if(role==="assistant"||role==="user")return {role,evidence:"nested-data-message-author-role"};
+  }catch{}
+  const cls=String(n?.className||"");
+  if(/(^|\s)(agent-turn|assistant-turn)(\s|$)/i.test(cls))return {role:"assistant",evidence:"assistant-turn-class"};
+  if(/(^|\s)user-turn(\s|$)/i.test(cls))return {role:"user",evidence:"user-turn-class"};
+  const attrs=["data-author","data-role","data-turn","aria-label","data-testid"].map(a=>String(n?.getAttribute?.(a)||"")).join(" | ");
+  if(/(^|\b)(assistant message|assistant response|assistant said|chatgpt said)(\b|$)/i.test(attrs))return {role:"assistant",evidence:"assistant-role-attribute"};
+  if(/(^|\b)(user message|user said|you said)(\b|$)/i.test(attrs))return {role:"user",evidence:"user-role-attribute"};
+  try{
+    if(n?.querySelector?.('[data-testid*="good-response" i],[data-testid*="bad-response" i],[data-testid*="regenerate" i],button[aria-label*="good response" i],button[aria-label*="bad response" i],button[aria-label*="regenerate" i]'))return {role:"assistant",evidence:"assistant-action-controls"};
+  }catch{}
+  return {role:"unknown",evidence:""};
+}
+function markerBody(root){
+  if(!root)return root;
+  const rootText=nodeText(root).trim();if(!rootText.includes(START))return root;
+  let all=[root];
+  try{all.push(...root.querySelectorAll('div,article,section,p,pre,code,[data-message-content],[data-testid*="message-content" i],[class*="markdown"],[class*="prose"]'))}catch{}
+  const exact=[];const seen=new Set();
+  for(const n of all){
+    if(!n||seen.has(n))continue;seen.add(n);
+    const t=nodeText(n).trim();
+    if(t.startsWith(START)&&t.endsWith(END))exact.push(n);
+  }
+  exact.sort((a,b)=>nodeText(a).trim().length-nodeText(b).trim().length);
+  return exact[0]||root;
+}
 function assistantNodes(){
   if(window.top!==window)return [];
-  let nodes=[];try{nodes=[...document.querySelectorAll('[data-message-author-role="assistant"]')]}catch{}
-  state.assistant_message_count=nodes.length;state.selector_ready=nodes.length>0;
-  return nodes;
+  let direct=[];try{direct=[...document.querySelectorAll('[data-message-author-role="assistant"]')]}catch{}
+  if(direct.length){
+    state.assistant_message_count=direct.length;state.selector_ready=true;state.selector_mode="data-message-author-role";state.role_candidate_count=direct.length;state.unknown_role_candidate_count=0;state.last_role_evidence="data-message-author-role";if(!state.intake_verified_at)state.intake_verified_at=now();
+    return direct.map(markerBody);
+  }
+  let turns=[];const seen=new Set();
+  for(const q of ['[data-testid^="conversation-turn-"]','article','[data-message-id]','.agent-turn','.assistant-turn']){
+    let found=[];try{found=[...document.querySelectorAll(q)]}catch{}
+    for(const n of found){if(!seen.has(n)){seen.add(n);turns.push(n)}}
+  }
+  const assistant=[];let unknown=0,lastEvidence="";
+  for(const turn of turns){
+    const r=classifyTurnRole(turn);
+    if(r.role==="assistant"){assistant.push(markerBody(turn));lastEvidence=r.evidence||lastEvidence}
+    else if(r.role==="unknown")unknown++;
+  }
+  state.assistant_message_count=assistant.length;state.role_candidate_count=turns.length;state.unknown_role_candidate_count=unknown;state.selector_ready=assistant.length>0;state.selector_mode=assistant.length?"role-evidence-fallback":(turns.length?"role-unresolved":"no-turns");state.last_role_evidence=lastEvidence;
+  if(state.selector_ready&&!state.intake_verified_at)state.intake_verified_at=now();
+  return assistant;
 }
 async function persistFallback(entry){
   try{
@@ -122,7 +172,7 @@ async function scan(trigger="mutation",emit=true){
   state.seen_count=attempts.size;
   return {ok:true,armed,trigger,found,dispatched,rejected,ignored,baseline_count:baselineCount,semantic:diagSnapshot()};
 }
-function schedule(){clearTimeout(scanTimer);if(!armed||disposed)return;scanTimer=setTimeout(()=>scan("mutation",true).catch(()=>{}),60)}
+function schedule(){clearTimeout(scanTimer);if(!armed||disposed)return;scanTimer=setTimeout(()=>scan("mutation",true).catch(async e=>{const error=String(e?.message||e);state.last_send_error=error;state.last_dispatch_ok=false;await persistFallback({event:"semantic.scan_failed",error})}),60)}
 function startObserver(){
   if(observer||disposed||window.top!==window)return;
   try{observer=new MutationObserver(schedule);observer.observe(document,{subtree:true,childList:true,characterData:true});state.observer_active=true}catch(e){state.observer_active=false;state.last_send_error=String(e)}
@@ -135,7 +185,7 @@ async function e2eProbe(){
   const probeId="semprobe-"+now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
   const r=await sendRuntime({type:"SEMANTIC_PROBE_REQUEST",probeId,semantic:diagSnapshot()},"semantic.probe_failed");
   const ok=!!r?.ok&&!!r?.agent_ok;state.last_dispatch_ok=ok;if(!ok)state.last_send_error=String(r?.error||"probe failed");
-  return {ok,probe_id:probeId,background_reachable:!!r&&!r.runtime_unavailable,agent_ok:!!r?.agent_ok,agent_version:String(r?.agent_version||""),semantic:diagSnapshot(),error:String(r?.error||"")};
+  return {ok,probe_id:probeId,background_reachable:!!r&&!r.runtime_unavailable,agent_ok:!!r?.agent_ok,agent_version:String(r?.agent_version||""),intake_ready:!!state.selector_ready,semantic:diagSnapshot(),error:String(r?.error||"")};
 }
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   if(m?.type==="SEMANTIC_BASELINE"){baseline().then(reply,e=>reply({ok:false,error:String(e),semantic:diagSnapshot()}));return true}
