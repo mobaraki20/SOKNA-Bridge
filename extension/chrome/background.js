@@ -3,7 +3,7 @@ const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.12.0";
+const VERSION="3.12.1";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -97,8 +97,9 @@ async function extensionBootstrap(command){
   return {...b,capabilities:{agent_actions,extension_actions,effective_actions},effective_actions};
 }
 async function connectionProbe(tabId){
-  const out={semantic:{ok:false},background:true,agent:{ok:false},session:{ready:false},delivery:{ready:false},verified:false};
+  const out={semantic:{ok:false},message_intake:{ready:false},background:true,agent:{ok:false},session:{ready:false},delivery:{ready:false},verified:false};
   try{out.semantic=await semanticTop(tabId,"SEMANTIC_E2E_PROBE")}catch(e){out.semantic={ok:false,error:String(e)}}
+  out.message_intake={ready:!!out.semantic?.semantic?.selector_ready,selector_mode:String(out.semantic?.semantic?.selector_mode||""),assistant_message_count:Number(out.semantic?.semantic?.assistant_message_count||0),role_candidate_count:Number(out.semantic?.semantic?.role_candidate_count||0),unknown_role_candidate_count:Number(out.semantic?.semantic?.unknown_role_candidate_count||0),last_role_evidence:String(out.semantic?.semantic?.last_role_evidence||"")};
   try{
     const boot=await agentExec(unifiedLocalCommand("bridge.bootstrap",{}));
     out.agent={ok:!!boot?.agent_ready,version:String(boot?.agent_capabilities?.version||boot?.agent_capabilities?.agent||"")};
@@ -108,7 +109,7 @@ async function connectionProbe(tabId){
     const ds=await diagAllFrames(tabId),top=ds.find(x=>x?.ok&&x.topFrame);
     out.delivery={ready:!!top&&top.armed===true&&!!top.deliveryProbe?.composer,frame:top||null};
   }catch(e){out.delivery={ready:false,error:String(e)}}
-  out.verified=!!out.semantic?.ok&&!!out.semantic?.background_reachable&&!!out.semantic?.agent_ok&&!!out.agent?.ok&&!!out.session?.ready&&!!out.delivery?.ready;
+  out.verified=!!out.semantic?.ok&&!!out.semantic?.background_reachable&&!!out.semantic?.agent_ok&&!!out.message_intake?.ready&&!!out.agent?.ok&&!!out.session?.ready&&!!out.delivery?.ready;
   return out;
 }
 async function fullDiagnostics(tabId,conversationKey="",mode="full"){
@@ -268,7 +269,7 @@ async function connectChat(tabId){
   try{posted=await chrome.tabs.sendMessage(tabId,{type:"POST_USER_TEXT",text},{frameId:0})}catch(e){posted={ok:false,error:String(e)}}
   const probe=await connectionProbe(tabId);
   const state=probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action");
-  const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable"));
+  const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable")));
   await setStatus(tabId,{state,detail,lastError:probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||""),actionRequired:state==="Needs Action",transportVerified:probe.verified,connectionProbe:probe});
   await appendTrace(tabId,probe.verified?"connection.verified":"connection.unverified",{detail,handshake_posted:!!posted?.ok});
   return {ok:true,armed:true,connected:true,bootstrap_ready:boot?.ready===true,session_id:String(session?.id||boot?.active_session?.id||""),handshake_posted:!!posted?.ok,handshake:posted,transport_verified:probe.verified,probe};
@@ -930,7 +931,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         let status=await getStatus(tabId);
         if(a.armed){
           const nextState=probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action");
-          const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable"));
+          const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable")));
           status=await setStatus(tabId,{state:nextState,detail,transportVerified:!!probe.verified,connectionProbe:probe,actionRequired:nextState==="Needs Action",lastError:probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||"")});
         }
         const jobWatches=await jobWatchesAll(),jobWatchIds=Object.keys(jobWatches),jobWatchCount=jobWatchIds.length,jobDiag=await jobWatchDiag();
@@ -947,7 +948,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           sendControlReady:!!dprobe.chosenSend&&!dprobe.chosenSend.disabled&&dprobe.chosenSend.ariaDisabled!=="true",composerTextLen:Number(dprobe.composer?.textLen||0),composerKind:dprobe.composerKind||"",
           lastErrorCode:status?.lastError?"runtime_error":"",lastTransportDiagnosticCode:status?.lastTransportDiagnostic?.reason||status?.lastTransportDiagnostic?.kind||"",
           pageAdapterState:top?(top.armed===a.armed?(childFailed?"ready_with_warning":"ready"):"arm_mismatch"):"unavailable",
-          semanticAdapterState:semantic?.ok&&semantic?.semantic?.armed&&semantic?.semantic?.observer_active?"ready":"unavailable",
+          semanticAdapterState:semantic?.ok&&semantic?.semantic?.armed&&semantic?.semantic?.observer_active?(semantic?.semantic?.selector_ready?"ready":"selector_unverified"):"unavailable",
           childFrames:{ready:childReady,transient_failed:childFailed},
           connectionProbe:probe,jobWatchCount,jobWatchIds:jobWatchIds.slice(0,8),
           lastJobWatchRegisteredAt:Number(jobDiag.lastRegisteredAt||0),lastJobWatchRegisteredId:String(jobDiag.lastRegisteredJobId||""),lastJobPollAt:Number(jobDiag.lastPollAt||0),lastJobPollStatus:String(jobDiag.lastPollStatus||""),lastJobWatchError:String(jobDiag.lastWatchError||""),
