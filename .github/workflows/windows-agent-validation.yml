@@ -20,6 +20,27 @@ on:
         required: false
         default: ''
         type: string
+  pull_request:
+    branches: [release/2.7.1]
+    paths:
+      - 'native/runtime/**'
+      - 'native/host/**'
+      - 'native/browser/**'
+      - 'native/provider/**'
+      - 'native/agent/**'
+      - 'maintenance/**'
+      - 'installer/windows/**'
+      - 'tools/installer/**'
+      - 'tools/release/**'
+      - 'extension/chrome/**'
+      - 'tools/ci/**'
+      - 'tools/knowledge/**'
+      - 'tools/tests/**'
+      - 'docs/contracts/**'
+      - 'docs/browser/**'
+      - 'docs/knowledge/**'
+      - 'docs/releases/**'
+      - '.github/workflows/windows-agent-validation.yml'
   push:
     branches: [dev/bootstrap-v2.5, release/2.7.1]
     paths:
