@@ -243,4 +243,29 @@ function commands(r){return r.sent.filter(x=>x?.type==="COMMAND")}
   assert.equal(commands(r)[0].semantic.nonceBound,true);
 }
 
+{
+  const r=runtime();await r.message({type:"SEMANTIC_BASELINE"});
+  const challenge="probe-restored-session-005";
+  const restored=await r.message({type:"SEMANTIC_RESTORE_PROOF",proof:{challenge,verifiedAt:Date.now()-1000,evidence:"challenge-response",selectorMode:"challenge-shell",probeSignature:"DIV|c=turn"}});
+  assert.equal(restored.ok,true,"persisted semantic proof must restore after content reload");
+  let d=await r.message({type:"SEMANTIC_DIAG"});
+  assert.equal(d.semantic.probe_verified,true);
+  assert.equal(d.semantic.selector_mode,"restored-session-proof");
+
+  const same=await r.message({type:"SEMANTIC_SET_CHALLENGE",challenge});
+  assert.equal(same.ok,true);
+  d=await r.message({type:"SEMANTIC_DIAG"});
+  assert.equal(d.semantic.probe_verified,true,"re-applying the same verified challenge must not destroy restored proof");
+
+  r.addGeneric(command("restored-proof-command","ping",challenge));
+  await r.mutate();
+  assert.equal(commands(r).length,1,"restored proof plus active nonce must allow selectorless command after reload");
+  assert.equal(commands(r)[0].command.id,"restored-proof-command");
+  assert.equal(commands(r)[0].semantic.provenance,"challenge-nonce");
+
+  r.addGeneric(command("restored-proof-missing-nonce"));
+  await r.mutate();
+  assert.equal(commands(r).length,1,"restored proof must still require the active nonce");
+}
+
 console.log("SEMANTIC_RUNTIME_E2E_PASS");
