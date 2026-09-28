@@ -5,7 +5,7 @@ try{globalThis[G]?.dispose?.()}catch{}
 
 const Core=globalThis.__SOKNA_V33_DOM_CORE__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
-const VERSION="3.12.0",DETECTOR="semantic-delivery-v2";
+const VERSION="3.12.1",DETECTOR="semantic-delivery-v2";
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 let armed=false,disposed=false,observer=null,deliveryStateTimer=0;
 let lastPostMethod="",lastPostError="",lastDeliveryGate="",lastDeliveryReadySignalAt=0,lastActivityAt=0;
