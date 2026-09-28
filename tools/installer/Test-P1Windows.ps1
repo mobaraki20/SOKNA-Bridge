@@ -124,7 +124,21 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
     Invoke-ProcessChecked $Setup @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$legacyInstall+'"'),('/ArtifactRoot="'+$legacyArtifacts+'"'),'/TASKS=""',('/LOG="'+$legacySetupLog+'"'))|Out-Null
     Start-Sleep -Milliseconds 300
     $prepPath=Join-Path $legacyInstall 'state\install-preparation.json'
-    if(-not(Test-Path -LiteralPath $prepPath -PathType Leaf)){throw 'LEGACY_ACCEPTANCE_PREPARATION_FILE_MISSING'}
+    if(-not(Test-Path -LiteralPath $prepPath -PathType Leaf)){
+      Write-Host 'P1_LEGACY_PREPARATION_FILE_MISSING_DIAGNOSTICS'
+      if(Test-Path -LiteralPath $legacySetupLog -PathType Leaf){
+        Write-Host 'P1_LEGACY_SETUP_LOG_TAIL'
+        Get-Content -LiteralPath $legacySetupLog -Tail 80 -ErrorAction SilentlyContinue|Write-Host
+      }
+      $maintLogDir=Join-Path $legacyInstall 'logs\maintenance'
+      if(Test-Path -LiteralPath $maintLogDir -PathType Container){
+        Get-ChildItem -LiteralPath $maintLogDir -File|Sort-Object LastWriteTime -Descending|Select-Object -First 3|ForEach-Object{
+          Write-Host ('P1_LEGACY_MAINT_LOG '+$_.FullName)
+          Get-Content -LiteralPath $_.FullName -Tail 50 -ErrorAction SilentlyContinue|Write-Host
+        }
+      }
+      throw 'LEGACY_ACCEPTANCE_PREPARATION_FILE_MISSING'
+    }
     $prep=Get-Content $prepPath -Raw|ConvertFrom-Json
     Write-Host ('P1_LEGACY_PREPARATION '+($prep|ConvertTo-Json -Compress))
     $listenerPids=@(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue|Select-Object -ExpandProperty OwningProcess -Unique)
