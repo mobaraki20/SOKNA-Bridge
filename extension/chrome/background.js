@@ -228,7 +228,6 @@ async function arm(tabId){
   a[String(tabId)]={conversationKey:conv(tab.url),url:tab.url,armedAt:now(),baselineCount:Number(sem?.baseline_count||0),reconcileReady:true};await saveArmed(a);
   await setStatus(tabId,{state:"Waiting",detail:"Connected — Transport Unverified",baselineCount:Number(sem?.baseline_count||0),lastError:"",actionRequired:false,transportVerified:false});
   await appendTrace(tabId,"semantic.armed",{conversationKey:conv(tab.url),baselineCount:Number(sem?.baseline_count||0)});
-  retryPending(tabId).catch(()=>{});
   return {ok:true,armed:true,version:VERSION,conversationKey:conv(tab.url),baselineCount:Number(sem?.baseline_count||0),transport_verified:false};
 }
 async function disarm(tabId){
@@ -254,7 +253,7 @@ async function connectChat(tabId){
   try{
     const sc=await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge});
     if(!sc?.ok)return {ok:false,error:sc?.error||"Semantic intake challenge could not be armed."};
-    const all=await armedAll();if(all[String(tabId)]){all[String(tabId)].intakeChallenge=challenge;all[String(tabId)].intakeChallengeAt=now();await saveArmed(all)}
+    const all=await armedAll();if(all[String(tabId)]){all[String(tabId)].intakeChallenge=challenge;all[String(tabId)].intakeChallengeAt=now();delete all[String(tabId)].intakeProof;await saveArmed(all)}
   }catch(e){return {ok:false,error:"Semantic intake challenge failed: "+String(e)}}
   const actions=[
     "bridge.bootstrap","bridge.diagnostics.get","workspace.list","file.read","file.write","process.run","git.status",
@@ -972,6 +971,11 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
       if(m.type==="SEMANTIC_INTAKE_PROVEN"){
         const a=await isArmed(tabId),expected=String(a.registered?.intakeChallenge||"");
         if(!a.armed||!expected||String(m.challenge||"")!==expected)return reply({ok:false,error:"intake challenge mismatch"});
+        const all=await armedAll();
+        if(all[String(tabId)]){
+          all[String(tabId)].intakeProof={challenge:expected,verifiedAt:now(),evidence:String(m.evidence||"challenge-response"),selectorMode:String(m.selectorMode||""),probeSignature:String(m.probeSignature||""),conversationKey:String(a.registered?.conversationKey||"")};
+          await saveArmed(all);
+        }
         await appendTrace(tabId,"semantic.intake_proven",{evidence:String(m.evidence||""),selector_mode:String(m.selectorMode||""),probe_signature:String(m.probeSignature||"")});
         const probe=await connectionProbe(tabId),state=probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action");
         const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable")));
@@ -995,7 +999,16 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           try{
             await messageFrame(tabId,frameId,{type:a.registered?.reconcileReady?"RECONCILE":"BASELINE"});
             if(isTop){
-              if(a.registered?.intakeChallenge)await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge:String(a.registered.intakeChallenge)});
+              const challenge=String(a.registered?.intakeChallenge||"");
+              const proof=a.registered?.intakeProof||null;
+              const sameConversation=!!proof&&String(proof.conversationKey||"")===String(a.registered?.conversationKey||"")&&String(proof.challenge||"")===challenge;
+              if(challenge){
+                if(sameConversation){
+                  const restored=await semanticTop(tabId,"SEMANTIC_RESTORE_PROOF",{proof});
+                  if(!restored?.ok)await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge});
+                  else await appendTrace(tabId,"semantic.intake_proof_restored",{verified_at:Number(proof.verifiedAt||0),selector_mode:String(proof.selectorMode||""),probe_signature:String(proof.probeSignature||"")});
+                }else await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge});
+              }
               await semanticTop(tabId,a.registered?.reconcileReady?"SEMANTIC_RECONCILE":"SEMANTIC_BASELINE");
             }
             const all=await armedAll();if(all[String(tabId)]){all[String(tabId)].reconcileReady=true;await saveArmed(all)}
