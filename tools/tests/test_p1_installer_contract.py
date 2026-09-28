@@ -63,7 +63,7 @@ for key in ['token', 'password', 'private_key', 'cookie', '[REDACTED]', 'Root re
 
 
 prep = (ROOT / 'maintenance/Sokna.Agent.Maintenance/ExistingRuntimePreparation.cs').read_text(encoding='utf-8')
-for marker in ['LEGACY_RUNTIME_OWNERSHIP_UNPROVEN', 'LEGACY_RUNTIME_ACTIVE_WITHOUT_SAFE_OWNERSHIP', 'SOKNA_RUNTIME_PROCESS_UNRESOLVED', 'SOKNA_RUNTIME_PROCESS_AMBIGUOUS', 'Get-CimInstance Win32_Process', 'ExtractCommandArgument', 'AGENT_ENDPOINT_UNAVAILABLE_AFTER_PREP', 'SOKNA Bridge Agent', 'SOKNA-Bridge-V2', 'ProbeLegacyIdentityAsync', 'WaitForEndpointAvailableAsync']:
+for marker in ['LEGACY_RUNTIME_OWNERSHIP_UNPROVEN', 'LEGACY_RUNTIME_ACTIVE_WITHOUT_SAFE_OWNERSHIP', 'SOKNA_RUNTIME_PROCESS_UNRESOLVED', 'SOKNA_RUNTIME_PROCESS_AMBIGUOUS', 'Get-CimInstance Win32_Process', 'ExtractCommandArgument', 'expectedConfigPath', 'expectedAgentPath', 'current-config', 'AGENT_ENDPOINT_UNAVAILABLE_AFTER_PREP', 'SOKNA Bridge Agent', 'SOKNA-Bridge-V2', 'ProbeLegacyIdentityAsync', 'WaitForEndpointAvailableAsync']:
     assert marker in prep, f'legacy/current runtime preparation missing {marker}'
 assert 'requireCurrentHash: false' in prep, 'Setup reinstall must be able to stop a previously owned runtime after payload replacement'
 
@@ -86,7 +86,7 @@ assert '$buildOutput=@(' in workflow and 'Select-Object -Last 1' in workflow
 assert 'timeout-minutes: 30' in workflow
 
 windows_acceptance = (ROOT / 'tools/installer/Test-P1Windows.ps1').read_text(encoding='utf-8')
-for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime', 'PROCESS_TIMEOUT:', 'P1_PROCESS_START', 'P1_PROCESS_EXIT', 'P1_LEGACY_RUNNING_SETUP_ACCEPTANCE_PASS', 'P1_LEGACY_UNTRACKED_RUNTIME_RECOVERY_PASS', 'P1_ACTIVE_RUNTIME_REINSTALL_ACCEPTANCE_PASS', 'P1_CONTROL_CENTER_SELF_TEST_PASS', 'P1_SUPPORT_BUNDLE_PARTIAL_PASS', 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING', 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_PID_MISMATCH']:
+for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime', 'PROCESS_TIMEOUT:', 'P1_PROCESS_START', 'P1_PROCESS_EXIT', 'P1_UNHEALTHY_CURRENT_RUNTIME_INJECTED', 'P1_UNHEALTHY_CURRENT_RUNTIME_RECOVERY_PASS', 'UNHEALTHY_CURRENT_ACCEPTANCE_OLD_PROCESS_STILL_RUNNING', 'UNHEALTHY_CURRENT_ACCEPTANCE_RECOVERY_SOURCE_MISMATCH', 'P1_LEGACY_RUNNING_SETUP_ACCEPTANCE_PASS', 'P1_LEGACY_UNTRACKED_RUNTIME_RECOVERY_PASS', 'P1_ACTIVE_RUNTIME_REINSTALL_ACCEPTANCE_PASS', 'P1_CONTROL_CENTER_SELF_TEST_PASS', 'P1_SUPPORT_BUNDLE_PARTIAL_PASS', 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING', 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_PID_MISMATCH']:
     assert marker in windows_acceptance, f'Windows lifecycle acceptance missing {marker}'
 # Synthetic upgrades must rebuild ownership from the actual payload tree; stale
 # paths from the previous manifest are forbidden from surviving into the next one.
@@ -101,6 +101,8 @@ assert "$manifest.files|Where-Object{[string]$_.owner -ne 'maintenance'}" not in
 assert not re.search(r'(?im)(^|[;\s])(gci|gc|cp|mv|rm|kill|sleep|gfh)(?=\s|;|$)', windows_acceptance), 'forbidden PowerShell alias in Windows acceptance script'
 assert '$CommandArgs' in windows_acceptance
 assert '[string[]]$Args' not in windows_acceptance
+assert "$port=8766" in windows_acceptance, 'unhealthy current-runtime acceptance must reproduce the live port 8766 conflict'
+assert "$install=Join-Path $CaseRoot 'SOKNA Agent'" in windows_acceptance, 'unhealthy current-runtime acceptance must exercise a path containing spaces'
 
 # P1 Core must remain project-agnostic. Repo module identity is allowed only in go.mod.
 for root in [ROOT / 'maintenance', ROOT / 'installer/windows', ROOT / 'tools/installer']:

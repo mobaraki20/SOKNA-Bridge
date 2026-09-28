@@ -81,17 +81,24 @@ internal static class ExistingRuntimePreparation
         int? recoveredPid = null;
         int? recoveredPort = null;
         string? recoveredSource = null;
-        var endpointCandidates = new List<(string Source, string Path)>();
+        var endpointCandidates = new List<(string Source, string ConfigPath, string AgentPath)>();
         var currentConfig = Path.Combine(installRoot, "config.json");
-        if (File.Exists(currentConfig)) endpointCandidates.Add(("current-config", currentConfig));
-        if (File.Exists(legacyConfig)) endpointCandidates.Add(("legacy-config", legacyConfig));
+        var currentAgent = Path.Combine(installRoot, "runtime", "agent.ps1");
+        if (File.Exists(currentConfig)) endpointCandidates.Add(("current-config", currentConfig, currentAgent));
+        if (File.Exists(legacyConfig)) endpointCandidates.Add(("legacy-config", legacyConfig, legacyAgent));
 
         foreach (var candidate in endpointCandidates)
         {
-            var endpoint = TryReadEndpointConfig(candidate.Path);
+            var endpoint = TryReadEndpointConfig(candidate.ConfigPath);
             if (endpoint is null) continue;
-            if (!await ProbeLegacyIdentityAsync(endpoint.Value.Port, endpoint.Value.Token, ct)) continue;
-            var stoppedPid = await StopIdentifiedSoknaEndpointAsync(endpoint.Value.Port, endpoint.Value.Token, ct);
+            var identityVerified = await ProbeLegacyIdentityAsync(endpoint.Value.Port, endpoint.Value.Token, ct);
+            var stoppedPid = await StopProvenSoknaRuntimeAsync(
+                endpoint.Value.Port,
+                endpoint.Value.Token,
+                candidate.ConfigPath,
+                candidate.AgentPath,
+                identityVerified,
+                ct);
             if (stoppedPid is null) continue;
 
             recoveredStopped = true;
@@ -194,27 +201,49 @@ internal static class ExistingRuntimePreparation
 
     private sealed record AgentProcessCandidate(int Pid, string CommandLine, string ConfigPath);
 
-    private static async Task<int?> StopIdentifiedSoknaEndpointAsync(int port, string token, CancellationToken ct)
+    private static async Task<int?> StopProvenSoknaRuntimeAsync(
+        int port,
+        string token,
+        string expectedConfigPath,
+        string expectedAgentPath,
+        bool endpointIdentityVerified,
+        CancellationToken ct)
     {
-        if (!await ProbeLegacyIdentityAsync(port, token, ct)) return null;
-        var candidates = await FindMatchingAgentProcessesAsync(port, token, ct);
+        var candidates = await FindMatchingAgentProcessesAsync(
+            port, token, expectedConfigPath, expectedAgentPath, ct);
         if (candidates.Count == 0)
-            throw new InvalidOperationException($"SOKNA_RUNTIME_PROCESS_UNRESOLVED: port={port}; authenticated endpoint has no matching agent.ps1 process");
+        {
+            if (endpointIdentityVerified)
+                throw new InvalidOperationException(
+                    $"SOKNA_RUNTIME_PROCESS_UNRESOLVED: port={port}; authenticated endpoint has no matching trusted agent.ps1 process");
+            return null;
+        }
         if (candidates.Count > 1)
-            throw new InvalidOperationException($"SOKNA_RUNTIME_PROCESS_AMBIGUOUS: port={port}; pids={string.Join(",", candidates.Select(x => x.Pid))}");
+            throw new InvalidOperationException(
+                $"SOKNA_RUNTIME_PROCESS_AMBIGUOUS: port={port}; pids={string.Join(",", candidates.Select(x => x.Pid))}");
 
         var candidate = candidates[0];
         using var process = Process.GetProcessById(candidate.Pid);
         var name = process.ProcessName;
         if (!name.Equals("powershell", StringComparison.OrdinalIgnoreCase) &&
             !name.Equals("pwsh", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"SOKNA_RUNTIME_PROCESS_UNEXPECTED: port={port}; pid={candidate.Pid}; process={name}");
+            throw new InvalidOperationException(
+                $"SOKNA_RUNTIME_PROCESS_UNEXPECTED: port={port}; pid={candidate.Pid}; process={name}");
+
         await KillAndWaitAsync(candidate.Pid, ct);
         return candidate.Pid;
     }
 
-    private static async Task<List<AgentProcessCandidate>> FindMatchingAgentProcessesAsync(int port, string token, CancellationToken ct)
+    private static async Task<List<AgentProcessCandidate>> FindMatchingAgentProcessesAsync(
+        int port,
+        string token,
+        string expectedConfigPath,
+        string expectedAgentPath,
+        CancellationToken ct)
     {
+        var trustedConfig = Path.GetFullPath(expectedConfigPath);
+        var trustedAgent = Path.GetFullPath(expectedAgentPath);
+
         var psi = new ProcessStartInfo("powershell.exe")
         {
             UseShellExecute = false,
@@ -252,18 +281,30 @@ internal static class ExistingRuntimePreparation
             if (pid <= 0 || string.IsNullOrWhiteSpace(commandLine)) continue;
             if (Regex.IsMatch(commandLine, @"(?i)(?:^|\s)-(?:RunScheduler|RunJobId|StartupProbe)(?:\s|$|=)")) continue;
 
-            var scriptPath = ExtractCommandArgument(commandLine, "File");
-            if (string.IsNullOrWhiteSpace(scriptPath) ||
-                !Path.GetFileName(scriptPath).Equals("agent.ps1", StringComparison.OrdinalIgnoreCase)) continue;
-            var configPath = ExtractCommandArgument(commandLine, "ConfigPath");
-            if (string.IsNullOrWhiteSpace(configPath))
-                configPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(scriptPath))!, "config.json");
+            var scriptArg = ExtractCommandArgument(commandLine, "File");
+            if (string.IsNullOrWhiteSpace(scriptArg)) continue;
+
+            string scriptPath;
+            try { scriptPath = Path.GetFullPath(scriptArg); }
+            catch { continue; }
+            if (!string.Equals(scriptPath, trustedAgent, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var configArg = ExtractCommandArgument(commandLine, "ConfigPath");
+            string configPath;
+            try
+            {
+                configPath = string.IsNullOrWhiteSpace(configArg)
+                    ? Path.GetFullPath(Path.Combine(Path.GetDirectoryName(scriptPath)!, "config.json"))
+                    : Path.GetFullPath(configArg);
+            }
+            catch { continue; }
+            if (!string.Equals(configPath, trustedConfig, StringComparison.OrdinalIgnoreCase)) continue;
 
             var endpoint = TryReadEndpointConfig(configPath);
             if (endpoint is null || endpoint.Value.Port != port ||
                 !string.Equals(endpoint.Value.Token, token, StringComparison.Ordinal)) continue;
 
-            matches.Add(new AgentProcessCandidate(pid, commandLine, Path.GetFullPath(configPath)));
+            matches.Add(new AgentProcessCandidate(pid, commandLine, configPath));
         }
         return matches;
     }
