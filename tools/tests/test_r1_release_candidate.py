@@ -12,7 +12,8 @@ assert "git(root,'cat-file','blob',oid" in builder
 assert "git(root,'ls-tree','-r','-z','--full-tree',commit" in builder
 build=need(Path('tools/installer/Build-P1Installer.ps1'),'ExpectedSourceCommit','SOURCE_COMMIT_MISMATCH')
 wf=need(Path('.github/workflows/windows-agent-validation.yml'),'expected_commit','EXACT_RC_EXPECTED_COMMIT_REQUIRED','Build-R1SourceRC.py','Write-ExactRCEvidence.ps1','upload-artifact@v4','sokna-agent-2.7.1-r2','--agent-version 2.7.1','--extension-version 3.12.2','--accepted-live-agent-baseline 2.7.1','SOKNA Bridge 2.7.1-r2','docs/releases/2.7.1-r2.md')
-evidence=need(Path('tools/ci/Write-ExactRCEvidence.ps1'),'EXACT_RC_SOURCE_COMMIT_MISMATCH','EXACT_RC_PAYLOAD_COMMIT_MISMATCH','whole_product_acceptance_passed','browser_runner_sha256','artifact_provider_runner_sha256')
+evidence=need(Path('tools/ci/Write-ExactRCEvidence.ps1'),'EXACT_RC_SOURCE_COMMIT_MISMATCH','EXACT_RC_PAYLOAD_COMMIT_MISMATCH','EXACT_RC_AGENT_VERSION_MISSING','EXACT_RC_AGENT_CAPABILITIES_MISSING','EXACT_RC_AGENT_VERSION_MISMATCH','EXACT_RC_EXTENSION_VERSION_MISMATCH','source.candidate_agent_version','whole_product_acceptance_passed','browser_runner_sha256','artifact_provider_runner_sha256')
+assert "native/runtime/v2.6.0/AGENT_CAPABILITIES.json" not in evidence
 status=need(Path('docs/status/R1_RELEASE_CANDIDATE_FREEZE.md'),'base Workspace Policy','job-scoped grant','exact source','CI','LIVE','2.5.7 R4','3.10.5')
 policy=json.loads((ROOT/'docs/status/R1_RELEASE_CANDIDATE_POLICY.json').read_text(encoding='utf-8'))
 assert policy['schema']=='sokna-r1-release-candidate-policy-v1' and policy['ci_expected_commit_required'] is True
