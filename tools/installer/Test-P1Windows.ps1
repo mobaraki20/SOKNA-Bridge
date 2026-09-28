@@ -114,8 +114,8 @@ function Start-LegacyMigrationFixture([string]$CaseRoot){
   }
   $pidFile=Join-Path $legacyRoot 'agent.pid'
   if(-not(Test-Path -LiteralPath $pidFile -PathType Leaf)){throw 'LEGACY_MIGRATION_FIXTURE_PID_MISSING'}
-  $pid=[int](Get-Content -LiteralPath $pidFile -Raw)
-  return [pscustomobject]@{root=$legacyRoot;pid=$pid;process=$proc;run_key=$runKey}
+  $legacyPid=[int](Get-Content -LiteralPath $pidFile -Raw)
+  return [pscustomobject]@{root=$legacyRoot;pid=$legacyPid;process=$proc;run_key=$runKey}
 }
 
 if([string]::IsNullOrWhiteSpace($SetupPath)){
