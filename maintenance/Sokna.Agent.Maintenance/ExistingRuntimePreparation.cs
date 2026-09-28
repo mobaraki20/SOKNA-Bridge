@@ -13,7 +13,11 @@ internal sealed record ExistingRuntimePreparationResult(
     int? LegacyRuntimePid,
     int? LegacyPort,
     bool LegacyAutostartRemoved,
-    string? LegacyConfigPath);
+    string? LegacyConfigPath,
+    bool RecoveredUntrackedRuntimeStopped,
+    int? RecoveredUntrackedRuntimePid,
+    int? RecoveredUntrackedRuntimePort,
+    string? RecoveredUntrackedRuntimeSource);
 
 internal static class ExistingRuntimePreparation
 {
@@ -71,18 +75,51 @@ internal static class ExistingRuntimePreparation
                 legacyStopped = true;
             }
         }
-        else if (legacyIdentityAlive)
+
+        var recoveredStopped = false;
+        int? recoveredPid = null;
+        int? recoveredPort = null;
+        string? recoveredSource = null;
+        var endpointCandidates = new List<(string Source, string Path)>();
+        var currentConfig = Path.Combine(installRoot, "config.json");
+        if (File.Exists(currentConfig)) endpointCandidates.Add(("current-config", currentConfig));
+        if (File.Exists(legacyConfig)) endpointCandidates.Add(("legacy-config", legacyConfig));
+
+        foreach (var candidate in endpointCandidates)
         {
-            throw new InvalidOperationException("LEGACY_RUNTIME_ACTIVE_WITHOUT_PID: refusing to stop an uncorrelated process");
+            var endpoint = TryReadEndpointConfig(candidate.Path);
+            if (endpoint is null) continue;
+            if (!await ProbeLegacyIdentityAsync(endpoint.Value.Port, endpoint.Value.Token, ct)) continue;
+            var stoppedPid = await StopIdentifiedSoknaEndpointAsync(endpoint.Value.Port, endpoint.Value.Token, ct);
+            if (stoppedPid is null) continue;
+
+            recoveredStopped = true;
+            recoveredPid = stoppedPid;
+            recoveredPort = endpoint.Value.Port;
+            recoveredSource = candidate.Source;
+            if (candidate.Source == "legacy-config")
+            {
+                legacyStopped = true;
+                legacyPid = stoppedPid;
+                TryDelete(legacyPidPath);
+            }
+            break;
         }
 
-        if (legacyStopped && legacyPort is > 0)
+        if (legacyIdentityAlive && !legacyStopped && legacyPort is > 0 && !string.IsNullOrWhiteSpace(token)
+            && await ProbeLegacyIdentityAsync(legacyPort.Value, token!, ct))
+            throw new InvalidOperationException("LEGACY_RUNTIME_ACTIVE_WITHOUT_SAFE_OWNERSHIP: identified SOKNA endpoint is still active");
+
+        if (recoveredStopped && recoveredPort is > 0)
+            await WaitForEndpointAvailableAsync(recoveredPort.Value, ct);
+        else if (legacyStopped && legacyPort is > 0)
             await WaitForEndpointAvailableAsync(legacyPort.Value, ct);
 
         var autostartRemoved = RemoveLegacyAutostart(legacyRoot, legacyAgent);
         return new ExistingRuntimePreparationResult(
             currentStopped, currentPid, legacyDetected, legacyStopped, legacyPid, legacyPort,
-            autostartRemoved, File.Exists(legacyConfig) ? legacyConfig : null);
+            autostartRemoved, File.Exists(legacyConfig) ? legacyConfig : null,
+            recoveredStopped, recoveredPid, recoveredPort, recoveredSource);
     }
 
     internal static async Task WaitForEndpointAvailableAsync(int port, CancellationToken ct)
@@ -136,6 +173,65 @@ internal static class ExistingRuntimePreparation
             error = ex.Message;
             return false;
         }
+    }
+
+    private static (int Port, string Token)? TryReadEndpointConfig(string path)
+    {
+        try
+        {
+            var cfg = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            var port = cfg?["port"]?.GetValue<int>() ?? 0;
+            var token = cfg?["token"]?.GetValue<string>() ?? "";
+            if (port is < 1 or > 65535 || string.IsNullOrWhiteSpace(token)) return null;
+            return (port, token);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<int?> StopIdentifiedSoknaEndpointAsync(int port, string token, CancellationToken ct)
+    {
+        if (!await ProbeLegacyIdentityAsync(port, token, ct)) return null;
+        var pid = await TryGetListeningPidAsync(port, ct)
+            ?? throw new InvalidOperationException($"SOKNA_RUNTIME_LISTENER_PID_UNRESOLVED: port={port}");
+        using var process = Process.GetProcessById(pid);
+        var name = process.ProcessName;
+        if (!name.Equals("powershell", StringComparison.OrdinalIgnoreCase) &&
+            !name.Equals("pwsh", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"SOKNA_RUNTIME_LISTENER_PROCESS_UNEXPECTED: port={port}; pid={pid}; process={name}");
+        await KillAndWaitAsync(pid, ct);
+        return pid;
+    }
+
+    private static async Task<int?> TryGetListeningPidAsync(int port, CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo("powershell.exe")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        psi.ArgumentList.Add("-NoProfile");
+        psi.ArgumentList.Add("-NonInteractive");
+        psi.ArgumentList.Add("-Command");
+        psi.ArgumentList.Add($"$p=@(Get-NetTCPConnection -State Listen -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique); if($p.Count -eq 1){{$p[0]}} elseif($p.Count -gt 1){{'MULTIPLE:'+($p -join ',')}}");
+
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException("Unable to inspect listening TCP process");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync(timeout.Token);
+        var output = (await outputTask).Trim();
+        var error = (await errorTask).Trim();
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException($"SOKNA_RUNTIME_LISTENER_LOOKUP_FAILED: port={port}; {error}");
+        if (output.StartsWith("MULTIPLE:", StringComparison.Ordinal))
+            throw new InvalidOperationException($"SOKNA_RUNTIME_LISTENER_AMBIGUOUS: port={port}; pids={output["MULTIPLE:".Length..]}");
+        return int.TryParse(output, out var pid) && pid > 0 ? pid : null;
     }
 
     private static async Task<bool> ProbeLegacyIdentityAsync(int port, string token, CancellationToken ct)
