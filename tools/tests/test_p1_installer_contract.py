@@ -63,7 +63,7 @@ for key in ['token', 'password', 'private_key', 'cookie', '[REDACTED]', 'Root re
 
 
 prep = (ROOT / 'maintenance/Sokna.Agent.Maintenance/ExistingRuntimePreparation.cs').read_text(encoding='utf-8')
-for marker in ['LEGACY_RUNTIME_OWNERSHIP_UNPROVEN', 'LEGACY_RUNTIME_ACTIVE_WITHOUT_PID', 'AGENT_ENDPOINT_UNAVAILABLE_AFTER_PREP', 'SOKNA Bridge Agent', 'SOKNA-Bridge-V2', 'ProbeLegacyIdentityAsync', 'WaitForEndpointAvailableAsync']:
+for marker in ['LEGACY_RUNTIME_OWNERSHIP_UNPROVEN', 'LEGACY_RUNTIME_ACTIVE_WITHOUT_SAFE_OWNERSHIP', 'SOKNA_RUNTIME_LISTENER_PID_UNRESOLVED', 'SOKNA_RUNTIME_LISTENER_PROCESS_UNEXPECTED', 'Get-NetTCPConnection', 'AGENT_ENDPOINT_UNAVAILABLE_AFTER_PREP', 'SOKNA Bridge Agent', 'SOKNA-Bridge-V2', 'ProbeLegacyIdentityAsync', 'WaitForEndpointAvailableAsync']:
     assert marker in prep, f'legacy/current runtime preparation missing {marker}'
 assert 'requireCurrentHash: false' in prep, 'Setup reinstall must be able to stop a previously owned runtime after payload replacement'
 
@@ -86,7 +86,7 @@ assert '$buildOutput=@(' in workflow and 'Select-Object -Last 1' in workflow
 assert 'timeout-minutes: 30' in workflow
 
 windows_acceptance = (ROOT / 'tools/installer/Test-P1Windows.ps1').read_text(encoding='utf-8')
-for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime', 'PROCESS_TIMEOUT:', 'P1_PROCESS_START', 'P1_PROCESS_EXIT', 'P1_LEGACY_RUNNING_SETUP_ACCEPTANCE_PASS', 'P1_ACTIVE_RUNTIME_REINSTALL_ACCEPTANCE_PASS', 'P1_CONTROL_CENTER_SELF_TEST_PASS', 'P1_SUPPORT_BUNDLE_PARTIAL_PASS', 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING']:
+for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime', 'PROCESS_TIMEOUT:', 'P1_PROCESS_START', 'P1_PROCESS_EXIT', 'P1_LEGACY_RUNNING_SETUP_ACCEPTANCE_PASS', 'P1_LEGACY_UNTRACKED_RUNTIME_RECOVERY_PASS', 'P1_ACTIVE_RUNTIME_REINSTALL_ACCEPTANCE_PASS', 'P1_CONTROL_CENTER_SELF_TEST_PASS', 'P1_SUPPORT_BUNDLE_PARTIAL_PASS', 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING', 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_PID_MISMATCH']:
     assert marker in windows_acceptance, f'Windows lifecycle acceptance missing {marker}'
 # Synthetic upgrades must rebuild ownership from the actual payload tree; stale
 # paths from the previous manifest are forbidden from surviving into the next one.
