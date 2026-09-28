@@ -73,7 +73,7 @@ jobs:
     env:
       SOKNA_VALIDATION_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || ((((github.event_name == 'pull_request' && github.base_ref == 'release/2.7.1') || github.ref == 'refs/heads/release/2.7.1')) && 'full' || 'quick') }}
       SOKNA_EXPECTED_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_commit || github.sha }}
-      SOKNA_CANDIDATE_REF: ${{ ((github.event_name == 'pull_request' && github.base_ref == 'release/2.7.1') || github.ref == 'refs/heads/release/2.7.1') && 'sokna-agent-2.7.1-r4' || 'sokna-agent-2.6.0-rc9' }}
+      SOKNA_CANDIDATE_REF: ${{ ((github.event_name == 'pull_request' && github.base_ref == 'release/2.7.1') || github.ref == 'refs/heads/release/2.7.1') && 'sokna-agent-2.7.1-r5' || 'sokna-agent-2.6.0-rc9' }}
     timeout-minutes: 30
     steps:
       - name: Release tag preflight
@@ -82,7 +82,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          $tag='sokna-agent-2.7.1-r4'
+          $tag='sokna-agent-2.7.1-r5'
           $uri="https://api.github.com/repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag"
           $headers=@{
             Authorization="Bearer $env:GITHUB_TOKEN"
@@ -415,7 +415,7 @@ jobs:
           ./tools/ci/Test-WindowsAgentEnvironment.ps1 -Profile $env:SOKNA_VALIDATION_PROFILE -RuntimeVersion '2.5.7'
 
   release:
-    name: Publish SOKNA Bridge 2.7.1-r4
+    name: Publish SOKNA Bridge 2.7.1-r5
     needs: validate
     if: github.event_name == 'push' && github.ref == 'refs/heads/release/2.7.1'
     runs-on: ubuntu-latest
@@ -443,13 +443,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag='sokna-agent-2.7.1-r4'
+          tag='sokna-agent-2.7.1-r5'
           setup_src=$(find release-assets -type f -name 'SOKNA-Bridge-Setup-2.7.1-x64.exe' -print -quit)
           source_zip_src=$(find release-assets -type f -name 'SOKNA-Agent-2.7.1-source.zip' -print -quit)
           evidence=$(find release-assets -type f -name 'windows-exact-rc-evidence.json' -print -quit)
           source_manifest=$(find release-assets -type f -name 'source-manifest.json' -print -quit)
-          setup="$RUNNER_TEMP/SOKNA-Bridge-Setup-2.7.1-r4-x64.exe"
-          source_zip="$RUNNER_TEMP/SOKNA-Agent-2.7.1-r4-source.zip"
+          setup="$RUNNER_TEMP/SOKNA-Bridge-Setup-2.7.1-r5-x64.exe"
+          source_zip="$RUNNER_TEMP/SOKNA-Agent-2.7.1-r5-source.zip"
           cp "$setup_src" "$setup"
           cp "$source_zip_src" "$source_zip"
           if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null); then
@@ -460,8 +460,8 @@ jobs:
             if gh release view "$tag" >/dev/null 2>&1; then
               gh release upload "$tag" "$setup" "$source_zip" "$evidence" "$source_manifest" --clobber
             else
-              gh release create "$tag" "$setup" "$source_zip" "$evidence" "$source_manifest" --verify-tag --title 'SOKNA Bridge 2.7.1-r4' --notes-file docs/releases/2.7.1-r4.md
+              gh release create "$tag" "$setup" "$source_zip" "$evidence" "$source_manifest" --verify-tag --title 'SOKNA Bridge 2.7.1-r5' --notes-file docs/releases/2.7.1-r5.md
             fi
           else
-            gh release create "$tag" "$setup" "$source_zip" "$evidence" "$source_manifest" --target "$GITHUB_SHA" --title 'SOKNA Bridge 2.7.1-r4' --notes-file docs/releases/2.7.1-r4.md
+            gh release create "$tag" "$setup" "$source_zip" "$evidence" "$source_manifest" --target "$GITHUB_SHA" --title 'SOKNA Bridge 2.7.1-r5' --notes-file docs/releases/2.7.1-r5.md
           fi
