@@ -123,7 +123,8 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
     if($null-ne$stillAlive){throw 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING'}
     if(-not(Test-Path -LiteralPath (Join-Path $legacyRoot 'config.json') -PathType Leaf)){throw 'LEGACY_ACCEPTANCE_SOURCE_CONFIG_REMOVED'}
     if(-not(Test-Path -LiteralPath $legacyAgent -PathType Leaf)){throw 'LEGACY_ACCEPTANCE_SOURCE_AGENT_REMOVED'}
-    $legacyRun=(Get-ItemProperty -Path $runKey -Name 'SOKNA Bridge Agent' -ErrorAction SilentlyContinue).'SOKNA Bridge Agent'
+    $legacyRun=$null
+    try{$legacyRun=Get-ItemPropertyValue -Path $runKey -Name 'SOKNA Bridge Agent' -ErrorAction Stop}catch{$legacyRun=$null}
     if(-not[string]::IsNullOrWhiteSpace([string]$legacyRun)){throw 'LEGACY_ACCEPTANCE_AUTOSTART_NOT_REMOVED'}
 
     $newCfg=Get-Content (Join-Path $legacyInstall 'config.json') -Raw|ConvertFrom-Json
