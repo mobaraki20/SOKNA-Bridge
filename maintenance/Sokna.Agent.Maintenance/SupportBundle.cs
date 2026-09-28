@@ -147,7 +147,13 @@ internal static class SupportBundle
         await File.WriteAllTextAsync(path, text, new UTF8Encoding(false), ct);
     }
 
-    private static string ReadStrictText(string path) => StrictUtf8.GetString(File.ReadAllBytes(path));
+    private static string ReadStrictText(string path)
+    {
+        var text = StrictUtf8.GetString(File.ReadAllBytes(path));
+        // Windows PowerShell 5.1 writes UTF-8 JSON with a BOM. The BOM is a
+        // valid encoding marker, not malformed diagnostic content.
+        return text.Length > 0 && text[0] == '\uFEFF' ? text[1..] : text;
+    }
 
     private static void Try(string stage, string source, Action action, List<BundleError> errors)
     {
