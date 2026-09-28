@@ -470,7 +470,9 @@ internal sealed class MainForm : Form
     {
         if (string.IsNullOrWhiteSpace(path)) return;
         Directory.CreateDirectory(path);
-        Process.Start(new ProcessStartInfo("explorer.exe", $""{path}"") { UseShellExecute = true });
+        var psi = new ProcessStartInfo("explorer.exe") { UseShellExecute = true };
+        psi.ArgumentList.Add(path);
+        Process.Start(psi);
     }
 
     private static void OpenUrl(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });

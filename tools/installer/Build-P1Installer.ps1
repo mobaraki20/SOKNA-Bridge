@@ -30,12 +30,13 @@ New-Item -ItemType Directory -Path $setupOut -Force|Out-Null
 $maintenanceOut=Join-Path $payload '.build-maintenance'
 $launcherOut=Join-Path $payload '.build-launcher'
 $controlOut=Join-Path $payload '.build-control-center'
-& dotnet publish (Join-Path $RepoRoot 'maintenance\Sokna.Agent.Maintenance\Sokna.Agent.Maintenance.csproj') -c $Configuration -r win-x64 --self-contained true -p:PublishSingleFile=true -o $maintenanceOut
-if($LASTEXITCODE-ne0){throw 'DOTNET_MAINTENANCE_PUBLISH_FAILED'}
-& dotnet publish (Join-Path $RepoRoot 'maintenance\Sokna.Agent.Launcher\Sokna.Agent.Launcher.csproj') -c $Configuration -r win-x64 --self-contained true -p:PublishSingleFile=true -o $launcherOut
-if($LASTEXITCODE-ne0){throw 'DOTNET_LAUNCHER_PUBLISH_FAILED'}
-& dotnet publish (Join-Path $RepoRoot 'maintenance\Sokna.Bridge.ControlCenter\Sokna.Bridge.ControlCenter.csproj') -c $Configuration -r win-x64 --self-contained true -p:PublishSingleFile=true -o $controlOut
-if($LASTEXITCODE-ne0){throw 'DOTNET_CONTROL_CENTER_PUBLISH_FAILED'}
+function Invoke-DotnetPublish([string]$Project,[string]$Output,[string]$FailureCode){
+  & dotnet publish $Project -c $Configuration -r win-x64 --self-contained true -p:PublishSingleFile=true -o $Output 2>&1 | ForEach-Object { Write-Host $_ }
+  if($LASTEXITCODE-ne0){throw $FailureCode}
+}
+Invoke-DotnetPublish (Join-Path $RepoRoot 'maintenance\Sokna.Agent.Maintenance\Sokna.Agent.Maintenance.csproj') $maintenanceOut 'DOTNET_MAINTENANCE_PUBLISH_FAILED'
+Invoke-DotnetPublish (Join-Path $RepoRoot 'maintenance\Sokna.Agent.Launcher\Sokna.Agent.Launcher.csproj') $launcherOut 'DOTNET_LAUNCHER_PUBLISH_FAILED'
+Invoke-DotnetPublish (Join-Path $RepoRoot 'maintenance\Sokna.Bridge.ControlCenter\Sokna.Bridge.ControlCenter.csproj') $controlOut 'DOTNET_CONTROL_CENTER_PUBLISH_FAILED'
 Copy-Item (Join-Path $maintenanceOut 'Sokna.Agent.Maintenance.exe') (Join-Path $payload 'Sokna.Agent.Maintenance.exe') -Force
 Copy-Item (Join-Path $launcherOut 'Sokna.Agent.Launcher.exe') (Join-Path $payload 'Sokna.Agent.Launcher.exe') -Force
 Copy-Item (Join-Path $controlOut 'Sokna.Bridge.ControlCenter.exe') (Join-Path $payload 'Sokna.Bridge.ControlCenter.exe') -Force
