@@ -17,7 +17,7 @@ function nodeText(n){try{return String(n?.innerText||n?.textContent||"")}catch{r
 function nodeIdentity(n,index){
   for(const a of ["data-message-id","data-testid","id"]){const v=String(n?.getAttribute?.(a)||"").trim();if(v)return a+":"+v}
   if(!nodeIds.has(n))nodeIds.set(n,"node-"+(++nodeSeq));
-  return nodeIds.get(n)+"-idx-"+index;
+  return nodeIds.get(n);
 }
 function classifyTurnRole(n){
   const direct=String(n?.getAttribute?.("data-message-author-role")||"").trim().toLowerCase();
