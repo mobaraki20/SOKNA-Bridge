@@ -82,6 +82,97 @@ function Test-LegacyPing([int]$Port,[string]$Token){
     return ([bool]$r.ok -and ([string]$r.version).StartsWith('2.5.'))
   }catch{return $false}
 }
+function Invoke-UnhealthyCurrentRuntimeSetupAcceptance([string]$Setup,[string]$RepoRoot,[string]$CaseRoot){
+  $install=Join-Path $CaseRoot 'unhealthy-current-app'
+  $artifact=Join-Path $CaseRoot 'unhealthy-current-artifacts'
+  $setupLog=Join-Path $CaseRoot 'unhealthy-current-setup.log'
+  $runtime=Join-Path $install 'runtime'
+  $proc=$null
+  try{
+    New-Item -ItemType Directory -Path $runtime -Force|Out-Null
+    $port=Get-FreeTcpPort
+    $tokenBytes=New-Object byte[] 32
+    $rng=[Security.Cryptography.RandomNumberGenerator]::Create()
+    try{$rng.GetBytes($tokenBytes)}finally{$rng.Dispose()}
+    $token=[Convert]::ToBase64String($tokenBytes)
+    $cfg=[ordered]@{
+      port=$port
+      token=$token
+      workspace_root=$RepoRoot
+      default_workspace='ci'
+      default_github_owner=''
+      allowed_github_owners=@()
+      workspaces=[ordered]@{ci=[ordered]@{path=$RepoRoot;expected_repo='';write_enabled=$false}}
+    }
+    $configPath=Join-Path $install 'config.json'
+    Write-Json $configPath $cfg
+    $agentPath=Join-Path $runtime 'agent.ps1'
+    $stub=@'
+param([string]$ConfigPath)
+$cfg=Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8|ConvertFrom-Json
+$listener=New-Object System.Net.HttpListener
+$listener.Prefixes.Add(('http://127.0.0.1:'+([int]$cfg.port)+'/'))
+$listener.Start()
+try{
+  while($listener.IsListening){
+    $ctx=$listener.GetContext()
+    try{
+      $bytes=[Text.Encoding]::UTF8.GetBytes('{"ok":false,"error":"CI injected unhealthy SOKNA runtime"}')
+      $ctx.Response.StatusCode=500
+      $ctx.Response.ContentType='application/json'
+      $ctx.Response.ContentLength64=$bytes.Length
+      $ctx.Response.OutputStream.Write($bytes,0,$bytes.Length)
+    }finally{$ctx.Response.Close()}
+  }
+}finally{$listener.Close()}
+'@
+    [IO.File]::WriteAllText($agentPath,$stub,[Text.UTF8Encoding]::new($false))
+    $proc=Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$agentPath,'-ConfigPath',$configPath) -PassThru -WindowStyle Hidden
+
+    $ready=$false
+    for($i=0;$i-lt40;$i++){
+      Start-Sleep -Milliseconds 250
+      try{
+        Invoke-WebRequest -Uri ('http://127.0.0.1:'+$port+'/api') -Method Post -ContentType 'application/json' -Body '{"action":"ping"}' -UseBasicParsing -TimeoutSec 1|Out-Null
+      }catch{
+        try{if([int]$_.Exception.Response.StatusCode-eq500){$ready=$true;break}}catch{}
+      }
+    }
+    if(-not$ready){throw 'UNHEALTHY_CURRENT_ACCEPTANCE_RUNTIME_DID_NOT_START'}
+    if($null-eq(Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)){throw 'UNHEALTHY_CURRENT_ACCEPTANCE_PROCESS_NOT_RUNNING'}
+    Write-Host ('P1_UNHEALTHY_CURRENT_RUNTIME_INJECTED pid='+$proc.Id+' port='+$port)
+
+    Invoke-ProcessChecked $Setup @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$install+'"'),('/ArtifactRoot="'+$artifact+'"'),'/TASKS=""',('/LOG="'+$setupLog+'"'))|Out-Null
+    Start-Sleep -Milliseconds 300
+    try{$proc.Refresh()}catch{}
+    if(-not$proc.HasExited){
+      $proc.WaitForExit(3000)|Out-Null
+      $proc.Refresh()
+    }
+    if(-not$proc.HasExited){throw 'UNHEALTHY_CURRENT_ACCEPTANCE_OLD_PROCESS_STILL_RUNNING'}
+
+    $prepPath=Join-Path $install 'state\install-preparation.json'
+    if(-not(Test-Path -LiteralPath $prepPath -PathType Leaf)){throw 'UNHEALTHY_CURRENT_ACCEPTANCE_PREPARATION_MISSING'}
+    $prep=Get-Content $prepPath -Raw|ConvertFrom-Json
+    Write-Host ('P1_UNHEALTHY_CURRENT_PREPARATION '+($prep|ConvertTo-Json -Compress))
+    if(-not[bool]$prep.recovered_untracked_runtime_stopped){throw 'UNHEALTHY_CURRENT_ACCEPTANCE_RECOVERY_EVIDENCE_MISSING'}
+    if([int]$prep.recovered_untracked_runtime_pid-ne$proc.Id){throw 'UNHEALTHY_CURRENT_ACCEPTANCE_RECOVERY_PID_MISMATCH'}
+    if([int]$prep.recovered_untracked_runtime_port-ne$port){throw 'UNHEALTHY_CURRENT_ACCEPTANCE_RECOVERY_PORT_MISMATCH'}
+    if([string]$prep.recovered_untracked_runtime_source-ne'current-config'){throw 'UNHEALTHY_CURRENT_ACCEPTANCE_RECOVERY_SOURCE_MISMATCH'}
+
+    $maint=Join-Path $install 'Sokna.Agent.Maintenance.exe'
+    Invoke-Maint $maint $install @('health','--expected-version','2.7.1')|Out-Null
+    Write-Host 'P1_UNHEALTHY_CURRENT_RUNTIME_RECOVERY_PASS'
+
+    $uninstaller=Get-ChildItem $install -Filter 'unins*.exe' -File|Select-Object -First 1
+    if(-not$uninstaller){throw 'UNHEALTHY_CURRENT_ACCEPTANCE_UNINSTALLER_MISSING'}
+    Invoke-ProcessChecked $uninstaller.FullName @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART')|Out-Null
+  }finally{
+    if($null-ne$proc){try{Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}catch{}}
+    if(Test-Path -LiteralPath $install){try{$m=Join-Path $install 'Sokna.Agent.Maintenance.exe';if(Test-Path $m){& $m stop --install-root $install|Out-Null}}catch{}}
+  }
+}
+
 function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[string]$CaseRoot){
   $legacyRoot=Join-Path $env:LOCALAPPDATA 'SOKNA-Bridge-V2'
   if(Test-Path -LiteralPath $legacyRoot){throw 'LEGACY_ACCEPTANCE_PATH_ALREADY_EXISTS'}
@@ -194,6 +285,7 @@ $caseRoot=Join-Path $env:TEMP ('sokna-p1-ci-'+[Guid]::NewGuid().ToString('N'))
 $install=Join-Path $caseRoot 'app';$artifact=Join-Path $caseRoot 'artifacts';$setupLog=Join-Path $caseRoot 'setup.log'
 New-Item -ItemType Directory -Path $caseRoot -Force|Out-Null
 try{
+  Invoke-UnhealthyCurrentRuntimeSetupAcceptance $SetupPath $RepoRoot $caseRoot
   Invoke-LegacyRunningSetupAcceptance $SetupPath $RepoRoot $caseRoot
   Invoke-ProcessChecked $SetupPath @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$install+'"'),('/ArtifactRoot="'+$artifact+'"'),'/TASKS=""',('/LOG="'+$setupLog+'"'))|Out-Null
   $maint=Join-Path $install 'Sokna.Agent.Maintenance.exe';if(-not(Test-Path $maint)){throw 'MAINTENANCE_EXE_MISSING_AFTER_INSTALL'}
@@ -266,7 +358,7 @@ try{
   if(-not(Test-Path $artifact)){throw 'UNINSTALL_REMOVED_ARTIFACT_ROOT'}
   $locator=Join-Path $env:LOCALAPPDATA 'SOKNA\Agent\install-locator.json'
   if(Test-Path $locator){$l=Get-Content $locator -Raw|ConvertFrom-Json;if([string]$l.install_root -eq $install){throw 'UNINSTALL_LEFT_ACTIVE_LOCATOR'}}
-  [ordered]@{ok=$true;case_root=$caseRoot;artifact_root_preserved=$true;repair=$true;upgrade=$true;rollback=$true;automatic_rollback=$true;legacy_running_setup=$true;active_runtime_reinstall=$true;control_center=$true;support_bundle_partial=$true;uninstall=$true}|ConvertTo-Json -Compress
+  [ordered]@{ok=$true;case_root=$caseRoot;artifact_root_preserved=$true;repair=$true;upgrade=$true;rollback=$true;automatic_rollback=$true;unhealthy_current_runtime=$true;legacy_running_setup=$true;active_runtime_reinstall=$true;control_center=$true;support_bundle_partial=$true;uninstall=$true}|ConvertTo-Json -Compress
 }
 finally{
   if(Test-Path $install){try{$m=Join-Path $install 'Sokna.Agent.Maintenance.exe';if(Test-Path $m){& $m stop --install-root $install|Out-Null}}catch{}}
