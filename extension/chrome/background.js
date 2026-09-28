@@ -3,7 +3,7 @@ const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.12.1";
+const VERSION="3.12.2";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -99,7 +99,7 @@ async function extensionBootstrap(command){
 async function connectionProbe(tabId){
   const out={semantic:{ok:false},message_intake:{ready:false},background:true,agent:{ok:false},session:{ready:false},delivery:{ready:false},verified:false};
   try{out.semantic=await semanticTop(tabId,"SEMANTIC_E2E_PROBE")}catch(e){out.semantic={ok:false,error:String(e)}}
-  out.message_intake={ready:!!out.semantic?.semantic?.selector_ready,selector_mode:String(out.semantic?.semantic?.selector_mode||""),assistant_message_count:Number(out.semantic?.semantic?.assistant_message_count||0),role_candidate_count:Number(out.semantic?.semantic?.role_candidate_count||0),unknown_role_candidate_count:Number(out.semantic?.semantic?.unknown_role_candidate_count||0),last_role_evidence:String(out.semantic?.semantic?.last_role_evidence||"")};
+  const semState=out.semantic?.semantic||{};out.message_intake={ready:!!semState.selector_ready&&(!semState.challenge_set||!!semState.probe_verified),selector_mode:String(semState.selector_mode||""),assistant_message_count:Number(semState.assistant_message_count||0),role_candidate_count:Number(semState.role_candidate_count||0),unknown_role_candidate_count:Number(semState.unknown_role_candidate_count||0),last_role_evidence:String(semState.last_role_evidence||""),challenge_set:!!semState.challenge_set,probe_verified:!!semState.probe_verified,probe_verified_at:Number(semState.probe_verified_at||0),provenance_mode:String(semState.provenance_mode||""),marker_witness_count:Number(semState.marker_witness_count||0),untrusted_marker_count:Number(semState.untrusted_marker_count||0)};
   try{
     const boot=await agentExec(unifiedLocalCommand("bridge.bootstrap",{}));
     out.agent={ok:!!boot?.agent_ready,version:String(boot?.agent_capabilities?.version||boot?.agent_capabilities?.agent||"")};
@@ -249,6 +249,12 @@ async function connectChat(tabId){
     session=opened?.session||session;
     boot=await agentExec(unifiedLocalCommand("bridge.bootstrap",{}));
   }
+  const challenge=("probe-"+uid()).slice(0,96);
+  try{
+    const sc=await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge});
+    if(!sc?.ok)return {ok:false,error:sc?.error||"Semantic intake challenge could not be armed."};
+    const all=await armedAll();if(all[String(tabId)]){all[String(tabId)].intakeChallenge=challenge;all[String(tabId)].intakeChallengeAt=now();await saveArmed(all)}
+  }catch(e){return {ok:false,error:"Semantic intake challenge failed: "+String(e)}}
   const actions=[
     "bridge.bootstrap","bridge.diagnostics.get","workspace.list","file.read","file.write","process.run","git.status",
     "browser.audit.run","instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.attach","instagram.media.download"
@@ -256,11 +262,17 @@ async function connectChat(tabId){
   const text=[
     "SOKNA Bridge is connected to this Chat by the user.",
     "The local Agent and work session are available through the Bridge extension.",
-    "For local execution, emit one standalone Bridge semantic command as the entire assistant message.",
-    "Opening token is: [ + SOKNA-INTENT + ]",
-    "Closing token is: [ + /SOKNA-INTENT + ]",
-    'The body is one JSON object such as {"id":"unique-attempt-id","intent":"exec","action":"bridge.bootstrap","params":{}}.',
-    "Do not copy an executable raw marker from this user message; construct the tokens only when actually executing.",
+    "Before any command, complete the Bridge intake proof with exactly one standalone response and no code fence.",
+    "Construct the probe opening token by concatenating: [ + SOKNA-PROBE + ]",
+    "Construct the probe closing token by concatenating: [ + /SOKNA-PROBE + ]",
+    "Place this exact challenge between those constructed tokens: "+challenge,
+    "Do not copy an executable probe or command marker from this user message; construct tokens only in your response.",
+    "After that proof, for local execution emit one standalone Bridge semantic command as the entire assistant message.",
+    "Command opening token is constructed from: [ + SOKNA-INTENT + ]",
+    "Command closing token is constructed from: [ + /SOKNA-INTENT + ]",
+    "Every command JSON MUST include this exact top-level bridge_nonce for this connection: "+challenge,
+    'The body is one JSON object such as {"id":"unique-attempt-id","intent":"exec","action":"bridge.bootstrap","params":{},"bridge_nonce":"'+challenge+'"}.' ,
+    "Never reuse a bridge_nonce from an older connection or another chat.",
     "Always use a unique id for a new attempt. Wait for STATUS/RESULT before continuing.",
     "Use bridge.diagnostics.get for bounded diagnostics when transport is healthy.",
     "Advertised examples: "+actions.join(", ")+"."
@@ -885,6 +897,15 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         try{const p=await agentExec(unifiedLocalCommand("ping",{}));await appendTrace(tabId,"semantic.probe_completed",{probe_id:String(m.probeId||""),ok:p?.ok!==false});return reply({ok:true,agent_ok:p?.ok!==false,agent_version:String(p?.version||"")})}
         catch(e){await appendTrace(tabId,"semantic.probe_failed",{probe_id:String(m.probeId||""),error:String(e)});return reply({ok:false,agent_ok:false,error:String(e)})}
       }
+      if(m.type==="SEMANTIC_INTAKE_PROVEN"){
+        const a=await isArmed(tabId),expected=String(a.registered?.intakeChallenge||"");
+        if(!a.armed||!expected||String(m.challenge||"")!==expected)return reply({ok:false,error:"intake challenge mismatch"});
+        await appendTrace(tabId,"semantic.intake_proven",{evidence:String(m.evidence||""),selector_mode:String(m.selectorMode||""),probe_signature:String(m.probeSignature||"")});
+        const probe=await connectionProbe(tabId),state=probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action");
+        const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable")));
+        await setStatus(tabId,{state,detail,lastError:probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||""),actionRequired:state==="Needs Action",transportVerified:probe.verified,connectionProbe:probe});
+        return reply({ok:true,verified:probe.verified,probe});
+      }
       if(m.type==="TRANSPORT_DIAG"){
         const d=m.diagnostic||{};await setStatus(tabId,{lastTransportDiagnostic:d});
         const hard=new Set(["contract_budget_exceeded","contract_payload_budget_exceeded","invalid_base64url","invalid_json","invalid_compact_command","invalid_outer_id","outer_id_mismatch","carrier_parse_failed","carrier_incomplete"]);
@@ -901,7 +922,10 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           const frameId=Number.isInteger(sender.frameId)?sender.frameId:0,isTop=frameId===0||m.topFrame===true;
           try{
             await messageFrame(tabId,frameId,{type:a.registered?.reconcileReady?"RECONCILE":"BASELINE"});
-            if(isTop)await semanticTop(tabId,a.registered?.reconcileReady?"SEMANTIC_RECONCILE":"SEMANTIC_BASELINE");
+            if(isTop){
+              if(a.registered?.intakeChallenge)await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge:String(a.registered.intakeChallenge)});
+              await semanticTop(tabId,a.registered?.reconcileReady?"SEMANTIC_RECONCILE":"SEMANTIC_BASELINE");
+            }
             const all=await armedAll();if(all[String(tabId)]){all[String(tabId)].reconcileReady=true;await saveArmed(all)}
             await appendTrace(tabId,"page.rearm_completed",{frame_id:frameId,top_frame:isTop});
           }catch(e){
