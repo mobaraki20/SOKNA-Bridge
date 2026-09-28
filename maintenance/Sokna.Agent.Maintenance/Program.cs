@@ -75,6 +75,10 @@ internal static class Program
             legacy_port = preparation.LegacyPort,
             legacy_autostart_removed = preparation.LegacyAutostartRemoved,
             legacy_config_path = preparation.LegacyConfigPath,
+            recovered_untracked_runtime_stopped = preparation.RecoveredUntrackedRuntimeStopped,
+            recovered_untracked_runtime_pid = preparation.RecoveredUntrackedRuntimePid,
+            recovered_untracked_runtime_port = preparation.RecoveredUntrackedRuntimePort,
+            recovered_untracked_runtime_source = preparation.RecoveredUntrackedRuntimeSource,
             prepared_at = DateTimeOffset.UtcNow.ToString("O")
         });
         return new

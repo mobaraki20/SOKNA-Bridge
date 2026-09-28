@@ -116,11 +116,41 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
     $ready=$false
     for($i=0;$i-lt40;$i++){Start-Sleep -Milliseconds 250;if((Test-Path (Join-Path $legacyRoot 'agent.pid'))-and(Test-LegacyPing $port $token)){$ready=$true;break}}
     if(-not$ready){throw 'LEGACY_ACCEPTANCE_AGENT_DID_NOT_START'}
+    $legacyPidPath=Join-Path $legacyRoot 'agent.pid'
+    Remove-Item -LiteralPath $legacyPidPath -Force
+    if($null-eq(Get-Process -Id $legacyProc.Id -ErrorAction SilentlyContinue)){throw 'LEGACY_ACCEPTANCE_UNTRACKED_AGENT_NOT_RUNNING'}
+    Write-Host 'P1_LEGACY_UNTRACKED_RUNTIME_INJECTED'
 
     Invoke-ProcessChecked $Setup @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$legacyInstall+'"'),('/ArtifactRoot="'+$legacyArtifacts+'"'),'/TASKS=""',('/LOG="'+$legacySetupLog+'"'))|Out-Null
     Start-Sleep -Milliseconds 300
-    $stillAlive=Get-Process -Id $legacyProc.Id -ErrorAction SilentlyContinue
-    if($null-ne$stillAlive){throw 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING'}
+    $prepPath=Join-Path $legacyInstall 'state\install-preparation.json'
+    if(-not(Test-Path -LiteralPath $prepPath -PathType Leaf)){
+      Write-Host 'P1_LEGACY_PREPARATION_FILE_MISSING_DIAGNOSTICS'
+      if(Test-Path -LiteralPath $legacySetupLog -PathType Leaf){
+        Write-Host 'P1_LEGACY_SETUP_LOG_TAIL'
+        Get-Content -LiteralPath $legacySetupLog -Tail 80 -ErrorAction SilentlyContinue|Write-Host
+      }
+      $maintLogDir=Join-Path $legacyInstall 'logs\maintenance'
+      if(Test-Path -LiteralPath $maintLogDir -PathType Container){
+        Get-ChildItem -LiteralPath $maintLogDir -File|Sort-Object LastWriteTime -Descending|Select-Object -First 3|ForEach-Object{
+          Write-Host ('P1_LEGACY_MAINT_LOG '+$_.FullName)
+          Get-Content -LiteralPath $_.FullName -Tail 50 -ErrorAction SilentlyContinue|Write-Host
+        }
+      }
+      throw 'LEGACY_ACCEPTANCE_PREPARATION_FILE_MISSING'
+    }
+    $prep=Get-Content $prepPath -Raw|ConvertFrom-Json
+    Write-Host ('P1_LEGACY_PREPARATION '+($prep|ConvertTo-Json -Compress))
+    $listenerPids=@(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue|Select-Object -ExpandProperty OwningProcess -Unique)
+    Write-Host ('P1_LEGACY_POST_SETUP_LISTENERS '+($listenerPids -join ','))
+    $legacyCim=Get-CimInstance Win32_Process -Filter ('ProcessId='+$legacyProc.Id) -ErrorAction SilentlyContinue
+    if($null-ne$legacyCim){Write-Host ('P1_LEGACY_ORIGINAL_PROCESS pid='+$legacyProc.Id+' command='+[string]$legacyCim.CommandLine)}
+    try{$legacyProc.Refresh()}catch{}
+    if(-not$legacyProc.HasExited){
+      $legacyProc.WaitForExit(3000)|Out-Null
+      $legacyProc.Refresh()
+    }
+    if(-not$legacyProc.HasExited){throw 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING'}
     if(-not(Test-Path -LiteralPath (Join-Path $legacyRoot 'config.json') -PathType Leaf)){throw 'LEGACY_ACCEPTANCE_SOURCE_CONFIG_REMOVED'}
     if(-not(Test-Path -LiteralPath $legacyAgent -PathType Leaf)){throw 'LEGACY_ACCEPTANCE_SOURCE_AGENT_REMOVED'}
     $legacyRun=$null
@@ -130,9 +160,13 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
     $newCfg=Get-Content (Join-Path $legacyInstall 'config.json') -Raw|ConvertFrom-Json
     if([int]$newCfg.port-ne$port){throw 'LEGACY_ACCEPTANCE_PORT_NOT_MIGRATED'}
     if([string]$newCfg.token-ne$token){throw 'LEGACY_ACCEPTANCE_TOKEN_NOT_MIGRATED'}
-    $prep=Get-Content (Join-Path $legacyInstall 'state\install-preparation.json') -Raw|ConvertFrom-Json
     if(-not[bool]$prep.legacy_runtime_detected -or -not[bool]$prep.legacy_runtime_stopped){throw 'LEGACY_ACCEPTANCE_PREPARATION_EVIDENCE_MISSING'}
+    if(-not[bool]$prep.recovered_untracked_runtime_stopped){throw 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_EVIDENCE_MISSING'}
+    if([int]$prep.recovered_untracked_runtime_pid-ne$legacyProc.Id){throw 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_PID_MISMATCH'}
+    if([int]$prep.recovered_untracked_runtime_port-ne$port){throw 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_PORT_MISMATCH'}
+    if([string]$prep.recovered_untracked_runtime_source-ne'legacy-config'){throw 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_SOURCE_MISMATCH'}
     if(-not[bool]$prep.legacy_autostart_removed){throw 'LEGACY_ACCEPTANCE_AUTOSTART_EVIDENCE_MISSING'}
+    Write-Host 'P1_LEGACY_UNTRACKED_RUNTIME_RECOVERY_PASS'
     $legacyMaint=Join-Path $legacyInstall 'Sokna.Agent.Maintenance.exe'
     Invoke-Maint $legacyMaint $legacyInstall @('health','--expected-version','2.7.1')|Out-Null
 
