@@ -71,7 +71,7 @@ jobs:
   validate:
     runs-on: windows-2025
     env:
-      SOKNA_VALIDATION_PROFILE: full # TEMP validation-only on fix/semantic-intake-proof-v2; revert before merge
+      SOKNA_VALIDATION_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || (github.ref == 'refs/heads/release/2.7.1' && 'full' || 'quick') }}
       SOKNA_EXPECTED_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_commit || github.sha }}
       SOKNA_CANDIDATE_REF: ${{ github.ref == 'refs/heads/release/2.7.1' && 'sokna-agent-2.7.1-r1' || 'sokna-agent-2.6.0-rc9' }}
     timeout-minutes: 30
