@@ -1,26 +1,28 @@
 {
   "manifest_version": 3,
-  "name": "SOKNA Bridge V3.10.9 Unified Semantic Transport",
-  "version": "3.10.9",
-  "description": "Unified semantic command transport with fail-closed validation, durable job delivery and verified bidirectional artifact transfer.",
+  "name": "SOKNA Bridge",
+  "version": "3.11.0",
+  "description": "Connect ChatGPT to the local SOKNA Agent with controlled workspaces, diagnostics, artifacts and browser helpers.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn4IhDMX6Ve4w4h2j+EqGj6sOZhBHB8AbZig6e89Nw7DCe4KGjXkTQggULIs4F/hmtQTGFdfF6Wv37dRhdchBKNqU98vLUJNf9qv0rHb2/oulzTsQSlHLsJB51otgBm0yQa1I3k+5aj/N7rAKi9loxM8h4WJwzLN/Wn48c7KxPrOet15Edt8tjceJQaqqwRPqBxpeoI1fntt9ZuYJg9CFd6YqorO1WWXQ/TnlP5f+EURfDV+qwGEcFmEi6wmUL2TmSAwIh4O5imxwVrvt1Tu3Mb5TGSg9X+C7T/UiSrEn5uIkuMo/ulC600YX/VMazbjGxmnklFpvxod42LtZHhIcFwIDAQAB",
   "permissions": [
     "storage",
     "alarms",
     "activeTab",
     "nativeMessaging",
-    "webNavigation"
+    "webNavigation",
+    "downloads"
   ],
   "background": {
     "service_worker": "background_bootstrap.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "SOKNA Bridge V3.10.9"
+    "default_title": "SOKNA Bridge"
   },
   "content_scripts": [
     {
       "matches": [
+        "https://chatgpt.com/*",
         "https://gpt.arzanai.com/*"
       ],
       "js": [
@@ -39,10 +41,25 @@
       "all_frames": true,
       "match_about_blank": true,
       "match_origin_as_fallback": true
+    },
+    {
+      "matches": [
+        "https://www.instagram.com/*"
+      ],
+      "js": [
+        "instagram_capture.js"
+      ],
+      "run_at": "document_idle",
+      "world": "ISOLATED",
+      "all_frames": false
     }
   ],
   "host_permissions": [
-    "https://gpt.arzanai.com/*"
+    "https://chatgpt.com/*",
+    "https://gpt.arzanai.com/*",
+    "https://www.instagram.com/*",
+    "https://*.cdninstagram.com/*",
+    "https://*.fbcdn.net/*"
   ],
   "minimum_chrome_version": "111"
 }

@@ -11,14 +11,14 @@ def need(path,*terms):
 need(Path('docs/contracts/ADVANCED_WORKSPACE_PERMISSION_CONTRACT_V1_FA.md'),'intersection','ephemeral_checkout','sokna-remote-workspace-request-v1','cross-job')
 need(Path('native/agent/workspace_advanced.go'),'WorkspaceGrantSchema','RegisterEphemeral','RegisterRemote','CreateGrant','EffectiveAuthorizePath','CleanupAdvanced','grant exceeds workspace policy','grant workspace/job binding mismatch')
 need(Path('native/agent/workspace_advanced_test.go'),'TestGrantIntersectionAndEscalationBlocked','TestGrantExpiryRevocationAndCrossJob','TestEphemeralOwnershipAndOrphanCleanup','TestRemoteWorkspaceBoundary','TestJobScopedAccessRequiresGrant')
-ps=need(Path('native/runtime/v2.6.1/Sokna.Workspace.psm1'),'New-SoknaWorkspaceGrant','Get-SoknaWorkspaceEffectiveView','Register-SoknaRemoteWorkspace','Register-SoknaEphemeralWorkspace','Invoke-SoknaRemoteWorkspaceAdapter','Invoke-SoknaWorkspaceAdvancedCleanup','WORKSPACE_GRANT_ESCALATION_BLOCKED','REMOTE_PATH_ESCAPE','EPHEMERAL_CLEANUP_ESCAPE')
-agent=need(Path('native/runtime/v2.6.1/agent.ps1'),'workspace.policy.status','workspace.grant.create','workspace.grant.revoke','workspace.remote.register','workspace.remote.exec','workspace.ephemeral.checkout','workspace.advanced.cleanup','Get-SoknaWorkspaceEffectiveView')
+ps=need(Path('native/runtime/v2.7.0/Sokna.Workspace.psm1'),'New-SoknaWorkspaceGrant','Get-SoknaWorkspaceEffectiveView','Register-SoknaRemoteWorkspace','Register-SoknaEphemeralWorkspace','Invoke-SoknaRemoteWorkspaceAdapter','Invoke-SoknaWorkspaceAdvancedCleanup','WORKSPACE_GRANT_ESCALATION_BLOCKED','REMOTE_PATH_ESCAPE','EPHEMERAL_CLEANUP_ESCAPE')
+agent=need(Path('native/runtime/v2.7.0/agent.ps1'),'workspace.policy.status','workspace.grant.create','workspace.grant.revoke','workspace.remote.register','workspace.remote.exec','workspace.ephemeral.checkout','workspace.advanced.cleanup','Get-SoknaWorkspaceEffectiveView')
 assert "grant_id=$grantId" in agent
 assert "NotePropertyName grant_id" in agent and "NotePropertyName job_id" in agent
-caps=json.loads((ROOT/'native/runtime/v2.6.1/AGENT_CAPABILITIES.json').read_text(encoding='utf-8'))
+caps=json.loads((ROOT/'native/runtime/v2.7.0/AGENT_CAPABILITIES.json').read_text(encoding='utf-8'))
 for a in ['workspace.policy.status','workspace.grant.create','workspace.grant.revoke','workspace.remote.register','workspace.remote.exec','workspace.ephemeral.checkout','workspace.advanced.cleanup']:
     assert a in caps['actions']
-wf=need(Path('.github/workflows/windows-agent-validation.yml'),'test_p5_advanced_workspaces.py','Test-AdvancedWorkspace261.ps1')
+wf=need(Path('.github/workflows/windows-agent-validation.yml'),'test_p5_advanced_workspaces.py','Test-AdvancedWorkspace270.ps1')
 need(Path('docs/status/P5_ADVANCED_WORKSPACES_DEV_VALIDATION.md'),'P5','Windows','not claimed','P6')
 need(Path('docs/handoffs/CURRENT_DEVELOPMENT_HANDOFF_FA.md'),'P5 completion checkpoint — Advanced Workspaces / Permissions')
 manifest=json.loads((ROOT/'docs/status/P5_ADVANCED_WORKSPACES_MANIFEST.json').read_text(encoding='utf-8'))

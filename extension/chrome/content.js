@@ -208,6 +208,42 @@ function stop(){
   try{observer?.disconnect()}catch{};observer=null;
 }
 
+async function postUserText(text){
+  if(window.top!==window)return {ok:false,error:"POST_USER_TEXT must target top frame"};
+  text=String(text||"").trim();if(!text)return {ok:false,error:"text required"};
+  let initial=composer(),draft=textOf(initial).trim();
+  if(draft)return {ok:false,waiting:true,reason:"user_draft",error:"Composer contains user text."};
+  let block=deliveryBlockReason(initial);
+  if(block==="assistant_generating"){
+    for(let i=0;i<240&&block==="assistant_generating";i++){await wait(250);block=deliveryBlockReason(composer())}
+  }
+  if(block)return {ok:false,waiting:true,reason:block,error:"Page is not ready for the Bridge handshake."};
+  for(let attempt=0;attempt<3;attempt++){
+    let el=composer();if(!el){await wait(400);continue}
+    if(textOf(el).trim())return {ok:false,waiting:true,reason:"user_draft",error:"Composer contains user text."};
+    setInput(el,text);await wait(80);el=composer()||el;
+    const b=sendButton(el,text);
+    if(b){
+      try{b.click()}catch{}
+      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method:"user-click"}}
+    }
+    el=composer()||el;
+    const f=nearestForm(el);if(f&&samePayload(textOf(el),text)){
+      try{if(typeof f.requestSubmit==="function")f.requestSubmit();else f.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}))}catch{}
+      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method:"user-requestSubmit"}}
+    }
+    el=composer()||el;
+    if(samePayload(textOf(el),text)){
+      try{
+        const opts={key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true,cancelable:true};
+        el.dispatchEvent(new KeyboardEvent("keydown",opts));el.dispatchEvent(new KeyboardEvent("keypress",opts));el.dispatchEvent(new KeyboardEvent("keyup",opts));
+      }catch{}
+      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method:"user-enter"}}
+    }
+  }
+  return {ok:false,waiting:true,reason:"submit_blocked",error:"Handshake text remains in the composer."};
+}
+
 async function post(payload){
   if(window.top!==window)return {ok:false,error:"POST_RESULT must target top frame"};
   if(resultVisibleInUserTurn(payload))return {ok:true,method:"existing-bubble"};
@@ -281,6 +317,9 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m?.type==="POST_RESULT"){
     if(window.top!==window){reply({ok:false,error:"POST_RESULT must target top frame"});return}
     post(String(m.envelope||"")).then(r=>{lastPostMethod=r?.method||"";lastPostError=r?.ok?"":(r?.error||"Submit failed");reply(r)}).catch(e=>{lastPostError=String(e);reply({ok:false,error:String(e)})});return true;
+  }
+  if(m?.type==="POST_USER_TEXT"){
+    postUserText(String(m.text||"")).then(r=>reply(r)).catch(e=>reply({ok:false,error:String(e)}));return true;
   }
   if(m?.type==="STOP"){stop();reply({ok:true});return}
   if(m?.type==="DIAG"){

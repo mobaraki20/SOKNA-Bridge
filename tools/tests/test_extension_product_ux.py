@@ -1,0 +1,73 @@
+from pathlib import Path
+import json
+
+ROOT=Path(__file__).resolve().parents[2]
+
+def read(path):
+    p=ROOT/path
+    assert p.exists(), f"missing {path}"
+    return p.read_text(encoding="utf-8")
+
+manifest=json.loads(read(Path("extension/chrome/manifest.json")))
+assert manifest["version"]=="3.11.0"
+matches=set()
+for cs in manifest.get("content_scripts",[]):
+    matches.update(cs.get("matches",[]))
+assert "https://chatgpt.com/*" in matches, "official ChatGPT origin missing"
+assert "https://www.instagram.com/*" in matches, "Instagram origin missing"
+assert "downloads" in manifest.get("permissions",[]), "Instagram media download permission missing"
+
+popup=read(Path("extension/chrome/popup.html"))
+for marker in ["Connect this Chat","Instagram Assistant","Advanced diagnostics","باز کردن Control Center"]:
+    assert marker in popup, f"popup UX missing {marker}"
+assert "Test Credentials" not in popup, "developer credential UI must not be in primary popup"
+
+popup_js=read(Path("extension/chrome/popup.js"))
+for marker in ["CONNECT_CHAT","IG_POPUP_DOWNLOAD","IG_POPUP_SCAN","OPEN_CONTROL_CENTER"]:
+    assert marker in popup_js, f"popup integration missing {marker}"
+assert "setInterval" not in popup_js, "popup must not poll Activity continuously"
+
+background=read(Path("extension/chrome/background.js"))
+for marker in [
+    "chatgpt.com","CONNECT_CHAT","instagram.profile.scan","instagram.scan.search",
+    "instagram.scan.get","instagram.media.download","POST_USER_TEXT"
+]:
+    assert marker in background, f"background product integration missing {marker}"
+
+bootstrap=read(Path("extension/chrome/background_bootstrap.js"))
+for marker in ["instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download"]:
+    assert marker in bootstrap, f"extension capability gate missing {marker}"
+
+content=read(Path("extension/chrome/content.js"))
+assert "POST_USER_TEXT" in content, "chat handshake posting path missing"
+
+ig=read(Path("extension/chrome/instagram_capture.js"))
+for marker in ["IG_PROFILE_LINKS","IG_POST_SNAPSHOT","caption","hashtags","mentions","media"]:
+    assert marker in ig, f"Instagram adapter missing {marker}"
+
+selftest=read(Path("extension/chrome/selftest.js"))
+for retired in ["PROTO.accept","PROTO.expand","nextV4Frame","SOKNA3CMD:","SOKNA4CMD:"]:
+    assert retired not in selftest, f"retired self-test protocol remains: {retired}"
+for marker in ["validateEnvelope","agent.capabilities","bridge.bootstrap"]:
+    assert marker in selftest, f"semantic self-test missing {marker}"
+
+host=read(Path("native/host/main.go"))
+for marker in ['"bridge.activity":true','"job.list":true','"job.events":true',"shouldRecordCommandActivity","control.open"]:
+    assert marker in host, f"native host UX/observability guard missing {marker}"
+
+for path in [
+    Path("maintenance/Sokna.Bridge.ControlCenter/Sokna.Bridge.ControlCenter.csproj"),
+    Path("maintenance/Sokna.Bridge.ControlCenter/MainForm.cs"),
+    Path("maintenance/Sokna.Bridge.ControlCenter/WorkspaceDialog.cs"),
+]:
+    read(path)
+
+maintenance=read(Path("maintenance/Sokna.Agent.Maintenance/Program.cs"))
+assert '"settings-apply"' in maintenance
+installer=read(Path("installer/windows/SOKNA.Agent.iss"))
+for marker in ["Sokna.Bridge.ControlCenter.exe","SOKNA Bridge Control Center","postinstall"]:
+    assert marker in installer, f"installer UX missing {marker}"
+build=read(Path("tools/installer/Build-P1Installer.ps1"))
+assert "Sokna.Bridge.ControlCenter" in build and "DOTNET_CONTROL_CENTER_PUBLISH_FAILED" in build
+
+print("PRODUCT_UX_BROWSER_INTEGRATION_CONTRACTS_PASS")

@@ -73,6 +73,26 @@ internal static class AgentConfiguration
         return migrationSource;
     }
 
+    internal static JsonObject ApplyUserSettings(string installRoot, int port, string artifactRoot)
+    {
+        installRoot = Path.GetFullPath(installRoot);
+        artifactRoot = Path.GetFullPath(artifactRoot);
+        if (port < 1024 || port > 65535) throw new ArgumentOutOfRangeException(nameof(port), "Port must be between 1024 and 65535.");
+        ValidateArtifactRoot(installRoot, artifactRoot);
+        foreach (var name in new[] { "incoming", "staging", "accepted", "failed", "cache", "browser", "logs" })
+            Directory.CreateDirectory(Path.Combine(artifactRoot, name));
+        ValidateArtifactRoot(installRoot, artifactRoot);
+        var probe = Path.Combine(artifactRoot, ".settings-write-probe-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(probe, "ok", Encoding.ASCII); File.Delete(probe);
+
+        var configPath = Path.Combine(installRoot, "config.json");
+        var cfg = ReadObject(configPath);
+        cfg["port"] = port;
+        cfg["artifact_root"] = artifactRoot;
+        JsonFiles.WriteAtomic(configPath, cfg);
+        return cfg;
+    }
+
     private static JsonObject ReadObject(string path) => JsonNode.Parse(File.ReadAllText(path, Encoding.UTF8))?.AsObject()
         ?? throw new InvalidDataException($"Config JSON is invalid: {path}");
 

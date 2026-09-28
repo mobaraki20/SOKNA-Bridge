@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Win32;
 
 namespace Sokna.Agent.Maintenance;
 
@@ -22,6 +23,7 @@ internal static class Program
                 "health" => await HealthDiagnostics.HealthAsync(installRoot, opt.GetValueOrDefault("expected-version"), CancellationToken.None),
                 "start" => await Start(installRoot, opt.GetValueOrDefault("expected-version")),
                 "stop" => await Stop(installRoot),
+                "settings-apply" => await ApplySettings(installRoot, Required(opt, "port"), Required(opt, "artifact-root"), Required(opt, "autostart")),
                 "uninstall-prep" => await UninstallPrep(installRoot),
                 "diagnostics" => await Diagnostics(installRoot, Required(opt, "output")),
                 "support-bundle" => await SupportBundle.CreateAsync(installRoot, Required(opt, "output"), CancellationToken.None),
@@ -140,6 +142,70 @@ internal static class Program
         return new { prepared = true, artifact_root_preserved = true };
     }
 
+    private static async Task<object> ApplySettings(string root, string portRaw, string artifactRoot, string autostartRaw)
+    {
+        if (!int.TryParse(portRaw, out var port) || port < 1024 || port > 65535)
+            throw new ArgumentException("Port must be between 1024 and 65535.");
+        if (!bool.TryParse(autostartRaw, out var autostart))
+            throw new ArgumentException("Autostart must be true or false.");
+
+        var configPath = Path.Combine(root, "config.json");
+        if (!File.Exists(configPath)) throw new FileNotFoundException("config.json missing", configPath);
+        var previousConfig = await File.ReadAllTextAsync(configPath);
+        var previousRun = GetAutostartValue();
+        var expectedVersion = ProductVersion(root);
+
+        await Stop(root);
+        try
+        {
+            await ExistingRuntimePreparation.WaitForEndpointAvailableAsync(port, CancellationToken.None);
+            var cfg = AgentConfiguration.ApplyUserSettings(root, port, artifactRoot);
+            SetAutostart(root, autostart);
+            var started = await Start(root, expectedVersion);
+            return new { applied = true, port, artifact_root = cfg["artifact_root"]?.GetValue<string>(), autostart, started };
+        }
+        catch
+        {
+            await File.WriteAllTextAsync(configPath, previousConfig);
+            RestoreAutostart(previousRun);
+            try { await Start(root, expectedVersion); } catch { }
+            throw;
+        }
+    }
+
+    private static string ProductVersion(string root)
+    {
+        try
+        {
+            var path = Path.Combine(root, "manifests", "installed-manifest.json");
+            return JsonNode.Parse(File.ReadAllText(path))?.AsObject()["product_version"]?.GetValue<string>() ?? "";
+        }
+        catch { return ""; }
+    }
+
+    private static string? GetAutostartValue()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+        return key?.GetValue("SOKNA Agent")?.ToString();
+    }
+
+    private static void SetAutostart(string root, bool enabled)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true)
+            ?? throw new InvalidOperationException("Unable to open Windows Run registry key.");
+        if (!enabled) { key.DeleteValue("SOKNA Agent", throwOnMissingValue: false); return; }
+        var launcher = Path.Combine(root, "Sokna.Agent.Launcher.exe");
+        key.SetValue("SOKNA Agent", $"\"{launcher}\" start --install-root \"{root}\"", RegistryValueKind.String);
+    }
+
+    private static void RestoreAutostart(string? value)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+        if (key is null) return;
+        if (string.IsNullOrWhiteSpace(value)) key.DeleteValue("SOKNA Agent", throwOnMissingValue: false);
+        else key.SetValue("SOKNA Agent", value, RegistryValueKind.String);
+    }
+
     private static async Task<object> Diagnostics(string root, string output)
     {
         var data = await HealthDiagnostics.DiagnosticsAsync(root, CancellationToken.None);
@@ -167,5 +233,5 @@ internal static class Program
     }
     private static string Required(Dictionary<string, string> d, string k) => d.TryGetValue(k, out var v) && !string.IsNullOrWhiteSpace(v) ? v : throw new ArgumentException("Missing --" + k);
     private static string Get(Dictionary<string, string> d, string k, string fallback) => d.TryGetValue(k, out var v) && !string.IsNullOrWhiteSpace(v) ? v : fallback;
-    private static void Help() => Console.WriteLine("SOKNA Agent Maintenance: initialize|preflight|status|health|start|stop|uninstall-prep|diagnostics|support-bundle|repair|upgrade|rollback");
+    private static void Help() => Console.WriteLine("SOKNA Agent Maintenance: initialize|preflight|status|health|start|stop|settings-apply|uninstall-prep|diagnostics|support-bundle|repair|upgrade|rollback");
 }

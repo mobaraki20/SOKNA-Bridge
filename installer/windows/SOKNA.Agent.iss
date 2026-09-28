@@ -1,7 +1,7 @@
-#define MyAppName "SOKNA Agent"
-#define MyAppVersion "2.6.1"
+#define MyAppName "SOKNA Bridge"
+#define MyAppVersion "2.7.0"
 #define MyPublisher "SOKNA"
-#define MyExeName "Sokna.Agent.Maintenance.exe"
+#define MyExeName "Sokna.Bridge.ControlCenter.exe"\n#define MaintenanceExeName "Sokna.Agent.Maintenance.exe"
 #define PayloadRoot "..\..\artifacts\windows\installer-payload"
 
 [Setup]
@@ -20,7 +20,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 WizardStyle=modern
 OutputDir=..\..\artifacts\windows\setup
-OutputBaseFilename=SOKNA-Agent-Setup-{#MyAppVersion}-x64
+OutputBaseFilename=SOKNA-Bridge-Setup-{#MyAppVersion}-x64
 Compression=lzma2/ultra64
 SolidCompression=yes
 CloseApplications=yes
@@ -33,17 +33,17 @@ UninstallDisplayIcon={app}\{#MyExeName}
 ChangesEnvironment=no
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a &desktop shortcut for SOKNA Agent status"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
+Name: "desktopicon"; Description: "Create a &desktop shortcut for SOKNA Bridge"; GroupDescription: "Additional shortcuts:"; Flags: checkedonce
 Name: "autostart"; Description: "Start SOKNA Agent automatically when I sign in"; GroupDescription: "Startup:"; Flags: checkedonce
 
 [Files]
 Source: "{#PayloadRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\SOKNA Agent Status"; Filename: "{app}\{#MyExeName}"; Parameters: "status --install-root ""{app}"""; WorkingDir: "{app}"
-Name: "{group}\Create Support Bundle"; Filename: "{app}\{#MyExeName}"; Parameters: "support-bundle --install-root ""{app}"" --output ""{userdocs}\SOKNA-Agent-Support.zip"""; WorkingDir: "{app}"
+Name: "{group}\SOKNA Bridge"; Filename: "{app}\{#MyExeName}"; WorkingDir: "{app}"
+Name: "{group}\Create Support Bundle"; Filename: "{app}\{#MaintenanceExeName}"; Parameters: "support-bundle --install-root ""{app}"" --output ""{userdocs}\SOKNA-Bridge-Support.zip"""; WorkingDir: "{app}"
 Name: "{group}\Extension Files"; Filename: "{app}\extension"
-Name: "{userdesktop}\SOKNA Agent Status"; Filename: "{app}\{#MyExeName}"; Parameters: "status --install-root ""{app}"""; Tasks: desktopicon; WorkingDir: "{app}"
+Name: "{userdesktop}\SOKNA Bridge"; Filename: "{app}\{#MyExeName}"; Tasks: desktopicon; WorkingDir: "{app}"
 
 [Registry]
 Root: HKCU; Subkey: "Software\Google\Chrome\NativeMessagingHosts\com.sokna.bridge.v3"; ValueType: string; ValueName: ""; ValueData: "{app}\native-host\com.sokna.bridge.v3.json"; Flags: uninsdeletekey
@@ -51,7 +51,10 @@ Root: HKCU; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\com.sokna.brid
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "SOKNA Agent"; ValueData: """{app}\Sokna.Agent.Launcher.exe"" start --install-root ""{app}"""; Tasks: autostart; Flags: uninsdeletevalue
 
 [UninstallRun]
-Filename: "{app}\{#MyExeName}"; Parameters: "uninstall-prep --install-root ""{app}"""; Flags: runhidden skipifdoesntexist
+Filename: "{app}\{#MaintenanceExeName}"; Parameters: "uninstall-prep --install-root ""{app}"""; Flags: runhidden skipifdoesntexist
+
+[Run]
+Filename: "{app}\{#MyExeName}"; Description: "Open SOKNA Bridge Control Center"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var
@@ -104,7 +107,7 @@ var
 begin
   FullParams := Action + ' --install-root "' + ExpandConstant('{app}') + '" ' + Params;
   Log('Maintenance action: ' + Action);
-  if not Exec(ExpandConstant('{app}\{#MyExeName}'), FullParams, ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  if not Exec(ExpandConstant('{app}\{#MaintenanceExeName}'), FullParams, ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     RaiseException('Unable to execute maintenance action ' + Action + ': ' + SysErrorMessage(ResultCode));
   if ResultCode <> 0 then
     RaiseException('Maintenance action ' + Action + ' failed with exit code ' + IntToStr(ResultCode) + '. Review the Setup and maintenance logs.');
@@ -117,7 +120,7 @@ begin
   if CurStep = ssPostInstall then
   begin
     RunRequired('initialize', '--artifact-root "' + GetArtifactRoot('') + '"');
-    RunRequired('start', '--expected-version "2.6.1"');
+    RunRequired('start', '--expected-version "2.7.0"');
   end;
   if CurStep = ssDone then
   begin

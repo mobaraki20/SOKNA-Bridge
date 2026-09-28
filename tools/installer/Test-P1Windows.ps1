@@ -134,7 +134,7 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
     if(-not[bool]$prep.legacy_runtime_detected -or -not[bool]$prep.legacy_runtime_stopped){throw 'LEGACY_ACCEPTANCE_PREPARATION_EVIDENCE_MISSING'}
     if(-not[bool]$prep.legacy_autostart_removed){throw 'LEGACY_ACCEPTANCE_AUTOSTART_EVIDENCE_MISSING'}
     $legacyMaint=Join-Path $legacyInstall 'Sokna.Agent.Maintenance.exe'
-    Invoke-Maint $legacyMaint $legacyInstall @('health','--expected-version','2.6.1')|Out-Null
+    Invoke-Maint $legacyMaint $legacyInstall @('health','--expected-version','2.7.0')|Out-Null
 
     $uninstaller=Get-ChildItem $legacyInstall -Filter 'unins*.exe' -File|Select-Object -First 1
     if(-not$uninstaller){throw 'LEGACY_ACCEPTANCE_UNINSTALLER_MISSING'}
@@ -153,7 +153,7 @@ function Invoke-Maint([string]$Exe,[string]$InstallRoot,[string[]]$CommandArgs,[
 }
 
 if([string]::IsNullOrWhiteSpace($SetupPath)){
-  $s=Get-ChildItem (Join-Path $RepoRoot 'artifacts\windows\setup') -Filter 'SOKNA-Agent-Setup-*.exe' -File|Select-Object -First 1
+  $s=Get-ChildItem (Join-Path $RepoRoot 'artifacts\windows\setup') -Filter 'SOKNA-Bridge-Setup-*.exe' -File|Select-Object -First 1
   if(-not $s){throw 'SETUP_EXE_MISSING'};$SetupPath=$s.FullName
 }
 $caseRoot=Join-Path $env:TEMP ('sokna-p1-ci-'+[Guid]::NewGuid().ToString('N'))
@@ -163,9 +163,15 @@ try{
   Invoke-LegacyRunningSetupAcceptance $SetupPath $RepoRoot $caseRoot
   Invoke-ProcessChecked $SetupPath @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$install+'"'),('/ArtifactRoot="'+$artifact+'"'),'/TASKS=""',('/LOG="'+$setupLog+'"'))|Out-Null
   $maint=Join-Path $install 'Sokna.Agent.Maintenance.exe';if(-not(Test-Path $maint)){throw 'MAINTENANCE_EXE_MISSING_AFTER_INSTALL'}
-  Invoke-Maint $maint $install @('health','--expected-version','2.6.1')|Out-Null
+  $control=Join-Path $install 'Sokna.Bridge.ControlCenter.exe';if(-not(Test-Path $control)){throw 'CONTROL_CENTER_EXE_MISSING_AFTER_INSTALL'}
+  $ccSelf=Join-Path $caseRoot 'control-center-self-test.json'
+  Invoke-ProcessChecked $control @('--self-test','--install-root',$install,'--output',$ccSelf)|Out-Null
+  if(-not(Test-Path $ccSelf)){throw 'CONTROL_CENTER_SELF_TEST_OUTPUT_MISSING'}
+  $ccObj=Get-Content $ccSelf -Raw|ConvertFrom-Json;if(-not[bool]$ccObj.ok){throw 'CONTROL_CENTER_SELF_TEST_FAILED'}
+  Write-Host 'P1_CONTROL_CENTER_SELF_TEST_PASS'
+  Invoke-Maint $maint $install @('health','--expected-version','2.7.0')|Out-Null
   Invoke-ProcessChecked $SetupPath @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$install+'"'),('/ArtifactRoot="'+$artifact+'"'),'/TASKS=""',('/LOG="'+(Join-Path $caseRoot 'active-reinstall.log')+'"'))|Out-Null
-  Invoke-Maint $maint $install @('health','--expected-version','2.6.1')|Out-Null
+  Invoke-Maint $maint $install @('health','--expected-version','2.7.0')|Out-Null
   $prep=Get-Content (Join-Path $install 'state\install-preparation.json') -Raw|ConvertFrom-Json
   if(-not[bool]$prep.current_runtime_stopped){throw 'ACTIVE_REINSTALL_DID_NOT_STOP_OWNED_RUNTIME'}
   Write-Host 'P1_ACTIVE_RUNTIME_REINSTALL_ACCEPTANCE_PASS'
@@ -184,28 +190,28 @@ try{
   Invoke-Maint $maint $install @('repair','--manifest',$manifest,'--payload-root',$payload)|Out-Null
   if((Sha $agent)-ne(Sha (Join-Path $payload 'runtime\agent.ps1'))){throw 'REPAIR_DID_NOT_RESTORE_RUNTIME'}
 
-  $v262=Join-Path $caseRoot 'payload-2.6.2';$m262=New-SyntheticPayload $payload $v262 '2.6.2' -AddObsolete
-  Invoke-Maint $maint $install @('upgrade','--manifest',$m262,'--payload-root',$v262)|Out-Null
+  $v271=Join-Path $caseRoot 'payload-2.7.1';$m271=New-SyntheticPayload $payload $v271 '2.7.1' -AddObsolete
+  Invoke-Maint $maint $install @('upgrade','--manifest',$m271,'--payload-root',$v271)|Out-Null
   if(-not(Test-Path (Join-Path $install 'runtime\obsolete-ci.txt'))){throw 'UPGRADE_ADD_FILE_FAILED'}
 
-  $v263=Join-Path $caseRoot 'payload-2.6.3';$m263=New-SyntheticPayload $v262 $v263 '2.6.3' -RemoveObsolete
-  Invoke-Maint $maint $install @('upgrade','--manifest',$m263,'--payload-root',$v263)|Out-Null
+  $v272=Join-Path $caseRoot 'payload-2.7.2';$m272=New-SyntheticPayload $v271 $v272 '2.7.2' -RemoveObsolete
+  Invoke-Maint $maint $install @('upgrade','--manifest',$m272,'--payload-root',$v272)|Out-Null
   if(Test-Path (Join-Path $install 'runtime\obsolete-ci.txt')){throw 'UPGRADE_REMOVED_FILE_STALE'}
   $status=& $maint status --install-root $install|ConvertFrom-Json;$tx=[string]$status.data.ownership.activation_tx_id
   if([string]::IsNullOrWhiteSpace($tx)){throw 'UPGRADE_TX_ID_MISSING'}
   Invoke-Maint $maint $install @('rollback','--tx-id',$tx)|Out-Null
   if(-not(Test-Path (Join-Path $install 'runtime\obsolete-ci.txt'))){throw 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE'}
 
-  $bad=Join-Path $caseRoot 'payload-bad';$mbad=New-SyntheticPayload $v262 $bad '2.6.3' -AddObsolete -BrokenRuntime
+  $bad=Join-Path $caseRoot 'payload-bad';$mbad=New-SyntheticPayload $v271 $bad '2.7.2' -AddObsolete -BrokenRuntime
   Invoke-Maint $maint $install @('upgrade','--manifest',$mbad,'--payload-root',$bad) @(10)|Out-Null
-  Invoke-Maint $maint $install @('health','--expected-version','2.6.2')|Out-Null
+  Invoke-Maint $maint $install @('health','--expected-version','2.7.1')|Out-Null
 
   $uninstaller=Get-ChildItem $install -Filter 'unins*.exe' -File|Select-Object -First 1;if(-not $uninstaller){throw 'UNINSTALLER_MISSING'}
   Invoke-ProcessChecked $uninstaller.FullName @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART')|Out-Null
   if(-not(Test-Path $artifact)){throw 'UNINSTALL_REMOVED_ARTIFACT_ROOT'}
   $locator=Join-Path $env:LOCALAPPDATA 'SOKNA\Agent\install-locator.json'
   if(Test-Path $locator){$l=Get-Content $locator -Raw|ConvertFrom-Json;if([string]$l.install_root -eq $install){throw 'UNINSTALL_LEFT_ACTIVE_LOCATOR'}}
-  [ordered]@{ok=$true;case_root=$caseRoot;artifact_root_preserved=$true;repair=$true;upgrade=$true;rollback=$true;automatic_rollback=$true;legacy_running_setup=$true;active_runtime_reinstall=$true;uninstall=$true}|ConvertTo-Json -Compress
+  [ordered]@{ok=$true;case_root=$caseRoot;artifact_root_preserved=$true;repair=$true;upgrade=$true;rollback=$true;automatic_rollback=$true;legacy_running_setup=$true;active_runtime_reinstall=$true;control_center=$true;uninstall=$true}|ConvertTo-Json -Compress
 }
 finally{
   if(Test-Path $install){try{$m=Join-Path $install 'Sokna.Agent.Maintenance.exe';if(Test-Path $m){& $m stop --install-root $install|Out-Null}}catch{}}

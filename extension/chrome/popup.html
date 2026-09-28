@@ -1,6 +1,56 @@
-<!doctype html><html><head><meta charset="utf-8"><title>SOKNA Bridge V3.10.9</title><style>
-body{font-family:Segoe UI,Arial,sans-serif;width:430px;margin:0;padding:14px;color:#202124;background:#fff}h1{font-size:16px;margin:0 0 10px}h2{font-size:13px;margin:14px 0 7px}#state{padding:8px 10px;border-radius:8px;background:#eee;font-weight:600;margin-bottom:10px}.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}button{border:1px solid #bbb;background:#fff;border-radius:8px;padding:7px 10px;cursor:pointer}button.primary{background:#1769e0;color:#fff;border-color:#1769e0}pre{white-space:pre-wrap;word-break:break-word;background:#f5f5f5;padding:9px;border-radius:8px;max-height:240px;overflow:auto;font-size:11px}small{color:#666}.activity{border:1px solid #ddd;border-radius:10px;overflow:hidden}.activity-head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:#f7f7f7}.activity-body{max-height:330px;overflow:auto}.item{padding:8px 10px;border-top:1px solid #eee;font-size:11px}.item:first-child{border-top:0}.item strong{font-size:12px}.meta{color:#666;margin-top:3px;word-break:break-word}.state-pill{display:inline-block;border:1px solid #bbb;border-radius:999px;padding:1px 6px;margin-left:5px;font-size:10px}.empty{padding:12px;color:#777;font-size:11px}.section-title{padding:7px 10px;background:#fafafa;border-top:1px solid #ddd;border-bottom:1px solid #eee;font-size:11px;font-weight:700}.error{color:#8a1c1c;padding:10px;font-size:11px}.credential{border:1px solid #ddd;border-radius:10px;padding:10px}.field{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}.field label{font-size:11px;font-weight:600}.field input{border:1px solid #bbb;border-radius:7px;padding:7px 8px;font:inherit;font-size:12px}.credential-list{margin-top:8px;border-top:1px solid #eee}.cred-row{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:11px}.cred-row:last-child{border-bottom:0}.cred-main{min-width:0}.cred-id{font-weight:700;word-break:break-word}.cred-user{color:#666;word-break:break-word}.note{font-size:10px;color:#666;margin-top:5px}</style></head><body>
-<h1>SOKNA Bridge V3.10.9</h1><div id="state">Checking…</div><div class="row"><button class="primary" id="enable">Enable on this tab</button><button id="disable">Disable</button></div><div class="row"><button id="host">Test Native Host</button><button id="agent">Test Windows Agent</button><button id="status">Health</button><button id="details">Details</button><button id="selftest">Run Self Test</button></div><small>No debugger. No page overlay. Same browser session.</small>
-<h2>Test Credentials</h2><div class="credential"><div class="field"><label for="credId">Credential ID</label><input id="credId" maxlength="96" autocomplete="off" placeholder="test-admin"></div><div class="field"><label for="credUser">Username</label><input id="credUser" maxlength="512" autocomplete="username" placeholder="qa@example.com"></div><div class="field"><label for="credSecret">Password / Secret</label><input id="credSecret" type="password" maxlength="16384" autocomplete="new-password" placeholder="Stored with Windows DPAPI"></div><div class="row"><button class="primary" id="saveCredential">Save / Replace</button><button id="refreshCredentials">Refresh</button></div><div class="note">Secrets go directly to the local Native Host and are never written to Chat, recipe files, or diagnostics.</div><div id="credentialList" class="credential-list"><div class="empty">Loading credentials…</div></div></div>
-<h2>Activity Monitor</h2><div class="activity"><div class="activity-head"><span id="activitySummary">Loading agent activity…</span><button id="refreshActivity">Refresh</button></div><div id="activity" class="activity-body"><div class="empty">Loading…</div></div></div>
-<h2>Diagnostics</h2><pre id="out"></pre><script src="popup.js"></script></body></html>
+<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>SOKNA Bridge</title>
+<style>
+:root{font-family:"Segoe UI",Tahoma,Arial,sans-serif;color:#202124;background:#f6f7f9}
+*{box-sizing:border-box}body{width:400px;margin:0;padding:14px;background:#f6f7f9}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.brand{font-size:18px;font-weight:700}.ver{font-size:11px;color:#777}
+.card{background:#fff;border:1px solid #e1e4e8;border-radius:12px;padding:13px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.title{font-size:13px;font-weight:700;margin-bottom:7px}.muted{font-size:11px;color:#666;line-height:1.65}.status{display:flex;gap:7px;align-items:center;font-size:12px;font-weight:600;margin:7px 0}.dot{width:9px;height:9px;border-radius:50%;background:#999}.dot.ok{background:#17864b}.dot.warn{background:#d08200}.dot.bad{background:#b3261e}
+.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}button{font:inherit;font-size:12px;border:1px solid #c9cdd3;background:#fff;border-radius:9px;padding:8px 11px;cursor:pointer}button.primary{background:#1769e0;border-color:#1769e0;color:#fff}button.danger{color:#9b1c1c}button:disabled{opacity:.55;cursor:default}
+input,select{font:inherit;font-size:12px;border:1px solid #c9cdd3;border-radius:8px;padding:7px;background:#fff}
+.hidden{display:none!important}.msg{font-size:11px;line-height:1.55;margin-top:8px;white-space:pre-wrap}.msg.ok{color:#11643d}.msg.err{color:#9b1c1c}
+details{background:#fff;border:1px solid #e1e4e8;border-radius:12px;padding:10px 12px}summary{cursor:pointer;font-size:12px;font-weight:700}
+pre{direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-word;background:#f6f7f9;padding:9px;border-radius:8px;max-height:220px;overflow:auto;font-size:10px}
+.activity{max-height:180px;overflow:auto;font-size:10px}.event{border-top:1px solid #eee;padding:6px 0}.event:first-child{border-top:0}
+</style></head><body>
+<div class="header"><div><div class="brand">SOKNA Bridge</div><div class="ver">Extension 3.11.0</div></div><div id="pageType" class="ver">در حال بررسی…</div></div>
+
+<div class="card">
+  <div class="title">وضعیت سیستم</div>
+  <div class="status"><span id="agentDot" class="dot"></span><span id="agentState">در حال بررسی Agent…</span></div>
+  <div class="muted">Agent اجرای محلی را انجام می‌دهد. برای تنظیم Workspaceها و تنظیمات اصلی از Control Center استفاده کن.</div>
+  <div class="actions"><button id="controlCenter">باز کردن Control Center</button></div>
+</div>
+
+<div id="chatCard" class="card hidden">
+  <div class="title">اتصال به ChatGPT</div>
+  <div id="chatState" class="status"><span id="chatDot" class="dot"></span><span>این گفتگو متصل نیست</span></div>
+  <div class="muted">با اتصال این گفتگو، Bridge یک session امن باز می‌کند و روش استفاده از قابلیت‌های محلی را به همین Chat معرفی می‌کند.</div>
+  <div class="actions"><button id="connectChat" class="primary">Connect this Chat</button><button id="disconnectChat" class="hidden">قطع اتصال</button></div>
+  <div id="chatMsg" class="msg"></div>
+</div>
+
+<div id="igCard" class="card hidden">
+  <div class="title">Instagram Assistant</div>
+  <div id="igState" class="muted">همان اکانت لاگین‌شده‌ی این مرورگر استفاده می‌شود.</div>
+  <div class="actions">
+    <button id="igDownload" class="primary">دانلود مدیای همین پست</button>
+    <select id="igLimit"><option value="10">۱۰ پست</option><option value="25">۲۵ پست</option><option value="50">۵۰ پست</option></select>
+    <button id="igScan">ایندکس این پروفایل</button>
+  </div>
+  <div class="muted" style="margin-top:8px">برای جست‌وجوی موضوعی، بررسی کپشن‌ها، پیدا کردن عکس‌های خاص و تحلیل صفحه، ChatGPT را متصل کن و درخواستت را همان‌جا بنویس.</div>
+  <div id="igMsg" class="msg"></div>
+</div>
+
+<div id="otherCard" class="card hidden">
+  <div class="title">این صفحه ابزار مستقیم ندارد</div>
+  <div class="muted">برای اجرای Bridge روی گفتگو، یک تب ChatGPT باز کن. برای ابزار Instagram، یک تب instagram.com باز کن.</div>
+</div>
+
+<details>
+  <summary>Advanced diagnostics</summary>
+  <div class="muted" style="margin-top:8px">این بخش برای عیب‌یابی است و برای استفاده روزمره لازم نیست.</div>
+  <div class="actions"><button id="hostTest">Native Host</button><button id="agentTest">Agent Ping</button><button id="selfTest">Self Test</button><button id="refreshActivity">Activity</button></div>
+  <div id="activity" class="activity"></div>
+  <pre id="diag"></pre>
+</details>
+<script src="popup.js"></script></body></html>

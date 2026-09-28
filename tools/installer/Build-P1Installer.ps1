@@ -29,15 +29,19 @@ New-Item -ItemType Directory -Path $setupOut -Force|Out-Null
 
 $maintenanceOut=Join-Path $payload '.build-maintenance'
 $launcherOut=Join-Path $payload '.build-launcher'
+$controlOut=Join-Path $payload '.build-control-center'
 & dotnet publish (Join-Path $RepoRoot 'maintenance\Sokna.Agent.Maintenance\Sokna.Agent.Maintenance.csproj') -c $Configuration -r win-x64 --self-contained true -p:PublishSingleFile=true -o $maintenanceOut
 if($LASTEXITCODE-ne0){throw 'DOTNET_MAINTENANCE_PUBLISH_FAILED'}
 & dotnet publish (Join-Path $RepoRoot 'maintenance\Sokna.Agent.Launcher\Sokna.Agent.Launcher.csproj') -c $Configuration -r win-x64 --self-contained true -p:PublishSingleFile=true -o $launcherOut
 if($LASTEXITCODE-ne0){throw 'DOTNET_LAUNCHER_PUBLISH_FAILED'}
+& dotnet publish (Join-Path $RepoRoot 'maintenance\Sokna.Bridge.ControlCenter\Sokna.Bridge.ControlCenter.csproj') -c $Configuration -r win-x64 --self-contained true -p:PublishSingleFile=true -o $controlOut
+if($LASTEXITCODE-ne0){throw 'DOTNET_CONTROL_CENTER_PUBLISH_FAILED'}
 Copy-Item (Join-Path $maintenanceOut 'Sokna.Agent.Maintenance.exe') (Join-Path $payload 'Sokna.Agent.Maintenance.exe') -Force
 Copy-Item (Join-Path $launcherOut 'Sokna.Agent.Launcher.exe') (Join-Path $payload 'Sokna.Agent.Launcher.exe') -Force
-Remove-Item $maintenanceOut,$launcherOut -Recurse -Force
+Copy-Item (Join-Path $controlOut 'Sokna.Bridge.ControlCenter.exe') (Join-Path $payload 'Sokna.Bridge.ControlCenter.exe') -Force
+Remove-Item $maintenanceOut,$launcherOut,$controlOut -Recurse -Force
 
-$runtimeDest=Join-Path $payload 'runtime';Copy-Tree (Join-Path $RepoRoot 'native\runtime\v2.6.1') $runtimeDest
+$runtimeDest=Join-Path $payload 'runtime';Copy-Tree (Join-Path $RepoRoot 'native\runtime\v2.7.0') $runtimeDest
 $extensionDest=Join-Path $payload 'extension';Copy-Tree (Join-Path $RepoRoot 'extension\chrome') $extensionDest
 $hostDest=Join-Path $payload 'native-host';New-Item -ItemType Directory -Path $hostDest -Force|Out-Null
 Push-Location (Join-Path $RepoRoot 'native\host')
@@ -65,7 +69,7 @@ $files=@(Get-ChildItem $payload -File -Recurse|Where-Object{$_.Name-ne'installed
   $rel=$_.FullName.Substring($payload.Length).TrimStart('\').Replace('\','/')
   $owner=if($rel.StartsWith('runtime/',[StringComparison]::OrdinalIgnoreCase)){'maintenance'}else{'installer'};[ordered]@{path=$rel;sha256=(Sha $_.FullName);bytes=$_.Length;owner=$owner}
 }|Sort-Object path)
-$manifest=[ordered]@{schema='sokna-agent-install-manifest-v1';product_version='2.6.1';launcher_version='1.0.0';source_commit=$sourceCommit;files=$files}
+$manifest=[ordered]@{schema='sokna-agent-install-manifest-v1';product_version='2.7.0';launcher_version='1.0.0';source_commit=$sourceCommit;files=$files}
 $manifestDir=Join-Path $payload 'manifests';New-Item -ItemType Directory -Path $manifestDir -Force|Out-Null
 [IO.File]::WriteAllText((Join-Path $manifestDir 'installed-manifest.json'),($manifest|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
 

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -122,6 +123,7 @@ func resolveConfigPath() (string, error) {
 }
 
 func installRoot()(string,error){p,err:=resolveConfigPath();if err!=nil{return "",err};return filepath.Dir(p),nil}
+func openControlCenter()error{root,err:=installRoot();if err!=nil{return err};exe:=filepath.Join(root,"Sokna.Bridge.ControlCenter.exe");if st,e:=os.Stat(exe);e!=nil||st.IsDir(){return fmt.Errorf("control center not installed: %s",exe)};cmd:=exec.Command(exe);cmd.Dir=root;return cmd.Start()}
 func jobsDir()(string,error){root,err:=installRoot();if err!=nil{return "",err};return filepath.Join(root,"runtime","jobs"),nil}
 func activityDir()(string,error){local:=strings.TrimSpace(os.Getenv("LOCALAPPDATA"));if local==""{return "",errors.New("LOCALAPPDATA not found")};return filepath.Join(local,"SOKNA","Bridge","activity"),nil}
 func activityPath()(string,error){d,err:=activityDir();if err!=nil{return "",err};return filepath.Join(d,"events.jsonl"),nil}
@@ -150,9 +152,16 @@ func localObservability(c CommandEnvelope)(json.RawMessage,bool,error){
 }
 
 func proxy(command json.RawMessage)(json.RawMessage,error){ep,tok,err:=loadEndpoint();if err!=nil{return nil,err};cli:=&http.Client{Timeout:30*time.Minute};req,err:=http.NewRequest("POST",ep,bytes.NewReader(command));if err!=nil{return nil,err};req.Header.Set("Content-Type","application/json");if tok!=""{req.Header.Set("X-Sokna-Token",tok)};resp,err:=cli.Do(req);if err!=nil{return nil,err};defer resp.Body.Close();b,err:=io.ReadAll(io.LimitReader(resp.Body,maxOut));if err!=nil{return nil,err};if resp.StatusCode>=300{return nil,fmt.Errorf("agent HTTP %d: %s",resp.StatusCode,string(b))};if !json.Valid(b){return nil,fmt.Errorf("agent returned invalid JSON")};return json.RawMessage(b),nil}
-func recordCommandEvent(c CommandEnvelope,kind,errText string){ev:=newEvent(kind);ev.CommandID=c.ID;ev.CorrelationID=c.CorrelationID;ev.ParentID=c.ParentID;ev.Action=c.Action;ev.Error=trimError(errText);if kind=="command.accepted"{ev.State="accepted"};if kind=="command.completed"{ev.State="completed"};if kind=="command.failed"{ev.State="failed"};_ = appendActivity(ev)}
+var quietActivityActions=map[string]bool{
+  "bridge.activity":true,"job.list":true,"job.events":true,"ping":true,"agent.capabilities":true,
+  "bridge.bootstrap":true,"session.list":true,"workspace.registry.status":true,"workspace.list":true,
+  "workspace.inspect":true,"browser.qa.status":true,"artifact.root.status":true,"artifact.provider.status":true,
+  "artifact.out.info":true,"artifact.out.list":true,"result.get":true,
+}
+func shouldRecordCommandActivity(action string)bool{return !quietActivityActions[strings.ToLower(strings.TrimSpace(action))]}
+func recordCommandEvent(c CommandEnvelope,kind,errText string){if !shouldRecordCommandActivity(c.Action){return};ev:=newEvent(kind);ev.CommandID=c.ID;ev.CorrelationID=c.CorrelationID;ev.ParentID=c.ParentID;ev.Action=c.Action;ev.Error=trimError(errText);if kind=="command.accepted"{ev.State="accepted"};if kind=="command.completed"{ev.State="completed"};if kind=="command.failed"{ev.State="failed"};_ = appendActivity(ev)}
 
-func handle(m InMsg)OutMsg{if r,handled:=handleCredentialMessage(m);handled{return r};switch m.Type{case "host.ping":return OutMsg{OK:true,Type:"host.pong",RequestID:m.RequestID,Version:version};case "agent.exec":c,err:=parseCommand(m.Command);if err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.accepted","");if r,handled,err:=localObservability(c);handled{if err!=nil{recordCommandEvent(c,"command.failed",err.Error());return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.completed","");return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r}};r,err:=proxy(m.Command);if err!=nil{recordCommandEvent(c,"command.failed",err.Error());return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.completed","");if c.Action=="job.get"||c.Action=="job.submit"||c.Action=="job.batch"{if jobs,e:=readJobs();e==nil{observeJobStates(jobs)}};return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r};default:return OutMsg{OK:false,RequestID:m.RequestID,Error:"unknown native message type"}}}
+func handle(m InMsg)OutMsg{if r,handled:=handleCredentialMessage(m);handled{return r};switch m.Type{case "host.ping":return OutMsg{OK:true,Type:"host.pong",RequestID:m.RequestID,Version:version};case "control.open":if err:=openControlCenter();err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};return OutMsg{OK:true,Type:"control.opened",RequestID:m.RequestID,Version:version};case "agent.exec":c,err:=parseCommand(m.Command);if err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.accepted","");if r,handled,err:=localObservability(c);handled{if err!=nil{recordCommandEvent(c,"command.failed",err.Error());return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.completed","");return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r}};r,err:=proxy(m.Command);if err!=nil{recordCommandEvent(c,"command.failed",err.Error());return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.completed","");if c.Action=="job.get"||c.Action=="job.submit"||c.Action=="job.batch"{if jobs,e:=readJobs();e==nil{observeJobStates(jobs)}};return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r};default:return OutMsg{OK:false,RequestID:m.RequestID,Error:"unknown native message type"}}}
 
 func main(){_ = runtime.GOOS;for{b,err:=readMessage(os.Stdin);if err!=nil{if errors.Is(err,io.EOF){return};fmt.Fprintln(os.Stderr,"read:",err);return};var m InMsg;if err:=json.Unmarshal(b,&m);err!=nil{_ = writeMessage(os.Stdout,OutMsg{OK:false,Error:"invalid JSON"});continue};if err:=writeMessage(os.Stdout,handle(m));err!=nil{fmt.Fprintln(os.Stderr,"write:",err);return}}}
 
