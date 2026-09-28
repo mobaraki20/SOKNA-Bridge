@@ -49,7 +49,7 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--repo',default=str(Path(__file__).resolve().parents[2]))
     ap.add_argument('--commit',default='HEAD')
-    ap.add_argument('--candidate-ref',default='sokna-agent-2.7.1-r3')
+    ap.add_argument('--candidate-ref',default='sokna-agent-2.7.1-r4')
     ap.add_argument('--agent-version',default='2.7.1')
     ap.add_argument('--extension-version',default='3.12.2')
     ap.add_argument('--accepted-live-agent-baseline',default='2.7.1')
