@@ -1,6 +1,6 @@
 name: Windows Agent Validation
 run-name: >-
-  Windows Agent Validation (${{ github.event_name == 'workflow_dispatch' && inputs.profile || (github.ref == 'refs/heads/release/2.7.1' && 'full' || 'quick') }})
+  Windows Agent Validation (${{ github.event_name == 'workflow_dispatch' && inputs.profile || (github.event_name == 'pull_request' && 'full' || (github.ref == 'refs/heads/release/2.7.1' && 'full' || 'quick')) }})
   [${{ github.event_name == 'workflow_dispatch' && inputs.request_id || 'push' }}]
 on:
   workflow_dispatch:
@@ -65,15 +65,15 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: windows-agent-validation-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.profile || (github.ref == 'refs/heads/release/2.7.1' && 'full' || 'quick') }}
+  group: windows-agent-validation-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.profile || (github.event_name == 'pull_request' && 'full' || (github.ref == 'refs/heads/release/2.7.1' && 'full' || 'quick')) }}
   cancel-in-progress: true
 jobs:
   validate:
     runs-on: windows-2025
     env:
-      SOKNA_VALIDATION_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || (github.ref == 'refs/heads/release/2.7.1' && 'full' || 'quick') }}
+      SOKNA_VALIDATION_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || (github.event_name == 'pull_request' && 'full' || (github.ref == 'refs/heads/release/2.7.1' && 'full' || 'quick')) }}
       SOKNA_EXPECTED_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_commit || github.sha }}
-      SOKNA_CANDIDATE_REF: ${{ github.ref == 'refs/heads/release/2.7.1' && 'sokna-agent-2.7.1-r2' || 'sokna-agent-2.6.0-rc9' }}
+      SOKNA_CANDIDATE_REF: ${{ github.event_name == 'pull_request' && 'validation-only-exact-rc-evidence' || (github.ref == 'refs/heads/release/2.7.1' && 'sokna-agent-2.7.1-r2' || 'sokna-agent-2.6.0-rc9') }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
