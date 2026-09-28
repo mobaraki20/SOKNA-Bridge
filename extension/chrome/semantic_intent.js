@@ -3,11 +3,12 @@
 const G="__SOKNA_SEMANTIC_INTENT_V1__";
 try{globalThis[G]?.dispose?.()}catch{}
 const Core=globalThis.__SOKNA_SEMANTIC_CORE_V1__;
-const VERSION="2.0.1",START="[SOKNA-INTENT]",END="[/SOKNA-INTENT]";
+const VERSION="2.1.0",START="[SOKNA-INTENT]",END="[/SOKNA-INTENT]",PROBE_START="[SOKNA-PROBE]",PROBE_END="[/SOKNA-PROBE]";
 const FALLBACK_KEY="semantic_fallback_diagnostics_v2";
-const attempts=new Map(),nodeIds=new WeakMap();
+const attempts=new Map(),nodeIds=new WeakMap(),untrustedNodes=new WeakSet();
 let nodeSeq=0,armed=false,disposed=false,observer=null,scanTimer=0,baselineCount=0;
-const state={loaded:true,armed:false,observer_active:false,last_scan_at:0,last_marker_seen_at:0,last_command_id:"",last_dispatch_at:0,last_dispatch_ok:null,last_parse_error:"",last_send_error:"",seen_count:0,assistant_message_count:0,selector_ready:false,selector_mode:"",role_candidate_count:0,unknown_role_candidate_count:0,last_role_evidence:"",intake_verified_at:0,last_trigger:"",version:VERSION};
+let intakeChallenge="",challengeSetAt=0,probeVerified=false,probeVerifiedAt=0,probeSignature="",probeParent=null,probeOrdinal=-1;
+const state={loaded:true,armed:false,observer_active:false,last_scan_at:0,last_marker_seen_at:0,last_command_id:"",last_dispatch_at:0,last_dispatch_ok:null,last_parse_error:"",last_send_error:"",seen_count:0,assistant_message_count:0,selector_ready:false,selector_mode:"",role_candidate_count:0,unknown_role_candidate_count:0,last_role_evidence:"",intake_verified_at:0,last_trigger:"",probe_verified:false,probe_verified_at:0,probe_signature:"",challenge_set:false,challenge_set_at:0,marker_witness_count:0,untrusted_marker_count:0,provenance_mode:"",version:VERSION};
 function now(){return Date.now()}
 function hash(s){s=String(s||"");let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0).toString(16).padStart(8,"0")}
 function idFor(raw){return "sem-"+hash(raw)}
@@ -52,6 +53,101 @@ function markerBody(root){
   exact.sort((a,b)=>nodeText(a).trim().length-nodeText(b).trim().length);
   return exact[0]||root;
 }
+function mainRoot(){
+  try{return document.querySelector?.("main,[role='main']")||document.body||document.documentElement}catch{return document.body||document.documentElement}
+}
+function hasUnsafeAncestor(n){
+  let cur=n,depth=0;
+  while(cur&&depth++<20){
+    const tag=String(cur.tagName||"").toUpperCase(),ce=String(cur.getAttribute?.("contenteditable")||"").toLowerCase();
+    if(tag==="FORM"||tag==="TEXTAREA"||tag==="INPUT"||ce==="true")return true;
+    cur=cur.parentElement;
+  }
+  return false;
+}
+function roleFromAncestors(n){
+  let cur=n,depth=0;
+  while(cur&&depth++<16){
+    const r=classifyTurnRole(cur);
+    if(r.role!=="unknown")return r;
+    cur=cur.parentElement;
+  }
+  return {role:"unknown",evidence:""};
+}
+function stableShape(n){
+  if(!n)return "";
+  const tag=String(n.tagName||"").toUpperCase();
+  const role=String(n.getAttribute?.("role")||"").trim().toLowerCase();
+  let testid=String(n.getAttribute?.("data-testid")||"").trim().toLowerCase();
+  testid=testid.replace(/[0-9]+/g,"#").replace(/[a-f0-9]{8,}/gi,"*");
+  const cls=String(n.className||"").split(/\s+/).filter(Boolean).filter(x=>!/^_?R_/i.test(x)&&!/^css-/i.test(x)).slice(0,10).sort().join(".");
+  return [tag,role?"r="+role:"",testid?"t="+testid:"",cls?"c="+cls:""].filter(Boolean).join("|");
+}
+function meaningfulChildren(p){
+  try{return [...(p?.children||[])].filter(x=>nodeText(x).trim().length>=8)}catch{return[]}
+}
+function shellContext(n){
+  const root=mainRoot();let cur=n,chosen=null,parent=null,ordinal=-1,children=[];
+  while(cur&&cur!==root&&cur.parentElement){
+    const p=cur.parentElement,kids=meaningfulChildren(p);
+    if(kids.length>=2){chosen=cur;parent=p;children=kids;ordinal=kids.indexOf(cur);break}
+    cur=p;
+  }
+  if(!chosen){
+    cur=n;
+    while(cur?.parentElement&&cur.parentElement!==root)cur=cur.parentElement;
+    chosen=cur||n;parent=chosen?.parentElement||root;children=meaningfulChildren(parent);ordinal=children.indexOf(chosen);
+  }
+  return {shell:chosen,parent,ordinal,signature:stableShape(chosen)};
+}
+function challengeMatchesShell(n){
+  if(!probeVerified||!probeParent||!probeSignature||probeOrdinal<0)return false;
+  const c=shellContext(n);
+  if(c.parent!==probeParent||c.signature!==probeSignature||c.ordinal<0)return false;
+  return Math.abs(c.ordinal-probeOrdinal)%2===0;
+}
+function markerWitnesses(){
+  const root=mainRoot();if(!root)return [];
+  let whole="";try{whole=String(root.textContent||root.innerText||"")}catch{}
+  if(!whole.includes(START)&&!whole.includes(PROBE_START)){state.marker_witness_count=0;return[]}
+  let all=[root];try{all.push(...root.querySelectorAll("p,pre,code,div,section,span"))}catch{}
+  const exact=[],seen=new Set();
+  for(const n of all){
+    if(!n||seen.has(n))continue;seen.add(n);
+    const t=nodeText(n).trim();
+    const intent=t.startsWith(START)&&t.endsWith(END);
+    const probe=t.startsWith(PROBE_START)&&t.endsWith(PROBE_END);
+    if(intent||probe)exact.push(n);
+  }
+  const deepest=exact.filter(n=>!exact.some(m=>m!==n&&n.contains?.(m)));
+  state.marker_witness_count=deepest.length;
+  return deepest;
+}
+function resetChallenge(challenge){
+  intakeChallenge=String(challenge||"").trim();challengeSetAt=now();probeVerified=false;probeVerifiedAt=0;probeSignature="";probeParent=null;probeOrdinal=-1;
+  state.challenge_set=!!intakeChallenge;state.challenge_set_at=challengeSetAt;state.probe_verified=false;state.probe_verified_at=0;state.probe_signature="";state.provenance_mode="";
+  if(!state.last_role_evidence)state.selector_ready=false;
+}
+async function verifyProbeNode(n,trigger){
+  if(probeVerified||!intakeChallenge||hasUnsafeAncestor(n))return false;
+  const t=nodeText(n).trim(),expected=PROBE_START+intakeChallenge+PROBE_END;
+  if(t!==expected)return false;
+  const role=roleFromAncestors(n);if(role.role==="user")return false;
+  const c=shellContext(n);if(!c.parent||c.ordinal<0||!c.signature)return false;
+  probeVerified=true;probeVerifiedAt=now();probeSignature=c.signature;probeParent=c.parent;probeOrdinal=c.ordinal;
+  state.probe_verified=true;state.probe_verified_at=probeVerifiedAt;state.probe_signature=probeSignature;state.selector_ready=true;state.selector_mode="challenge-shell";state.intake_verified_at=probeVerifiedAt;state.last_role_evidence=role.role==="assistant"?(role.evidence||"explicit-assistant"):"challenge-response";state.provenance_mode=role.role==="assistant"?"explicit-role+challenge":"challenge-shell";
+  await trace("semantic.intake_verified",{trigger,evidence:state.last_role_evidence,selector_mode:state.selector_mode,probe_signature:probeSignature});
+  await sendRuntime({type:"SEMANTIC_INTAKE_PROVEN",challenge:intakeChallenge,evidence:state.last_role_evidence,selectorMode:state.selector_mode,probeSignature:probeSignature},"semantic.intake_verified_unreported");
+  return true;
+}
+function trustCommandNode(n){
+  if(hasUnsafeAncestor(n))return {ok:false,evidence:"unsafe-editable"};
+  const role=roleFromAncestors(n);
+  if(role.role==="assistant")return {ok:true,evidence:role.evidence||"explicit-assistant"};
+  if(role.role==="user")return {ok:false,evidence:role.evidence||"explicit-user"};
+  if(challengeMatchesShell(n))return {ok:true,evidence:"challenge-shell"};
+  return {ok:false,evidence:"unproven-marker"};
+}
 function assistantNodes(){
   if(window.top!==window)return [];
   let direct=[];try{direct=[...document.querySelectorAll('[data-message-author-role="assistant"]')]}catch{}
@@ -70,7 +166,7 @@ function assistantNodes(){
     if(r.role==="assistant"){assistant.push(markerBody(turn));lastEvidence=r.evidence||lastEvidence}
     else if(r.role==="unknown")unknown++;
   }
-  state.assistant_message_count=assistant.length;state.role_candidate_count=turns.length;state.unknown_role_candidate_count=unknown;state.selector_ready=assistant.length>0;state.selector_mode=assistant.length?"role-evidence-fallback":(turns.length?"role-unresolved":"no-turns");state.last_role_evidence=lastEvidence;
+  state.assistant_message_count=assistant.length||(probeVerified?1:0);state.role_candidate_count=turns.length;state.unknown_role_candidate_count=unknown;state.selector_ready=assistant.length>0||probeVerified;state.selector_mode=assistant.length?"role-evidence-fallback":(probeVerified?"challenge-shell":(turns.length?"role-unresolved":"no-turns"));state.last_role_evidence=lastEvidence||(probeVerified?"challenge-response":"");
   if(state.selector_ready&&!state.intake_verified_at)state.intake_verified_at=now();
   return assistant;
 }
@@ -153,7 +249,24 @@ async function dispatchCandidate(c,trigger){
 async function scan(trigger="mutation",emit=true){
   if(disposed||(!armed&&trigger!=="baseline"))return {ok:false,armed:false};
   state.last_scan_at=now();state.last_trigger=trigger;
-  const nodes=assistantNodes();let found=0,dispatched=0,rejected=0,ignored=0;
+  const roleNodes=assistantNodes(),witnesses=markerWitnesses();let found=0,dispatched=0,rejected=0,ignored=0;
+  for(const w of witnesses)if(nodeText(w).trim().startsWith(PROBE_START))await verifyProbeNode(w,trigger);
+  const nodes=[...roleNodes],nodeSet=new Set(nodes);
+  for(let wi=0;wi<witnesses.length;wi++){
+    const w=witnesses[wi],text=nodeText(w).trim();if(!text.startsWith(START))continue;
+    const c=candidateFor(w,100000+wi);if(!c)continue;
+    if(!emit){
+      if(c.kind==="command"&&!attempts.has(c.attempt_key)){attempts.set(c.attempt_key,{state:"baseline",ts:now(),trigger:"baseline",raw_hash:c.raw_hash,message_identity:c.message_identity});baselineCount++}
+      continue;
+    }
+    if(nodeSet.has(w))continue;
+    const trust=trustCommandNode(w);
+    if(trust.ok){nodes.push(w);nodeSet.add(w);state.last_role_evidence=trust.evidence;state.provenance_mode=trust.evidence==="challenge-shell"?"challenge-shell":"explicit-role"}
+    else{
+      ignored++;state.untrusted_marker_count++;
+      if(!untrustedNodes.has(w)){untrustedNodes.add(w);await trace("semantic.marker_untrusted",{trigger,evidence:trust.evidence,text_hash:hash(text)})}
+    }
+  }
   for(let i=0;i<nodes.length;i++){
     const c=candidateFor(nodes[i],i);if(!c)continue;found++;
     if(c.kind!=="command"){
@@ -190,6 +303,7 @@ async function e2eProbe(){
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   if(m?.type==="SEMANTIC_BASELINE"){baseline().then(reply,e=>reply({ok:false,error:String(e),semantic:diagSnapshot()}));return true}
   if(m?.type==="SEMANTIC_RECONCILE"){reconcile().then(reply,e=>reply({ok:false,error:String(e),semantic:diagSnapshot()}));return true}
+  if(m?.type==="SEMANTIC_SET_CHALLENGE"){const c=String(m?.challenge||"").trim();if(!/^[A-Za-z0-9._-]{8,96}$/.test(c)){reply({ok:false,error:"invalid intake challenge",semantic:diagSnapshot()});return}resetChallenge(c);reply({ok:true,challenge_set:true,semantic:diagSnapshot()});return}
   if(m?.type==="SEMANTIC_DIAG"){reply({ok:true,semantic:diagSnapshot(),frameHref:location.href});return}
   if(m?.type==="SEMANTIC_E2E_PROBE"){e2eProbe().then(reply,e=>reply({ok:false,error:String(e),semantic:diagSnapshot()}));return true}
   if(m?.type==="SEMANTIC_STOP"){armed=false;state.armed=false;stopObserver();reply?.({ok:true});return}
