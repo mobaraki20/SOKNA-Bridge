@@ -28,11 +28,11 @@ function classifyTurnRole(n){
     if(role==="assistant"||role==="user")return {role,evidence:"nested-data-message-author-role"};
   }catch{}
   const cls=String(n?.className||"");
-  if(/(^|\\s)(agent-turn|assistant-turn)(\\s|$)/i.test(cls))return {role:"assistant",evidence:"assistant-turn-class"};
-  if(/(^|\\s)user-turn(\\s|$)/i.test(cls))return {role:"user",evidence:"user-turn-class"};
+  if(/(^|\s)(agent-turn|assistant-turn)(\s|$)/i.test(cls))return {role:"assistant",evidence:"assistant-turn-class"};
+  if(/(^|\s)user-turn(\s|$)/i.test(cls))return {role:"user",evidence:"user-turn-class"};
   const attrs=["data-author","data-role","data-turn","aria-label","data-testid"].map(a=>String(n?.getAttribute?.(a)||"")).join(" | ");
-  if(/(^|\\b)(assistant message|assistant response|assistant said|chatgpt said)(\\b|$)/i.test(attrs))return {role:"assistant",evidence:"assistant-role-attribute"};
-  if(/(^|\\b)(user message|user said|you said)(\\b|$)/i.test(attrs))return {role:"user",evidence:"user-role-attribute"};
+  if(/(^|\b)(assistant message|assistant response|assistant said|chatgpt said)(\b|$)/i.test(attrs))return {role:"assistant",evidence:"assistant-role-attribute"};
+  if(/(^|\b)(user message|user said|you said)(\b|$)/i.test(attrs))return {role:"user",evidence:"user-role-attribute"};
   try{
     if(n?.querySelector?.('[data-testid*="good-response" i],[data-testid*="bad-response" i],[data-testid*="regenerate" i],button[aria-label*="good response" i],button[aria-label*="bad response" i],button[aria-label*="regenerate" i]'))return {role:"assistant",evidence:"assistant-action-controls"};
   }catch{}
