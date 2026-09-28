@@ -123,8 +123,12 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
 
     Invoke-ProcessChecked $Setup @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$legacyInstall+'"'),('/ArtifactRoot="'+$legacyArtifacts+'"'),'/TASKS=""',('/LOG="'+$legacySetupLog+'"'))|Out-Null
     Start-Sleep -Milliseconds 300
-    $stillAlive=Get-Process -Id $legacyProc.Id -ErrorAction SilentlyContinue
-    if($null-ne$stillAlive){throw 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING'}
+    try{$legacyProc.Refresh()}catch{}
+    if(-not$legacyProc.HasExited){
+      $legacyProc.WaitForExit(3000)|Out-Null
+      $legacyProc.Refresh()
+    }
+    if(-not$legacyProc.HasExited){throw 'LEGACY_ACCEPTANCE_OLD_AGENT_STILL_RUNNING'}
     if(-not(Test-Path -LiteralPath (Join-Path $legacyRoot 'config.json') -PathType Leaf)){throw 'LEGACY_ACCEPTANCE_SOURCE_CONFIG_REMOVED'}
     if(-not(Test-Path -LiteralPath $legacyAgent -PathType Leaf)){throw 'LEGACY_ACCEPTANCE_SOURCE_AGENT_REMOVED'}
     $legacyRun=$null
