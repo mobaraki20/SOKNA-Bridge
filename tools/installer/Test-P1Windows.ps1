@@ -116,6 +116,10 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
     $ready=$false
     for($i=0;$i-lt40;$i++){Start-Sleep -Milliseconds 250;if((Test-Path (Join-Path $legacyRoot 'agent.pid'))-and(Test-LegacyPing $port $token)){$ready=$true;break}}
     if(-not$ready){throw 'LEGACY_ACCEPTANCE_AGENT_DID_NOT_START'}
+    $legacyPidPath=Join-Path $legacyRoot 'agent.pid'
+    Remove-Item -LiteralPath $legacyPidPath -Force
+    if($null-eq(Get-Process -Id $legacyProc.Id -ErrorAction SilentlyContinue)){throw 'LEGACY_ACCEPTANCE_UNTRACKED_AGENT_NOT_RUNNING'}
+    Write-Host 'P1_LEGACY_UNTRACKED_RUNTIME_INJECTED'
 
     Invoke-ProcessChecked $Setup @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$legacyInstall+'"'),('/ArtifactRoot="'+$legacyArtifacts+'"'),'/TASKS=""',('/LOG="'+$legacySetupLog+'"'))|Out-Null
     Start-Sleep -Milliseconds 300
@@ -132,7 +136,12 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
     if([string]$newCfg.token-ne$token){throw 'LEGACY_ACCEPTANCE_TOKEN_NOT_MIGRATED'}
     $prep=Get-Content (Join-Path $legacyInstall 'state\install-preparation.json') -Raw|ConvertFrom-Json
     if(-not[bool]$prep.legacy_runtime_detected -or -not[bool]$prep.legacy_runtime_stopped){throw 'LEGACY_ACCEPTANCE_PREPARATION_EVIDENCE_MISSING'}
+    if(-not[bool]$prep.recovered_untracked_runtime_stopped){throw 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_EVIDENCE_MISSING'}
+    if([int]$prep.recovered_untracked_runtime_pid-ne$legacyProc.Id){throw 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_PID_MISMATCH'}
+    if([int]$prep.recovered_untracked_runtime_port-ne$port){throw 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_PORT_MISMATCH'}
+    if([string]$prep.recovered_untracked_runtime_source-ne'legacy-config'){throw 'LEGACY_ACCEPTANCE_UNTRACKED_RECOVERY_SOURCE_MISMATCH'}
     if(-not[bool]$prep.legacy_autostart_removed){throw 'LEGACY_ACCEPTANCE_AUTOSTART_EVIDENCE_MISSING'}
+    Write-Host 'P1_LEGACY_UNTRACKED_RUNTIME_RECOVERY_PASS'
     $legacyMaint=Join-Path $legacyInstall 'Sokna.Agent.Maintenance.exe'
     Invoke-Maint $legacyMaint $legacyInstall @('health','--expected-version','2.7.1')|Out-Null
 
