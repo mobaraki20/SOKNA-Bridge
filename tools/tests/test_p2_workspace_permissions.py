@@ -11,11 +11,11 @@ def req(cond, msg):
 files = {
     'go': ROOT/'native/agent/workspace_manager.go',
     'gotest': ROOT/'native/agent/workspace_manager_test.go',
-    'psm': ROOT/'native/runtime/v2.6.0/Sokna.Workspace.psm1',
-    'agent': ROOT/'native/runtime/v2.6.0/agent.ps1',
-    'caps': ROOT/'native/runtime/v2.6.0/AGENT_CAPABILITIES.json',
+    'psm': ROOT/'native/runtime/v2.6.1/Sokna.Workspace.psm1',
+    'agent': ROOT/'native/runtime/v2.6.1/agent.ps1',
+    'caps': ROOT/'native/runtime/v2.6.1/AGENT_CAPABILITIES.json',
     'contract': ROOT/'docs/contracts/WORKSPACE_PERMISSION_MANAGER_V1_FA.md',
-    'win': ROOT/'tools/runtime/releases/2.6.0/Test-Workspace260.ps1',
+    'win': ROOT/'tools/runtime/releases/2.6.1/Test-Workspace261.ps1',
     'workflow': ROOT/'.github/workflows/windows-agent-validation.yml',
 }
 for k,p in files.items(): req(p.is_file(), f'missing {k}: {p}')
@@ -52,7 +52,7 @@ req('if(-not$w.write_enabled)' not in agent, 'legacy write_enabled gate remains 
 for marker in ['P2_WORKSPACE_WINDOWS_PASS','New-Item -ItemType Junction','WORKSPACE_PATH_DENIED','source_deleted']:
     req(marker in win, f'Windows matrix missing {marker}')
 req('test_p2_workspace_permissions.py' in workflow, 'P2 source contract not wired to CI')
-req('Test-Workspace260.ps1' in workflow, 'P2 Windows matrix not wired to CI')
+req('Test-Workspace261.ps1' in workflow, 'P2 Windows matrix not wired to CI')
 req('workspace_registry=sokna-workspace-registry-v1' in caps.get('schema',''), 'capability schema missing workspace registry')
 
 # P2 executable implementation must stay project-agnostic.
