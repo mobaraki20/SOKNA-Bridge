@@ -5,7 +5,7 @@ try{globalThis[G]?.dispose?.()}catch{}
 const Core=globalThis.__SOKNA_SEMANTIC_CORE_V1__;
 const VERSION="2.1.0",START="[SOKNA-INTENT]",END="[/SOKNA-INTENT]",PROBE_START="[SOKNA-PROBE]",PROBE_END="[/SOKNA-PROBE]";
 const FALLBACK_KEY="semantic_fallback_diagnostics_v2";
-const attempts=new Map(),nodeIds=new WeakMap(),untrustedNodes=new WeakSet();
+const attempts=new Map(),nodeIds=new WeakMap(),nodeProvenance=new WeakMap(),untrustedNodes=new WeakSet();
 let nodeSeq=0,armed=false,disposed=false,observer=null,scanTimer=0,baselineCount=0;
 let intakeChallenge="",challengeSetAt=0,probeVerified=false,probeVerifiedAt=0,probeSignature="",probeParent=null,probeOrdinal=-1;
 const state={loaded:true,armed:false,observer_active:false,last_scan_at:0,last_marker_seen_at:0,last_command_id:"",last_dispatch_at:0,last_dispatch_ok:null,last_parse_error:"",last_send_error:"",seen_count:0,assistant_message_count:0,selector_ready:false,selector_mode:"",role_candidate_count:0,unknown_role_candidate_count:0,last_role_evidence:"",intake_verified_at:0,last_trigger:"",probe_verified:false,probe_verified_at:0,probe_signature:"",challenge_set:false,challenge_set_at:0,marker_witness_count:0,untrusted_marker_count:0,provenance_mode:"",version:VERSION};
@@ -264,7 +264,7 @@ async function scan(trigger="mutation",emit=true){
     }
     if(nodeSet.has(w))continue;
     const trust=trustCommandNode(w);
-    if(trust.ok){w.__soknaProvenance=trust;nodes.push(w);nodeSet.add(w);state.last_role_evidence=trust.evidence;state.provenance_mode=trust.requiresNonce?"challenge-nonce":"explicit-role"}
+    if(trust.ok){nodeProvenance.set(w,trust);nodes.push(w);nodeSet.add(w);state.last_role_evidence=trust.evidence;state.provenance_mode=trust.requiresNonce?"challenge-nonce":"explicit-role"}
     else{
       ignored++;state.untrusted_marker_count++;
       if(!untrustedNodes.has(w)){untrustedNodes.add(w);await trace("semantic.marker_untrusted",{trigger,evidence:trust.evidence,text_hash:hash(text)})}
@@ -282,7 +282,7 @@ async function scan(trigger="mutation",emit=true){
       continue;
     }
     const before=attempts.has(c.attempt_key);
-    const provenance=nodes[i]?.__soknaProvenance||{evidence:"explicit-assistant",requiresNonce:false};
+    const provenance=nodeProvenance.get(nodes[i])||{evidence:"explicit-assistant",requiresNonce:false};
     const r=await dispatchCandidate(c,trigger,provenance);
     if(!before){if(r?.rejected)rejected++;else if(!r?.local_duplicate)dispatched++}
   }
