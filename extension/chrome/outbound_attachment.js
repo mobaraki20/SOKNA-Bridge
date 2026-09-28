@@ -16,14 +16,16 @@ function fileInput(){
   if(all.length===1)return all[0];
   throw Object.assign(new Error("Multiple file inputs exist and none can be uniquely tied to the active composer"),{code:"ATTACHMENT_INPUT_AMBIGUOUS"});
 }
-function setFiles(input,file){
+function setFiles(input,file,append=false){
   if(typeof DataTransfer!=="function")throw Object.assign(new Error("DataTransfer is unavailable"),{code:"ATTACHMENT_DATATRANSFER_UNAVAILABLE"});
-  const dt=new DataTransfer();dt.items.add(file);
+  const dt=new DataTransfer();
+  if(append){for(const existing of [...(input.files||[])])dt.items.add(existing)}
+  dt.items.add(file);
   const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"files")?.set;
   if(setter)setter.call(input,dt.files);else input.files=dt.files;
   input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));
-  const selected=input.files?.[0];
-  if(!selected||selected.name!==file.name||selected.size!==file.size)throw Object.assign(new Error("Composer did not accept the selected file"),{code:"ATTACHMENT_INPUT_REJECTED"});
+  const selected=[...(input.files||[])].find(x=>x.name===file.name&&x.size===file.size);
+  if(!selected)throw Object.assign(new Error("Composer did not accept the selected file"),{code:"ATTACHMENT_INPUT_REJECTED"});
   return selected;
 }
 function begin(m){
@@ -31,7 +33,11 @@ function begin(m){
   if(assistantGenerating())return {ok:false,code:"ATTACHMENT_ASSISTANT_BUSY",error:"assistant is still generating"};
   if(composerText())return {ok:false,code:"ATTACHMENT_USER_DRAFT_PRESENT",error:"composer contains user text"};
   const id=String(m?.transferId||"");if(transfers.has(id))return {ok:false,code:"ATTACHMENT_TRANSFER_EXISTS"};
-  try{const t=Core.createTransfer(id,m?.artifactRef);transfers.set(id,t);return {ok:true,transferId:id,filename:t.ref.name,bytes:t.ref.bytes,maxBytes:Core.maxAttachBytes}}
+  try{
+    const input=fileInput();
+    if(m?.append!==true&&(input.files?.length||0)>0)return {ok:false,code:"ATTACHMENT_EXISTING_FILES_PRESENT",error:"composer already contains file attachments"};
+    const t=Core.createTransfer(id,m?.artifactRef);transfers.set(id,t);return {ok:true,transferId:id,filename:t.ref.name,bytes:t.ref.bytes,maxBytes:Core.maxAttachBytes}
+  }
   catch(e){return {ok:false,code:e?.code||"ATTACHMENT_BEGIN_FAILED",error:String(e?.message||e)}}
 }
 function chunk(m){
@@ -45,8 +51,9 @@ async function commit(m){
     if(assistantGenerating())throw Object.assign(new Error("assistant is still generating"),{code:"ATTACHMENT_ASSISTANT_BUSY"});
     if(composerText())throw Object.assign(new Error("composer contains user text"),{code:"ATTACHMENT_USER_DRAFT_PRESENT"});
     const fin=await t.finalize(),input=fileInput();
-    const file=new File([fin.bytes],fin.ref.name,{type:fin.ref.content_type,lastModified:Date.now()});setFiles(input,file);
-    const note=`SOKNA Bridge artifact: ${fin.ref.name}\nSHA-256: ${fin.ref.sha256}`;
+    const file=new File([fin.bytes],fin.ref.name,{type:fin.ref.content_type,lastModified:Date.now()});setFiles(input,file,m?.append===true);
+    if(m?.submit===false)return {ok:true,status:"staged_in_composer",transferId:id,filename:file.name,bytes:file.size,sha256:fin.ref.sha256,contentType:file.type||fin.ref.content_type,method:"staged"};
+    const note=String(m?.note||"").trim()||`SOKNA Bridge artifact: ${fin.ref.name}\nSHA-256: ${fin.ref.sha256}`;
     const submitted=await DOM.submitEnvelope(note);
     if(!submitted?.ok)throw Object.assign(new Error(submitted?.error||"attachment submit failed"),{code:"ATTACHMENT_SUBMIT_FAILED"});
     return {ok:true,status:"submitted_to_conversation",transferId:id,filename:file.name,bytes:file.size,sha256:fin.ref.sha256,contentType:file.type||fin.ref.content_type,method:submitted.method||""};

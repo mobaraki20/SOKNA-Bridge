@@ -37,8 +37,11 @@ assert 'sendNativeMessage' in BOOTSTRAP
 for action in ['"job.list"', '"job.events"', '"bridge.activity"']:
     assert action in BOOTSTRAP, f"host-local action blocked by capability preflight: {action}"
 assert 'ACTIVITY_SNAPSHOT' in POPUP
-assert 'setInterval(()=>refreshActivity()' in POPUP
-assert 'Activity Monitor' in HTML
-assert 'owned processes' in POPUP
+assert 'setInterval' not in POPUP, 'Activity UI must not continuously poll and generate self-noise'
+assert 'refreshActivity' in POPUP
+assert 'Advanced diagnostics' in HTML
+for action in ['"bridge.activity":true','"job.list":true','"job.events":true','"ping":true','"agent.capabilities":true']:
+    assert action in HOST, f'read-only observability action must be quiet: {action}'
+assert 'shouldRecordCommandActivity' in HOST
 
 print('R2_OBSERVABILITY_PASS')

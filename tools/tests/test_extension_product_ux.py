@@ -30,12 +30,12 @@ assert "setInterval" not in popup_js, "popup must not poll Activity continuously
 background=read(Path("extension/chrome/background.js"))
 for marker in [
     "chatgpt.com","CONNECT_CHAT","instagram.profile.scan","instagram.scan.search",
-    "instagram.scan.get","instagram.media.download","POST_USER_TEXT"
+    "instagram.scan.get","instagram.media.download","instagram.media.attach","POST_USER_TEXT"
 ]:
     assert marker in background, f"background product integration missing {marker}"
 
 bootstrap=read(Path("extension/chrome/background_bootstrap.js"))
-for marker in ["instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download"]:
+for marker in ["instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download","instagram.media.attach"]:
     assert marker in bootstrap, f"extension capability gate missing {marker}"
 
 content=read(Path("extension/chrome/content.js"))
@@ -71,3 +71,10 @@ build=read(Path("tools/installer/Build-P1Installer.ps1"))
 assert "Sokna.Bridge.ControlCenter" in build and "DOTNET_CONTROL_CENTER_PUBLISH_FAILED" in build
 
 print("PRODUCT_UX_BROWSER_INTEGRATION_CONTRACTS_PASS")
+
+outbound=read(Path("extension/chrome/outbound_attachment.js"))
+for marker in ['append===true','submit===false','ATTACHMENT_EXISTING_FILES_PRESENT']:
+    assert marker in outbound, f'visual attachment batching guard missing {marker}'
+assert 'INSTAGRAM_ATTACH_BATCH_TOO_LARGE' in background
+assert 'visual_review_ready:true' in background
+assert 'media:media.slice(0,10).map(x=>({type:' in background and 'url:String(x?.url||"")' not in background.split('function igPostSummary',1)[1].split('async function inspectInstagramPostPrivate',1)[0], 'public Instagram scan summary must not expose CDN URLs'

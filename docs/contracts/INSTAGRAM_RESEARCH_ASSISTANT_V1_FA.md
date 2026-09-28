@@ -11,6 +11,7 @@ Instagram adapter یک downloader ساده نیست. هدف آن استفاده 
 - `instagram.scan.get`: خواندن صفحه‌بندی‌شده corpus.
 - `instagram.scan.search`: جست‌وجوی caption / visible text / hashtag / mention / Instagram alt text.
 - `instagram.media.download`: دانلود صریح media انتخاب‌شده.
+- `instagram.media.attach`: انتقال bounded media انتخاب‌شده به ChatGPT برای تحلیل بصری واقعی.
 
 ## Session و credential
 - Adapter از session جاری Chrome/Edge استفاده می‌کند.
@@ -27,7 +28,7 @@ Instagram adapter یک downloader ساده نیست. هدف آن استفاده 
 هر نتیجه پژوهشی باید تا حد ممکن URL پست منبع را حفظ کند. تحلیل‌های خلاصه‌ای مثل موضوعات پرتکرار یا لحن صفحه باید از post/captionهای قابل ارجاع ساخته شوند.
 
 ## تحلیل تصویر
-مرحله اول از caption/tag/mention/Instagram alt text برای محدود کردن candidateها استفاده می‌کند. تحلیل بصری عمیق باید فقط روی candidateهای منتخب انجام شود تا انتقال media کنترل‌شده و bounded بماند.
+مرحله اول از caption/tag/mention/Instagram alt text برای محدود کردن candidateها استفاده می‌کند. برای تحلیل بصری عمیق، `instagram.media.attach` حداکثر یک batch کوچک از candidateهای منتخب را با hash/size کنترل‌شده به همان Chat متصل attach می‌کند. URL مستقیم CDN یا query امضاشده نباید در متن Chat افشا شود؛ attribution با URL پست انجام می‌شود.
 
 برای افراد نام‌برده‌شده، تطبیق باید بر evidence صریح مانند caption/tag/mention/alt متکی باشد؛ سیستم نباید صرفاً از روی چهره هویت یک فرد واقعی را تعیین کند.
 

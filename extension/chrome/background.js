@@ -176,7 +176,7 @@ async function connectChat(tabId){
   }
   const actions=[
     "bridge.bootstrap","workspace.list","file.read","file.write","process.run","git.status",
-    "browser.audit.run","instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download"
+    "browser.audit.run","instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download","instagram.media.attach"
   ];
   const text=[
     "SOKNA Bridge has been connected to this Chat by the user.",
@@ -184,7 +184,7 @@ async function connectChat(tabId){
     "When local execution is needed, emit one standalone semantic command block in this exact form:",
     '[SOKNA-INTENT]{"intent":"exec","action":"bridge.bootstrap","params":{}}[/SOKNA-INTENT]',
     "Read the returned bootstrap before mutations and treat it as the source of truth for capabilities, routes, workspaces and session state.",
-    "For Instagram research, use instagram.profile.scan, instagram.scan.search, instagram.scan.get and instagram.media.download through the same semantic exec form.",
+    "For Instagram research, use instagram.profile.scan, instagram.scan.search, instagram.scan.get, instagram.media.attach and instagram.media.download through the same semantic exec form.",
     "Do not invent local results. Wait for the Bridge result before continuing.",
     "Advertised examples: "+actions.join(", ")+"."
   ].join("\n");
@@ -417,6 +417,17 @@ async function igTabMessage(tabId,msg,retries=8){
   }
   throw new Error("INSTAGRAM_ADAPTER_UNAVAILABLE:"+String(last||"no response"));
 }
+function igPrivatePost(p,index){
+  const media=Array.isArray(p?.media)?p.media:[];
+  return {
+    index,url:String(p?.url||""),shortcode:String(p?.shortcode||""),type:String(p?.type||""),
+    datetime:String(p?.datetime||""),caption:String(p?.caption||"").slice(0,12000),
+    visible_text:String(p?.visible_text||"").slice(0,16000),
+    mentions:Array.isArray(p?.mentions)?p.mentions.slice(0,80):[],
+    hashtags:Array.isArray(p?.hashtags)?p.hashtags.slice(0,80):[],
+    media:media.slice(0,30).map(x=>({type:String(x?.type||""),alt:String(x?.alt||"").slice(0,1600),url:String(x?.url||""),width:Number(x?.width)||0,height:Number(x?.height)||0}))
+  };
+}
 function igPostSummary(p,index){
   const media=Array.isArray(p?.media)?p.media:[];
   return {
@@ -424,15 +435,16 @@ function igPostSummary(p,index){
     datetime:String(p?.datetime||""),caption:String(p?.caption||"").slice(0,2200),
     mentions:Array.isArray(p?.mentions)?p.mentions.slice(0,40):[],
     hashtags:Array.isArray(p?.hashtags)?p.hashtags.slice(0,40):[],
-    media:media.slice(0,10).map(x=>({type:String(x?.type||""),alt:String(x?.alt||"").slice(0,1200),url:String(x?.url||"")}))
+    media:media.slice(0,10).map(x=>({type:String(x?.type||""),alt:String(x?.alt||"").slice(0,1200),width:Number(x?.width)||0,height:Number(x?.height)||0}))
   };
 }
-async function instagramPostInspect(params={}){
-  const url=String(params.url||"").trim();if(!/^https:\/\/(www\.)?instagram\.com\/(p|reel)\//i.test(url))throw new Error("INSTAGRAM_POST_URL_REQUIRED");
+async function inspectInstagramPostPrivate(url){
+  url=String(url||"").trim();if(!/^https:\/\/(www\.)?instagram\.com\/(p|reel)\//i.test(url))throw new Error("INSTAGRAM_POST_URL_REQUIRED");
   const tab=await chrome.tabs.create({url,active:false});
-  try{await waitTabComplete(tab.id);const snap=await igTabMessage(tab.id,{type:"IG_POST_SNAPSHOT"});if(!snap?.ok)throw new Error(snap?.error||"INSTAGRAM_POST_INSPECT_FAILED");return igPostSummary(snap,0)}
+  try{await waitTabComplete(tab.id);const snap=await igTabMessage(tab.id,{type:"IG_POST_SNAPSHOT"});if(!snap?.ok)throw new Error(snap?.error||"INSTAGRAM_POST_INSPECT_FAILED");return igPrivatePost(snap,0)}
   finally{try{await chrome.tabs.remove(tab.id)}catch{}}
 }
+async function instagramPostInspect(params={}){return igPostSummary(await inspectInstagramPostPrivate(params.url),0)}
 async function instagramProfileScan(params={}){
   const profileUrl=igProfileUrl(params),limit=Math.min(Math.max(Number(params.limit)||10,1),IG_SCAN_MAX_POSTS);
   const tab=await chrome.tabs.create({url:profileUrl,active:false});
@@ -447,7 +459,7 @@ async function instagramProfileScan(params={}){
       try{
         await chrome.tabs.update(tab.id,{url:String(card.url||"")});await waitTabComplete(tab.id);
         const snap=await igTabMessage(tab.id,{type:"IG_POST_SNAPSHOT"});
-        posts.push({...igPostSummary(snap,i),grid_alt:String(card.alt||"").slice(0,1200),grid_thumbnail:String(card.thumbnail||"")});
+        posts.push({...igPrivatePost(snap,i),grid_alt:String(card.alt||"").slice(0,1200),grid_thumbnail:String(card.thumbnail||"")});
       }catch(e){
         posts.push({index:i,url:String(card.url||""),shortcode:String(card.shortcode||""),type:String(card.type||""),datetime:"",caption:"",mentions:[],hashtags:[],media:[],grid_alt:String(card.alt||"").slice(0,1200),grid_thumbnail:String(card.thumbnail||""),error:String(e)});
       }
@@ -493,7 +505,7 @@ async function instagramMediaDownload(params={}){
     if(indexes.length)posts=scan.posts.filter(p=>indexes.includes(Number(p.index)));
     else if(Array.isArray(params.post_urls))posts=scan.posts.filter(p=>params.post_urls.includes(p.url));
     else throw new Error("INSTAGRAM_DOWNLOAD_SELECTION_REQUIRED");
-  }else if(params.url){posts=[await instagramPostInspect({url:params.url})]}
+  }else if(params.url){posts=[await inspectInstagramPostPrivate(params.url)]}
   else throw new Error("INSTAGRAM_SCAN_OR_POST_REQUIRED");
   const folder=String(params.folder||"SOKNA-Instagram").replace(/[\\:*?"<>|]/g,"_").replace(/^\/+|\/+$/g,"")||"SOKNA-Instagram";
   const downloads=[];
@@ -509,6 +521,95 @@ async function instagramMediaDownload(params={}){
   return {ok:true,count:downloads.filter(x=>x.download_id).length,requested_media:downloads.length,downloads,folder};
 }
 
+
+
+function igAllowedMediaUrl(raw){
+  try{
+    const u=new URL(String(raw||""));if(u.protocol!=="https:")return false;
+    const h=u.hostname.toLowerCase();
+    return h==="instagram.com"||h==="www.instagram.com"||h.endsWith(".cdninstagram.com")||h.endsWith(".fbcdn.net");
+  }catch{return false}
+}
+function igHex(buffer){return [...new Uint8Array(buffer)].map(b=>b.toString(16).padStart(2,"0")).join("")}
+function igB64(bytes){let bin="";for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);return btoa(bin)}
+function igContentType(m,response){
+  const h=String(response.headers.get("content-type")||"").split(";")[0].trim().toLowerCase();
+  if(h.startsWith("image/")||h.startsWith("video/"))return h;
+  return String(m?.type||"")==="video"?"video/mp4":"image/jpeg";
+}
+function igAttachExt(contentType,m){
+  const map={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","video/mp4":"mp4","video/quicktime":"mov"};
+  return map[contentType]||igExt(m);
+}
+async function igAttachSelection(params={}){
+  const scan=await getIgScan(params.scan_id);
+  const indexes=Array.isArray(params.indexes)?params.indexes.map(Number).filter(Number.isFinite):[];
+  const offset=Math.max(Number(params.offset)||0,0);
+  const postLimit=Math.min(Math.max(Number(params.limit)||4,1),6);
+  let posts=indexes.length?scan.posts.filter(p=>indexes.includes(Number(p.index))):scan.posts.slice(offset,offset+postLimit);
+  if(!posts.length)throw new Error("INSTAGRAM_ATTACH_SELECTION_EMPTY");
+  const includeVideo=params.include_video===true,maxPerPost=Math.min(Math.max(Number(params.max_media_per_post)||1,1),3);
+  const selected=[];
+  for(const p of posts){
+    let used=0;
+    for(const m of Array.isArray(p.media)?p.media:[]){
+      if(!includeVideo&&String(m.type||"")==="video")continue;
+      if(!igAllowedMediaUrl(m.url))continue;
+      selected.push({post:p,media:m});used++;
+      if(used>=maxPerPost||selected.length>=6)break;
+    }
+    if(selected.length>=6)break;
+  }
+  if(!selected.length)throw new Error("INSTAGRAM_ATTACH_NO_SUPPORTED_MEDIA");
+  return {scan,selected};
+}
+async function instagramMediaAttach(tabId,params={}){
+  const armed=await isArmed(tabId);if(!armed.armed)throw new Error("INSTAGRAM_ATTACH_CHAT_NOT_CONNECTED");
+  const {scan,selected}=await igAttachSelection(params);
+  const prepared=[];let total=0;
+  for(const item of selected){
+    const media=item.media,url=String(media.url||"");
+    const response=await fetch(url,{method:"GET",credentials:"include",cache:"no-store"});
+    if(!response.ok)throw new Error("INSTAGRAM_MEDIA_FETCH_HTTP_"+response.status);
+    const buf=await response.arrayBuffer(),bytes=new Uint8Array(buf);
+    if(bytes.byteLength<1)throw new Error("INSTAGRAM_MEDIA_EMPTY");
+    if(bytes.byteLength>20*1024*1024)throw new Error("INSTAGRAM_MEDIA_TOO_LARGE");
+    total+=bytes.byteLength;if(total>48*1024*1024)throw new Error("INSTAGRAM_ATTACH_BATCH_TOO_LARGE");
+    const digest=await crypto.subtle.digest("SHA-256",buf),sha=igHex(digest),type=igContentType(media,response);
+    const base=String(item.post.shortcode||("post-"+item.post.index)).replace(/[^A-Za-z0-9._-]/g,"_");
+    const name=("instagram-"+base+"-"+String(prepared.length+1).padStart(2,"0")+"."+igAttachExt(type,media)).slice(0,170);
+    prepared.push({bytes,ref:{id:sha,name,bytes:bytes.byteLength,sha256:sha,content_type:type},post_url:String(item.post.url||""),post_index:Number(item.post.index)});
+  }
+  const sources=[...new Set(prepared.map(x=>x.post_url).filter(Boolean))];
+  const note=[
+    "SOKNA Bridge Instagram visual evidence",
+    "Scan: "+scan.id,
+    "Please inspect the attached media visually and use only the source posts below for attribution:",
+    ...sources.map(x=>"- "+x)
+  ].join("\n");
+  const results=[];
+  try{
+    for(let i=0;i<prepared.length;i++){
+      const item=prepared[i],transferId=("igatt-"+item.ref.id.slice(0,12)+"-"+i+"-"+Date.now().toString(36)).slice(0,90);
+      const begin=await chrome.tabs.sendMessage(tabId,{type:"OUTBOUND_ATTACHMENT_BEGIN",transferId,artifactRef:item.ref,append:i>0},{frameId:0});
+      if(!begin?.ok)throw new Error((begin?.code||"INSTAGRAM_ATTACH_BEGIN_FAILED")+":"+(begin?.error||"page rejected media"));
+      let offset=0,index=0;
+      while(offset<item.bytes.length){
+        const end=Math.min(item.bytes.length,offset+192*1024),dataB64=igB64(item.bytes.subarray(offset,end));
+        const ack=await chrome.tabs.sendMessage(tabId,{type:"OUTBOUND_ATTACHMENT_CHUNK",transferId,index,dataB64},{frameId:0});
+        if(!ack?.ok)throw new Error((ack?.code||"INSTAGRAM_ATTACH_CHUNK_FAILED")+":"+(ack?.error||"page rejected chunk"));
+        offset=end;index++;
+      }
+      const last=i===prepared.length-1;
+      const committed=await chrome.tabs.sendMessage(tabId,{type:"OUTBOUND_ATTACHMENT_COMMIT",transferId,append:i>0,submit:last,note:last?note:""},{frameId:0});
+      if(!committed?.ok)throw new Error((committed?.code||"INSTAGRAM_ATTACH_COMMIT_FAILED")+":"+(committed?.error||"page rejected media"));
+      results.push({filename:item.ref.name,bytes:item.ref.bytes,sha256:item.ref.sha256,post_url:item.post_url,post_index:item.post_index,status:String(committed.status||"")});
+    }
+  }catch(e){
+    throw new Error("INSTAGRAM_ATTACH_FAILED:"+String(e?.message||e));
+  }
+  return {ok:true,scan_id:scan.id,attached:results.length,total_bytes:total,sources,attachments:results,visual_review_ready:true};
+}
 
 async function queueTransportNack(t,d){
   const a=await isArmed(t);if(!a.armed)return{ok:false,ignored:true};
@@ -543,6 +644,7 @@ async function handleCommandInner(tabId,command){
     else if(command.action==="instagram.scan.get")result=await instagramScanGet(command.params||{});
     else if(command.action==="instagram.scan.search")result=await instagramScanSearch(command.params||{});
     else if(command.action==="instagram.media.download")result=await instagramMediaDownload(command.params||{});
+    else if(command.action==="instagram.media.attach")result=await instagramMediaAttach(tabId,command.params||{});
     else result=await agentExec(command);
   }catch(e){result={ok:false,error:String(e)}}
   for(const submitted of JOBCORE.findSubmittedJobs(command.action,result)){try{await registerJobWatch(tabId,command.id,submitted,a.registered.conversationKey)}catch{}}
