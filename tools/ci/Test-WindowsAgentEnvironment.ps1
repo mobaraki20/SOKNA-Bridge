@@ -1,6 +1,6 @@
 param(
   [ValidateSet('quick','full')][string]$Profile = 'quick',
-  [string]$RuntimeVersion = '2.6.0'
+  [string]$RuntimeVersion = '2.6.1'
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path

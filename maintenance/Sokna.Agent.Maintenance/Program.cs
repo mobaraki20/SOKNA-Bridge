@@ -16,7 +16,7 @@ internal static class Program
         {
             object? data = action switch
             {
-                "initialize" => Initialize(installRoot, Get(opt, "artifact-root", AgentConfiguration.DefaultArtifactRoot())),
+                "initialize" => await Initialize(installRoot, Get(opt, "artifact-root", AgentConfiguration.DefaultArtifactRoot())),
                 "preflight" => new Lifecycle(installRoot, log).Preflight(Required(opt, "manifest"), Required(opt, "payload-root")),
                 "status" => Status(installRoot),
                 "health" => await HealthDiagnostics.HealthAsync(installRoot, opt.GetValueOrDefault("expected-version"), CancellationToken.None),
@@ -42,17 +42,45 @@ internal static class Program
         }
     }
 
-    private static object Initialize(string root, string artifactRoot)
+    private static async Task<object> Initialize(string root, string artifactRoot)
     {
+        var preparation = await ExistingRuntimePreparation.PrepareAsync(root, CancellationToken.None);
         var migrationSource = AgentConfiguration.Initialize(root, artifactRoot);
+        var configPath = Path.Combine(root, "config.json");
+        var cfg = JsonNode.Parse(await File.ReadAllTextAsync(configPath))?.AsObject()
+            ?? throw new InvalidDataException("config.json invalid after initialize");
+        var port = cfg["port"]?.GetValue<int>() ?? throw new InvalidDataException("config port missing after initialize");
+        await ExistingRuntimePreparation.WaitForEndpointAvailableAsync(port, CancellationToken.None);
+
         var manifestPath = Path.Combine(root, "manifests", "installed-manifest.json");
         var manifest = File.Exists(manifestPath) ? JsonFiles.Read<InstallManifest>(manifestPath) : null;
         var statePath = Path.Combine(root, "state", "runtime-ownership.json");
         var state = File.Exists(statePath) ? JsonFiles.Read<RuntimeOwnershipState>(statePath) : new RuntimeOwnershipState();
         state.InstallRoot = root; state.ActiveVersion = manifest?.ProductVersion ?? state.ActiveVersion; state.LauncherVersion = manifest?.LauncherVersion ?? state.LauncherVersion;
-        state.ConfigPath = Path.Combine(root, "config.json"); state.ArtifactRoot = Path.GetFullPath(artifactRoot); state.SourceArtifactHash = manifest is null ? state.SourceArtifactHash : Hashing.Sha256(manifestPath); state.UpdatedAt = DateTimeOffset.UtcNow.ToString("O");
+        state.ConfigPath = configPath; state.ArtifactRoot = Path.GetFullPath(artifactRoot); state.SourceArtifactHash = manifest is null ? state.SourceArtifactHash : Hashing.Sha256(manifestPath); state.UpdatedAt = DateTimeOffset.UtcNow.ToString("O");
         JsonFiles.WriteAtomic(statePath, state);
-        return new { install_root = root, artifact_root = state.ArtifactRoot, config_path = state.ConfigPath, migrated_from = migrationSource, migration_source_preserved = migrationSource is not null };
+        JsonFiles.WriteAtomic(Path.Combine(root, "state", "install-preparation.json"), new
+        {
+            schema = "sokna-agent-install-preparation-v1",
+            current_runtime_stopped = preparation.CurrentRuntimeStopped,
+            current_runtime_pid = preparation.CurrentRuntimePid,
+            legacy_runtime_detected = preparation.LegacyRuntimeDetected,
+            legacy_runtime_stopped = preparation.LegacyRuntimeStopped,
+            legacy_runtime_pid = preparation.LegacyRuntimePid,
+            legacy_port = preparation.LegacyPort,
+            legacy_autostart_removed = preparation.LegacyAutostartRemoved,
+            legacy_config_path = preparation.LegacyConfigPath,
+            prepared_at = DateTimeOffset.UtcNow.ToString("O")
+        });
+        return new
+        {
+            install_root = root,
+            artifact_root = state.ArtifactRoot,
+            config_path = state.ConfigPath,
+            migrated_from = migrationSource,
+            migration_source_preserved = migrationSource is not null,
+            preparation
+        };
     }
 
     private static object Status(string root)

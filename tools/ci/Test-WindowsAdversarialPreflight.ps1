@@ -1,6 +1,6 @@
 param(
   [string]$RepoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path,
-  [string]$RuntimeVersion='2.6.0'
+  [string]$RuntimeVersion='2.6.1'
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -86,9 +86,9 @@ if((($probeOutput|Out-String).Trim())-notmatch 'EXPECTED_NATIVE_STDERR'){Fail 'W
 
 # 5) Re-run the pure PowerShell Windows matrices that previously exposed PS5.1 shape/path bugs.
 foreach($rel in @(
-  'tools\runtime\releases\2.6.0\Test-ArtifactRoot260.ps1',
-  'tools\runtime\releases\2.6.0\Test-Workspace260.ps1',
-  'tools\runtime\releases\2.6.0\Test-AdvancedWorkspace260.ps1'
+  'tools\runtime\releases\2.6.1\Test-ArtifactRoot261.ps1',
+  'tools\runtime\releases\2.6.1\Test-Workspace261.ps1',
+  'tools\runtime\releases\2.6.1\Test-AdvancedWorkspace261.ps1'
 )){
   $path=Join-Path $RepoRoot $rel
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $path | Out-Null

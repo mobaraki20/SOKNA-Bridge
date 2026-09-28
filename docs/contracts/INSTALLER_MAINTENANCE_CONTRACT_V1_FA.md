@@ -149,3 +149,14 @@ P1 source فقط وقتی Windows-valid محسوب می‌شود که full Windo
 - start/repair/upgrade/rollback health باید bounded retry داشته باشد تا startup race باعث rollback کاذب نشود.
 - build release به‌صورت پیش‌فرض روی dirty tree fail می‌شود.
 - Windows full-profile acceptance باید lifecycle واقعی Setup را اجرا کند، نه صرفاً compile.
+
+
+## 14) Legacy/current running runtime migration hardening (2.6.1)
+- Setup activation must account for an already-running SOKNA runtime, including legacy `%LOCALAPPDATA%\SOKNA-Bridge-V2` and an active current InstallRoot runtime.
+- A legacy process may be stopped only after ownership is correlated. PID presence alone is insufficient; process type/start-time must correlate with the legacy PID file and the configured endpoint must answer an authenticated SOKNA identity probe.
+- If a SOKNA legacy endpoint is alive but process ownership cannot be proven, Setup must fail closed and must not kill an uncorrelated process.
+- Legacy config/source files are preserved. Legacy autostart may be removed only when its value points to the canonical legacy runtime.
+- A currently managed Agent may be stopped for Setup reinstall/upgrade using persisted PID/path/start-time ownership with relaxed current-disk hash, because Inno may already have replaced the runtime file before post-install initialization.
+- After runtime preparation, the configured HTTP endpoint must be proven bindable before the new launcher is started.
+- Preparation evidence must be persisted without secrets.
+- Full Windows acceptance must include a live legacy-running-Agent -> Setup migration and an active-current-Agent -> Setup reinstall scenario.

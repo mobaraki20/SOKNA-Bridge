@@ -1,5 +1,5 @@
 #define MyAppName "SOKNA Agent"
-#define MyAppVersion "2.6.0"
+#define MyAppVersion "2.6.1"
 #define MyPublisher "SOKNA"
 #define MyExeName "Sokna.Agent.Maintenance.exe"
 #define PayloadRoot "..\..\artifacts\windows\installer-payload"
@@ -117,7 +117,7 @@ begin
   if CurStep = ssPostInstall then
   begin
     RunRequired('initialize', '--artifact-root "' + GetArtifactRoot('') + '"');
-    RunRequired('start', '--expected-version "2.6.0"');
+    RunRequired('start', '--expected-version "2.6.1"');
   end;
   if CurStep = ssDone then
   begin
