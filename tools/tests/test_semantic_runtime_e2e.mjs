@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 
 const coreSrc=fs.readFileSync(new URL("../../extension/chrome/semantic_core.js",import.meta.url),"utf8");
 const intentSrc=fs.readFileSync(new URL("../../extension/chrome/semantic_intent.js",import.meta.url),"utf8");
-const START="[SOKNA-INTENT]",END="[/SOKNA-INTENT]";
+const START="[SOKNA-INTENT]",END="[/SOKNA-INTENT]",PROBE_START="[SOKNA-PROBE]",PROBE_END="[/SOKNA-PROBE]";
 const sleep=()=>new Promise(r=>setTimeout(r,0));
 
 function node(id,text){
@@ -19,16 +19,41 @@ function turn(id,text,label){
     querySelectorAll(){return [body]}
   };
 }
+function domEl(tag="DIV",text="",cls=""){
+  let own=String(text||"");
+  const attrs={};
+  const e={
+    tagName:tag.toUpperCase(),className:cls,children:[],parentElement:null,
+    get innerText(){return this.children.length?this.children.map(x=>x.innerText).join("\n"):own},
+    set innerText(v){own=String(v||"")},
+    get textContent(){return this.innerText},
+    set textContent(v){own=String(v||"")},
+    getAttribute(k){return attrs[k]||""},
+    setAttribute(k,v){attrs[k]=String(v)},
+    querySelector(){return null},
+    querySelectorAll(){const out=[];const walk=n=>{for(const c of n.children||[]){out.push(c);walk(c)}};walk(this);return out},
+    contains(n){let cur=n;while(cur){if(cur===this)return true;cur=cur.parentElement}return false}
+  };
+  return e;
+}
+function append(parent,child){child.parentElement=parent;parent.children.push(child);return child}
+function genericTurn(main,text,cls="turn"){
+  const shell=append(main,domEl("DIV","",cls));
+  const body=append(shell,domEl("P",text,"markdown"));
+  return {shell,body};
+}
 function runtime(){
-  const assistant=[],turns=[],sent=[],listeners=[],storage={},observers=[];
+  const assistant=[],turns=[],sent=[],listeners=[],storage={},observers=[],main=domEl("MAIN","","conversation-main");
   let rejectCommand=false;
+  const body=domEl("BODY","");append(body,main);
   const document={
+    querySelector(sel){if(sel==="main,[role=\'main\']")return main;return null},
     querySelectorAll(sel){
       if(sel==='[data-message-author-role="assistant"]')return [...assistant];
       if(sel==='[data-testid^="conversation-turn-"]')return [...turns];
       return [];
     },
-    body:{innerText:"",textContent:""},documentElement:{textContent:""}
+    body,documentElement:body
   };
   class MO{constructor(cb){this.cb=cb;observers.push(this)}observe(){}disconnect(){}}
   const local={
@@ -50,7 +75,7 @@ function runtime(){
       try{const asyncFlag=fn(m,{},reply);if(asyncFlag!==true&&!settled)resolve(undefined)}catch(e){reject(e)}
     });
   }
-  return {ctx,assistant,turns,sent,storage,message,setReject:v=>{rejectCommand=v},mutate:async()=>{for(const o of observers)o.cb();await new Promise(r=>setTimeout(r,90))}};
+  return {ctx,assistant,turns,main,sent,storage,message,addGeneric:(text,cls="turn")=>genericTurn(main,text,cls),setReject:v=>{rejectCommand=v},mutate:async()=>{for(const o of observers)o.cb();await new Promise(r=>setTimeout(r,90))}};
 }
 function command(id,action="ping"){return START+JSON.stringify({id,intent:"exec",action,params:{}})+END}
 function commands(r){return r.sent.filter(x=>x?.type==="COMMAND")}
@@ -135,6 +160,57 @@ function commands(r){return r.sent.filter(x=>x?.type==="COMMAND")}
   r.assistant.push(node("prose","Here is an example: "+command("embedded")+" do not run it."));
   await r.mutate();
   assert.equal(commands(r).length,0,"non-standalone assistant documentation must not execute");
+}
+
+{
+  const r=runtime();await r.message({type:"SEMANTIC_BASELINE"});
+  const challenge="probe-runtime-001";
+  const armed=await r.message({type:"SEMANTIC_SET_CHALLENGE",challenge});
+  assert.equal(armed.ok,true);
+  r.addGeneric("Bridge handshake "+challenge);
+  r.addGeneric(PROBE_START+challenge+PROBE_END);
+  await r.mutate();
+  const d=await r.message({type:"SEMANTIC_DIAG"});
+  assert.equal(d.semantic.probe_verified,true,"challenge response must prove intake without turn selectors");
+  assert.equal(d.semantic.selector_ready,true);
+  assert.equal(d.semantic.selector_mode,"challenge-shell");
+  assert.ok(r.sent.some(x=>x?.type==="SEMANTIC_INTAKE_PROVEN"&&x.challenge===challenge),"verified probe must notify background");
+
+  r.addGeneric(command("generic-user-must-not-run"));
+  await r.mutate();
+  assert.equal(commands(r).length,0,"same-shape adjacent user turn must fail closed by conversation parity");
+
+  r.addGeneric(command("generic-assistant-ok"));
+  await r.mutate();
+  assert.equal(commands(r).length,1,"next same-shape assistant turn must dispatch after challenge proof");
+  assert.equal(commands(r)[0].command.id,"generic-assistant-ok");
+  assert.equal(commands(r)[0].semantic.messageIdentity.includes("node-"),true);
+}
+{
+  const r=runtime();await r.message({type:"SEMANTIC_BASELINE"});
+  const challenge="probe-runtime-002";await r.message({type:"SEMANTIC_SET_CHALLENGE",challenge});
+  r.addGeneric("Bridge handshake "+challenge);
+  r.addGeneric(PROBE_START+"wrong-challenge"+PROBE_END);
+  await r.mutate();
+  const d=await r.message({type:"SEMANTIC_DIAG"});
+  assert.equal(d.semantic.probe_verified,false,"wrong challenge must not verify intake");
+  r.addGeneric(command("unproven-must-not-run"));
+  await r.mutate();
+  assert.equal(commands(r).length,0,"marker-first discovery must not execute before provenance is proved");
+}
+{
+  const r=runtime();
+  r.addGeneric(command("historical-generic"));
+  await r.message({type:"SEMANTIC_BASELINE"});
+  const challenge="probe-runtime-003";await r.message({type:"SEMANTIC_SET_CHALLENGE",challenge});
+  r.addGeneric("Bridge handshake "+challenge);
+  r.addGeneric(PROBE_START+challenge+PROBE_END);
+  await r.mutate();
+  r.addGeneric("ordinary user follow-up");
+  r.addGeneric(command("fresh-generic"));
+  await r.mutate();
+  const ids=commands(r).map(x=>x.command.id);
+  assert.deepEqual(ids,["fresh-generic"],"historical generic markers present at baseline must never execute after proof");
 }
 
 console.log("SEMANTIC_RUNTIME_E2E_PASS");
