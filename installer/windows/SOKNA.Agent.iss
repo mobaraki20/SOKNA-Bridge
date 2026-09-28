@@ -1,7 +1,8 @@
 #define MyAppName "SOKNA Bridge"
 #define MyAppVersion "2.7.0"
 #define MyPublisher "SOKNA"
-#define MyExeName "Sokna.Bridge.ControlCenter.exe"\n#define MaintenanceExeName "Sokna.Agent.Maintenance.exe"
+#define MyExeName "Sokna.Bridge.ControlCenter.exe"
+#define MaintenanceExeName "Sokna.Agent.Maintenance.exe"
 #define PayloadRoot "..\..\artifacts\windows\installer-payload"
 
 [Setup]
@@ -11,7 +12,7 @@ AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyPublisher}
 DefaultDirName={localappdata}\Programs\SOKNA Agent
-DefaultGroupName=SOKNA Agent
+DefaultGroupName=SOKNA Bridge
 DisableProgramGroupPage=no
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=commandline
