@@ -95,7 +95,10 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
     $legacyAgent=Join-Path $legacyRoot 'agent.ps1'
     Copy-Item -LiteralPath (Join-Path $RepoRoot 'native\legacy\v2.5\payload\agent.ps1') -Destination $legacyAgent -Force
     $port=Get-FreeTcpPort
-    $token=[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+    $tokenBytes=New-Object byte[] 32
+    $rng=[Security.Cryptography.RandomNumberGenerator]::Create()
+    try{$rng.GetBytes($tokenBytes)}finally{$rng.Dispose()}
+    $token=[Convert]::ToBase64String($tokenBytes)
     $legacyCfg=[ordered]@{
       port=$port
       token=$token
