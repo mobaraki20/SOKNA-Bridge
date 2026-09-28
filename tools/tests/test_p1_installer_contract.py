@@ -63,7 +63,7 @@ for key in ['token', 'password', 'private_key', 'cookie', '[REDACTED]', 'Root re
 
 
 prep = (ROOT / 'maintenance/Sokna.Agent.Maintenance/ExistingRuntimePreparation.cs').read_text(encoding='utf-8')
-for marker in ['LEGACY_RUNTIME_OWNERSHIP_UNPROVEN', 'LEGACY_RUNTIME_ACTIVE_WITHOUT_SAFE_OWNERSHIP', 'SOKNA_RUNTIME_LISTENER_PID_UNRESOLVED', 'SOKNA_RUNTIME_LISTENER_PROCESS_UNEXPECTED', 'Get-NetTCPConnection', 'AGENT_ENDPOINT_UNAVAILABLE_AFTER_PREP', 'SOKNA Bridge Agent', 'SOKNA-Bridge-V2', 'ProbeLegacyIdentityAsync', 'WaitForEndpointAvailableAsync']:
+for marker in ['LEGACY_RUNTIME_OWNERSHIP_UNPROVEN', 'LEGACY_RUNTIME_ACTIVE_WITHOUT_SAFE_OWNERSHIP', 'SOKNA_RUNTIME_PROCESS_UNRESOLVED', 'SOKNA_RUNTIME_PROCESS_AMBIGUOUS', 'Get-CimInstance Win32_Process', 'ExtractCommandArgument', 'AGENT_ENDPOINT_UNAVAILABLE_AFTER_PREP', 'SOKNA Bridge Agent', 'SOKNA-Bridge-V2', 'ProbeLegacyIdentityAsync', 'WaitForEndpointAvailableAsync']:
     assert marker in prep, f'legacy/current runtime preparation missing {marker}'
 assert 'requireCurrentHash: false' in prep, 'Setup reinstall must be able to stop a previously owned runtime after payload replacement'
 
