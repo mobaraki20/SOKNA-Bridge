@@ -44,6 +44,7 @@ internal static class Program
 
     private static object Initialize(string root, string artifactRoot)
     {
+        var legacyRuntime = LegacyRuntimeMigration.Quiesce(root);
         var migrationSource = AgentConfiguration.Initialize(root, artifactRoot);
         var manifestPath = Path.Combine(root, "manifests", "installed-manifest.json");
         var manifest = File.Exists(manifestPath) ? JsonFiles.Read<InstallManifest>(manifestPath) : null;
@@ -52,7 +53,7 @@ internal static class Program
         state.InstallRoot = root; state.ActiveVersion = manifest?.ProductVersion ?? state.ActiveVersion; state.LauncherVersion = manifest?.LauncherVersion ?? state.LauncherVersion;
         state.ConfigPath = Path.Combine(root, "config.json"); state.ArtifactRoot = Path.GetFullPath(artifactRoot); state.SourceArtifactHash = manifest is null ? state.SourceArtifactHash : Hashing.Sha256(manifestPath); state.UpdatedAt = DateTimeOffset.UtcNow.ToString("O");
         JsonFiles.WriteAtomic(statePath, state);
-        return new { install_root = root, artifact_root = state.ArtifactRoot, config_path = state.ConfigPath, migrated_from = migrationSource, migration_source_preserved = migrationSource is not null };
+        return new { install_root = root, artifact_root = state.ArtifactRoot, config_path = state.ConfigPath, migrated_from = migrationSource, migration_source_preserved = migrationSource is not null, legacy_runtime = legacyRuntime };
     }
 
     private static object Status(string root)
