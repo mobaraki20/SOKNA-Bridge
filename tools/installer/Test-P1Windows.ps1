@@ -73,6 +73,51 @@ function Invoke-Maint([string]$Exe,[string]$InstallRoot,[string[]]$CommandArgs,[
   try{return Invoke-ProcessChecked $Exe (@($CommandArgs)+@('--install-root',$InstallRoot)) $Allowed}catch{Write-Host 'P1_MAINT_FAILURE_EVIDENCE';Get-ChildItem (Join-Path $InstallRoot 'logs') -File -Recurse -ErrorAction SilentlyContinue|Sort-Object LastWriteTime -Descending|Select-Object -First 2|ForEach-Object{Write-Host ('P1_MAINT_LOG '+$_.FullName);Get-Content $_.FullName -Tail 30 -ErrorAction SilentlyContinue|Write-Host};throw}
 }
 
+function Start-LegacyMigrationFixture([string]$CaseRoot){
+  $legacyRoot=Join-Path $env:LOCALAPPDATA 'SOKNA-Bridge-V2'
+  if(Test-Path -LiteralPath $legacyRoot){throw ('LEGACY_TEST_ROOT_ALREADY_EXISTS: '+$legacyRoot)}
+  $workspace=Join-Path $CaseRoot 'legacy-workspace'
+  New-Item -ItemType Directory -Path $legacyRoot,$workspace -Force|Out-Null
+  $legacyAgent=Join-Path $legacyRoot 'agent.ps1'
+  Copy-Item -LiteralPath (Join-Path $RepoRoot 'native\legacy\v2.5\payload\agent.ps1') -Destination $legacyAgent -Force
+  $token='LEGACY_CI_'+[Guid]::NewGuid().ToString('N')
+  $cfg=[ordered]@{
+    port=8766
+    token=$token
+    workspace_root=$workspace
+    default_workspace='LegacyTest'
+    default_github_owner=''
+    allowed_github_owners=@()
+    workspaces=[ordered]@{
+      LegacyTest=[ordered]@{path=$workspace;expected_repo='';write_enabled=$true}
+    }
+  }
+  Write-Json (Join-Path $legacyRoot 'config.json') $cfg
+  $runKey='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+  New-Item -Path $runKey -Force|Out-Null
+  $legacyRun='powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$legacyAgent+'"'
+  Set-ItemProperty -Path $runKey -Name 'SOKNA Bridge Agent' -Value $legacyRun
+
+  $proc=Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$legacyAgent,'-ConfigPath',(Join-Path $legacyRoot 'config.json')) -WindowStyle Hidden -PassThru
+  $ready=$false
+  for($i=0;$i -lt 30;$i++){
+    Start-Sleep -Milliseconds 250
+    try{
+      $body=@{id=('legacy-ci-'+[guid]::NewGuid().ToString('N'));action='ping';params=@{}}|ConvertTo-Json -Compress
+      $r=Invoke-RestMethod -Uri 'http://127.0.0.1:8766/api' -Method Post -Headers @{'X-Sokna-Token'=$token} -ContentType 'application/json' -Body $body -TimeoutSec 2
+      if([bool]$r.ok){$ready=$true;break}
+    }catch{}
+  }
+  if(-not$ready){
+    try{$proc.Kill()}catch{}
+    throw 'LEGACY_MIGRATION_FIXTURE_NOT_READY'
+  }
+  $pidFile=Join-Path $legacyRoot 'agent.pid'
+  if(-not(Test-Path -LiteralPath $pidFile -PathType Leaf)){throw 'LEGACY_MIGRATION_FIXTURE_PID_MISSING'}
+  $pid=[int](Get-Content -LiteralPath $pidFile -Raw)
+  return [pscustomobject]@{root=$legacyRoot;pid=$pid;process=$proc;run_key=$runKey}
+}
+
 if([string]::IsNullOrWhiteSpace($SetupPath)){
   $s=Get-ChildItem (Join-Path $RepoRoot 'artifacts\windows\setup') -Filter 'SOKNA-Agent-Setup-*.exe' -File|Select-Object -First 1
   if(-not $s){throw 'SETUP_EXE_MISSING'};$SetupPath=$s.FullName
@@ -80,8 +125,14 @@ if([string]::IsNullOrWhiteSpace($SetupPath)){
 $caseRoot=Join-Path $env:TEMP ('sokna-p1-ci-'+[Guid]::NewGuid().ToString('N'))
 $install=Join-Path $caseRoot 'app';$artifact=Join-Path $caseRoot 'artifacts';$setupLog=Join-Path $caseRoot 'setup.log'
 New-Item -ItemType Directory -Path $caseRoot -Force|Out-Null
+$legacyFixture=$null
 try{
+  $legacyFixture=Start-LegacyMigrationFixture $caseRoot
   Invoke-ProcessChecked $SetupPath @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$install+'"'),('/ArtifactRoot="'+$artifact+'"'),'/TASKS=""',('/LOG="'+$setupLog+'"'))|Out-Null
+  if(Get-Process -Id ([int]$legacyFixture.pid) -ErrorAction SilentlyContinue){throw 'LEGACY_RUNTIME_NOT_STOPPED'}
+  if(-not(Test-Path -LiteralPath (Join-Path $legacyFixture.root 'config.json') -PathType Leaf)){throw 'LEGACY_MIGRATION_SOURCE_NOT_PRESERVED'}
+  $legacyRun=Get-ItemPropertyValue -Path $legacyFixture.run_key -Name 'SOKNA Bridge Agent' -ErrorAction SilentlyContinue
+  if(-not[string]::IsNullOrWhiteSpace([string]$legacyRun)){throw 'LEGACY_AUTOSTART_NOT_REMOVED'}
   $maint=Join-Path $install 'Sokna.Agent.Maintenance.exe';if(-not(Test-Path $maint)){throw 'MAINTENANCE_EXE_MISSING_AFTER_INSTALL'}
   Invoke-Maint $maint $install @('health','--expected-version','2.6.0')|Out-Null
   foreach($d in 'incoming','staging','accepted','failed','cache','browser','logs'){if(-not(Test-Path (Join-Path $artifact $d))){throw "ARTIFACT_ROOT_DIR_MISSING: $d"}}
@@ -124,4 +175,12 @@ try{
 }
 finally{
   if(Test-Path $install){try{$m=Join-Path $install 'Sokna.Agent.Maintenance.exe';if(Test-Path $m){& $m stop --install-root $install|Out-Null}}catch{}}
+  if($null-ne$legacyFixture){
+    try{if(Get-Process -Id ([int]$legacyFixture.pid) -ErrorAction SilentlyContinue){Stop-Process -Id ([int]$legacyFixture.pid) -Force -ErrorAction SilentlyContinue}}catch{}
+    try{
+      $legacyRun=Get-ItemPropertyValue -Path $legacyFixture.run_key -Name 'SOKNA Bridge Agent' -ErrorAction SilentlyContinue
+      if(([string]$legacyRun).Contains([string]$legacyFixture.root,[StringComparison]::OrdinalIgnoreCase)){Remove-ItemProperty -Path $legacyFixture.run_key -Name 'SOKNA Bridge Agent' -Force -ErrorAction SilentlyContinue}
+    }catch{}
+    try{if(Test-Path -LiteralPath $legacyFixture.root){Remove-Item -LiteralPath $legacyFixture.root -Recurse -Force}}catch{}
+  }
 }
