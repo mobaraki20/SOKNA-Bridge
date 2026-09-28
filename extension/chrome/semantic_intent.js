@@ -100,12 +100,6 @@ function shellContext(n){
   }
   return {shell:chosen,parent,ordinal,signature:stableShape(chosen)};
 }
-function challengeMatchesShell(n){
-  if(!probeVerified||!probeParent||!probeSignature||probeOrdinal<0)return false;
-  const c=shellContext(n);
-  if(c.parent!==probeParent||c.signature!==probeSignature||c.ordinal<0)return false;
-  return Math.abs(c.ordinal-probeOrdinal)%2===0;
-}
 function markerWitnesses(){
   const root=mainRoot();if(!root)return [];
   let whole="";try{whole=String(root.textContent||root.innerText||"")}catch{}
@@ -135,18 +129,18 @@ async function verifyProbeNode(n,trigger){
   const role=roleFromAncestors(n);if(role.role==="user")return false;
   const c=shellContext(n);if(!c.parent||c.ordinal<0||!c.signature)return false;
   probeVerified=true;probeVerifiedAt=now();probeSignature=c.signature;probeParent=c.parent;probeOrdinal=c.ordinal;
-  state.probe_verified=true;state.probe_verified_at=probeVerifiedAt;state.probe_signature=probeSignature;state.selector_ready=true;state.selector_mode="challenge-shell";state.intake_verified_at=probeVerifiedAt;state.last_role_evidence=role.role==="assistant"?(role.evidence||"explicit-assistant"):"challenge-response";state.provenance_mode=role.role==="assistant"?"explicit-role+challenge":"challenge-shell";
+  state.probe_verified=true;state.probe_verified_at=probeVerifiedAt;state.probe_signature=probeSignature;state.selector_ready=true;state.selector_mode="challenge-shell";state.intake_verified_at=probeVerifiedAt;state.last_role_evidence=role.role==="assistant"?(role.evidence||"explicit-assistant"):"challenge-response";state.provenance_mode=role.role==="assistant"?"explicit-role+challenge":"challenge-nonce";
   await trace("semantic.intake_verified",{trigger,evidence:state.last_role_evidence,selector_mode:state.selector_mode,probe_signature:probeSignature});
   await sendRuntime({type:"SEMANTIC_INTAKE_PROVEN",challenge:intakeChallenge,evidence:state.last_role_evidence,selectorMode:state.selector_mode,probeSignature:probeSignature},"semantic.intake_verified_unreported");
   return true;
 }
 function trustCommandNode(n){
-  if(hasUnsafeAncestor(n))return {ok:false,evidence:"unsafe-editable"};
+  if(hasUnsafeAncestor(n))return {ok:false,evidence:"unsafe-editable",requiresNonce:false};
   const role=roleFromAncestors(n);
-  if(role.role==="assistant")return {ok:true,evidence:role.evidence||"explicit-assistant"};
-  if(role.role==="user")return {ok:false,evidence:role.evidence||"explicit-user"};
-  if(challengeMatchesShell(n))return {ok:true,evidence:"challenge-shell"};
-  return {ok:false,evidence:"unproven-marker"};
+  if(role.role==="assistant")return {ok:true,evidence:role.evidence||"explicit-assistant",requiresNonce:false};
+  if(role.role==="user")return {ok:false,evidence:role.evidence||"explicit-user",requiresNonce:false};
+  if(probeVerified)return {ok:true,evidence:"challenge-nonce",requiresNonce:true};
+  return {ok:false,evidence:"unproven-marker",requiresNonce:false};
 }
 function assistantNodes(){
   if(window.top!==window)return [];
@@ -213,7 +207,7 @@ function candidateFor(node,index){
   const messageIdentity=nodeIdentity(node,index),rawHash=hash(raw);
   return {kind:"command",message_identity:messageIdentity,raw,raw_hash:rawHash,attempt_key:messageIdentity+":"+rawHash};
 }
-async function dispatchCandidate(c,trigger){
+async function dispatchCandidate(c,trigger,provenance={evidence:"",requiresNonce:false}){
   if(attempts.has(c.attempt_key))return {ok:true,local_duplicate:true};
   attempts.set(c.attempt_key,{state:"detected",ts:now(),trigger,raw_hash:c.raw_hash,message_identity:c.message_identity});
   state.seen_count=attempts.size;state.last_trigger=trigger;
@@ -222,6 +216,15 @@ async function dispatchCandidate(c,trigger){
     attempts.get(c.attempt_key).state="rejected";
     await reject(c.raw,"invalid_json",e,"",{attemptKey:c.attempt_key,messageIdentity:c.message_identity,trigger});
     return {ok:false,rejected:true};
+  }
+  if(provenance?.requiresNonce){
+    const supplied=String(spec?.bridge_nonce||"").trim();
+    if(!probeVerified||!intakeChallenge||supplied!==intakeChallenge){
+      attempts.get(c.attempt_key).state="rejected";
+      state.last_parse_error="semantic nonce missing or mismatch";
+      await trace("semantic.marker_untrusted",{trigger,evidence:"nonce-mismatch",command_id:String(spec?.id||""),attempt_key:c.attempt_key,message_identity:c.message_identity});
+      return {ok:false,rejected:true,untrusted:true};
+    }
   }
   const compiled=Core?.compile?.(spec,()=>idFor(c.raw));
   if(!compiled?.ok){
@@ -233,7 +236,7 @@ async function dispatchCandidate(c,trigger){
   const cid=String(compiled.command.id||"");state.last_command_id=cid;state.last_dispatch_at=now();state.last_dispatch_ok=null;state.last_parse_error="";
   await trace("semantic.detected",{command_id:cid,action:compiled.command.action,attempt_key:c.attempt_key,message_identity:c.message_identity,trigger});
   await trace("semantic.dispatch_started",{command_id:cid,action:compiled.command.action,attempt_key:c.attempt_key,message_identity:c.message_identity,trigger});
-  const meta={intent:compiled.intent,route:compiled.route,bytes:compiled.bytes,trigger,attemptKey:c.attempt_key,messageIdentity:c.message_identity,semanticVersion:VERSION};
+  const meta={intent:compiled.intent,route:compiled.route,bytes:compiled.bytes,trigger,attemptKey:c.attempt_key,messageIdentity:c.message_identity,semanticVersion:VERSION,provenance:String(provenance?.evidence||""),nonceBound:!!provenance?.requiresNonce};
   state.last_send_error="";
   const r=await sendRuntime({type:"COMMAND",command:compiled.command,detector:"semantic-v2",source:"semantic:"+compiled.route,semantic:meta},"semantic.dispatch_failed");
   const ok=!!r?.ok&&!r?.runtime_unavailable;
@@ -261,7 +264,7 @@ async function scan(trigger="mutation",emit=true){
     }
     if(nodeSet.has(w))continue;
     const trust=trustCommandNode(w);
-    if(trust.ok){nodes.push(w);nodeSet.add(w);state.last_role_evidence=trust.evidence;state.provenance_mode=trust.evidence==="challenge-shell"?"challenge-shell":"explicit-role"}
+    if(trust.ok){w.__soknaProvenance=trust;nodes.push(w);nodeSet.add(w);state.last_role_evidence=trust.evidence;state.provenance_mode=trust.requiresNonce?"challenge-nonce":"explicit-role"}
     else{
       ignored++;state.untrusted_marker_count++;
       if(!untrustedNodes.has(w)){untrustedNodes.add(w);await trace("semantic.marker_untrusted",{trigger,evidence:trust.evidence,text_hash:hash(text)})}
@@ -279,7 +282,8 @@ async function scan(trigger="mutation",emit=true){
       continue;
     }
     const before=attempts.has(c.attempt_key);
-    const r=await dispatchCandidate(c,trigger);
+    const provenance=nodes[i]?.__soknaProvenance||{evidence:"explicit-assistant",requiresNonce:false};
+    const r=await dispatchCandidate(c,trigger,provenance);
     if(!before){if(r?.rejected)rejected++;else if(!r?.local_duplicate)dispatched++}
   }
   state.seen_count=attempts.size;
