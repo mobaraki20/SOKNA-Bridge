@@ -101,6 +101,8 @@ assert "$manifest.files|Where-Object{[string]$_.owner -ne 'maintenance'}" not in
 assert not re.search(r'(?im)(^|[;\s])(gci|gc|cp|mv|rm|kill|sleep|gfh)(?=\s|;|$)', windows_acceptance), 'forbidden PowerShell alias in Windows acceptance script'
 assert '$CommandArgs' in windows_acceptance
 assert '[string[]]$Args' not in windows_acceptance
+assert "$port=8766" in windows_acceptance, 'unhealthy current-runtime acceptance must reproduce the live port 8766 conflict'
+assert "$install=Join-Path $CaseRoot 'SOKNA Agent'" in windows_acceptance, 'unhealthy current-runtime acceptance must exercise a path containing spaces'
 
 # P1 Core must remain project-agnostic. Repo module identity is allowed only in go.mod.
 for root in [ROOT / 'maintenance', ROOT / 'installer/windows', ROOT / 'tools/installer']:
