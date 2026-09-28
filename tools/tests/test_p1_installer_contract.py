@@ -10,6 +10,7 @@ required = [
     'maintenance/Sokna.Agent.Maintenance/Sokna.Agent.Maintenance.csproj',
     'maintenance/Sokna.Agent.Maintenance/Program.cs',
     'maintenance/Sokna.Agent.Maintenance/Lifecycle.cs',
+    'maintenance/Sokna.Agent.Maintenance/LegacyRuntimeMigration.cs',
     'maintenance/Sokna.Agent.Maintenance/SupportBundle.cs',
     'maintenance/Sokna.Agent.Launcher/Sokna.Agent.Launcher.csproj',
     'maintenance/Sokna.Agent.Launcher/Program.cs',
@@ -44,6 +45,11 @@ program = (ROOT / 'maintenance/Sokna.Agent.Maintenance/Program.cs').read_text(en
 for action in ['initialize', 'preflight', 'status', 'health', 'start', 'stop', 'uninstall-prep', 'diagnostics', 'support-bundle', 'repair', 'upgrade', 'rollback']:
     assert f'"{action}"' in program, f'maintenance action missing {action}'
 
+legacy_migration = (ROOT / 'maintenance/Sokna.Agent.Maintenance/LegacyRuntimeMigration.cs').read_text(encoding='utf-8')
+for marker in ['SOKNA-Bridge-V2', 'SOKNA Bridge Agent', 'Get-CimInstance Win32_Process', 'Get-NetTCPConnection', 'LEGACY_RUNTIME_STOP_TIMEOUT', 'AGENT_PORT_CONFLICT_UNOWNED', 'Kill(entireProcessTree: true)']:
+    assert marker in legacy_migration, f'legacy runtime migration marker missing {marker}'
+assert 'LegacyRuntimeMigration.Quiesce(root)' in program, 'initialize must quiesce the legacy runtime before starting the new agent'
+
 lifecycle = (ROOT / 'maintenance/Sokna.Agent.Maintenance/Lifecycle.cs').read_text(encoding='utf-8')
 for marker in ['LoadAndVerifyManifest', 'AtomicCopyVerified', 'automatic rollback', 'RollbackTxAsync', 'AgentProcessOwnership.TryGetOwnedPid', 'f.Owner == "maintenance"', 'removedFiles', 'previous-ownership.json', 'StartAndWaitForHealth', 'CURRENT_RUNTIME_NOT_LKG_REPAIR_FIRST']:
     assert marker in lifecycle, f'lifecycle marker missing {marker}'
@@ -76,7 +82,7 @@ assert '$buildOutput=@(' in workflow and 'Select-Object -Last 1' in workflow
 assert 'timeout-minutes: 30' in workflow
 
 windows_acceptance = (ROOT / 'tools/installer/Test-P1Windows.ps1').read_text(encoding='utf-8')
-for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'BrokenRuntime', 'PROCESS_TIMEOUT:', 'P1_PROCESS_START', 'P1_PROCESS_EXIT']:
+for marker in ['SUPPORT_BUNDLE_SECRET_LEAK', 'REPAIR_DID_NOT_RESTORE_RUNTIME', 'UPGRADE_REMOVED_FILE_STALE', 'ROLLBACK_DID_NOT_RESTORE_REMOVED_FILE', 'UNINSTALL_REMOVED_ARTIFACT_ROOT', 'LEGACY_RUNTIME_NOT_STOPPED', 'LEGACY_MIGRATION_SOURCE_NOT_PRESERVED', 'LEGACY_AUTOSTART_NOT_REMOVED', 'LEGACY_MIGRATION_FIXTURE_NOT_READY', 'BrokenRuntime', 'PROCESS_TIMEOUT:', 'P1_PROCESS_START', 'P1_PROCESS_EXIT']:
     assert marker in windows_acceptance, f'Windows lifecycle acceptance missing {marker}'
 # Synthetic upgrades must rebuild ownership from the actual payload tree; stale
 # paths from the previous manifest are forbidden from surviving into the next one.
