@@ -270,7 +270,9 @@ async function connectChat(tabId){
     "After that proof, for local execution emit one standalone Bridge semantic command as the entire assistant message.",
     "Command opening token is constructed from: [ + SOKNA-INTENT + ]",
     "Command closing token is constructed from: [ + /SOKNA-INTENT + ]",
-    'The body is one JSON object such as {"id":"unique-attempt-id","intent":"exec","action":"bridge.bootstrap","params":{}}.',
+    "In selectorless fallback, every command JSON MUST include this exact top-level bridge_nonce: "+challenge,
+    'The body is one JSON object such as {"id":"unique-attempt-id","intent":"exec","action":"bridge.bootstrap","params":{},"bridge_nonce":"'+challenge+'"}.' ,
+    "Never reuse a bridge_nonce from an older connection or another chat.",
     "Always use a unique id for a new attempt. Wait for STATUS/RESULT before continuing.",
     "Use bridge.diagnostics.get for bounded diagnostics when transport is healthy.",
     "Advertised examples: "+actions.join(", ")+"."
