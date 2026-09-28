@@ -14,14 +14,20 @@ if([string]$source.source_commit-ne$head){throw "EXACT_RC_SOURCE_COMMIT_MISMATCH
 $payload=Get-Content -LiteralPath $PayloadManifestPath -Raw -Encoding UTF8|ConvertFrom-Json
 if([string]$payload.source_commit-ne$head){throw "EXACT_RC_PAYLOAD_COMMIT_MISMATCH: payload=$($payload.source_commit) head=$head"}
 $ext=Get-Content -LiteralPath 'extension/chrome/manifest.json' -Raw -Encoding UTF8|ConvertFrom-Json
-$caps=Get-Content -LiteralPath 'native/runtime/v2.6.0/AGENT_CAPABILITIES.json' -Raw -Encoding UTF8|ConvertFrom-Json
+$candidateAgentVersion=[string]$source.candidate_agent_version
+if([string]::IsNullOrWhiteSpace($candidateAgentVersion)){throw 'EXACT_RC_AGENT_VERSION_MISSING'}
+$capPath=Join-Path 'native/runtime' (Join-Path ('v'+$candidateAgentVersion) 'AGENT_CAPABILITIES.json')
+if(-not(Test-Path -LiteralPath $capPath -PathType Leaf)){throw "EXACT_RC_AGENT_CAPABILITIES_MISSING: $capPath"}
+$caps=Get-Content -LiteralPath $capPath -Raw -Encoding UTF8|ConvertFrom-Json
+if([string]$caps.agent-ne$candidateAgentVersion){throw "EXACT_RC_AGENT_VERSION_MISMATCH: manifest=$candidateAgentVersion capabilities=$($caps.agent)"}
+if([string]$source.extension_version-ne[string]$ext.version){throw "EXACT_RC_EXTENSION_VERSION_MISMATCH: manifest=$($source.extension_version) extension=$($ext.version)"}
 $payloadRoot=Split-Path -Parent (Split-Path -Parent ([IO.Path]::GetFullPath($PayloadManifestPath)))
 $browser=Join-Path $payloadRoot 'browser\sokna-browser-qa.exe';$provider=Join-Path $payloadRoot 'provider\sokna-artifact-provider.exe'
 $out=[ordered]@{
  schema='sokna-exact-rc-windows-evidence-v1';source_commit=$head;candidate_ref=[string]$source.candidate_ref;profile='full';acceptance=$AcceptanceStatus
  source_bundle_sha256=(Sha $SourceBundlePath);source_manifest_sha256=(Sha $SourceManifestPath);setup_sha256=(Sha $SetupPath);payload_manifest_sha256=(Sha $PayloadManifestPath)
  browser_runner_sha256=(Sha $browser);artifact_provider_runner_sha256=(Sha $provider)
- candidate_agent_version=[string]$caps.agent;extension_version=[string]$ext.version;windows_runner='windows-2025';dotnet='8.0.x';inno_setup='Tools.InnoSetup 6.7.3'
+ candidate_agent_version=$candidateAgentVersion;extension_version=[string]$ext.version;windows_runner='windows-2025';dotnet='8.0.x';inno_setup='Tools.InnoSetup 6.7.3'
  exact_source_verified=$true;whole_product_acceptance_passed=$true;home_pc_touched=$false
  generated_at=(Get-Date).ToUniversalTime().ToString('o')
 }
