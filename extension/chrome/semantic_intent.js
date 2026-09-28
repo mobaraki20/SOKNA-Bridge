@@ -3,7 +3,7 @@
 const G="__SOKNA_SEMANTIC_INTENT_V1__";
 try{globalThis[G]?.dispose?.()}catch{}
 const Core=globalThis.__SOKNA_SEMANTIC_CORE_V1__;
-const VERSION="2.1.0",START="[SOKNA-INTENT]",END="[/SOKNA-INTENT]",PROBE_START="[SOKNA-PROBE]",PROBE_END="[/SOKNA-PROBE]";
+const VERSION="2.1.1",START="[SOKNA-INTENT]",END="[/SOKNA-INTENT]",PROBE_START="[SOKNA-PROBE]",PROBE_END="[/SOKNA-PROBE]";
 const FALLBACK_KEY="semantic_fallback_diagnostics_v2";
 const attempts=new Map(),nodeIds=new WeakMap(),nodeProvenance=new WeakMap(),untrustedNodes=new WeakSet();
 let nodeSeq=0,armed=false,disposed=false,observer=null,scanTimer=0,baselineCount=0;
