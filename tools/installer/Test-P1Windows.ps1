@@ -277,7 +277,8 @@ function Invoke-LegacyRunningSetupAcceptance([string]$Setup,[string]$RepoRoot,[s
 }
 
 function Invoke-Maint([string]$Exe,[string]$InstallRoot,[string[]]$CommandArgs,[int[]]$Allowed=@(0)){
-  try{return Invoke-ProcessChecked $Exe (@($CommandArgs)+@('--install-root',$InstallRoot)) $Allowed}catch{Write-Host 'P1_MAINT_FAILURE_EVIDENCE';Get-ChildItem (Join-Path $InstallRoot 'logs') -File -Recurse -ErrorAction SilentlyContinue|Sort-Object LastWriteTime -Descending|Select-Object -First 2|ForEach-Object{Write-Host ('P1_MAINT_LOG '+$_.FullName);Get-Content $_.FullName -Tail 30 -ErrorAction SilentlyContinue|Write-Host};throw}
+  $quotedInstallRoot='"'+$InstallRoot.Replace('"','\"')+'"'
+  try{return Invoke-ProcessChecked $Exe (@($CommandArgs)+@('--install-root',$quotedInstallRoot)) $Allowed}catch{Write-Host 'P1_MAINT_FAILURE_EVIDENCE';Get-ChildItem (Join-Path $InstallRoot 'logs') -File -Recurse -ErrorAction SilentlyContinue|Sort-Object LastWriteTime -Descending|Select-Object -First 2|ForEach-Object{Write-Host ('P1_MAINT_LOG '+$_.FullName);Get-Content $_.FullName -Tail 30 -ErrorAction SilentlyContinue|Write-Host};throw}
 }
 
 if([string]::IsNullOrWhiteSpace($SetupPath)){
