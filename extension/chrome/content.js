@@ -160,7 +160,54 @@ function parseBridgeEnvelope(text){
     return {kind:m[1]==="SOKNA-V2-RESULT"?"result":"status",tag:m[1],payload,raw:t};
   }catch{return null}
 }
+function roleOfVisibilityRoot(el){
+  try{
+    const direct=String(el?.getAttribute?.("data-message-author-role")||"").trim().toLowerCase();
+    if(direct==="user")return "user";
+    if(direct==="assistant")return "assistant";
+    const tid=String(el?.getAttribute?.("data-testid")||"").toLowerCase();
+    if(tid.includes("user-message"))return "user";
+    if(tid.includes("assistant-message"))return "assistant";
+    const label=String(el?.getAttribute?.("aria-label")||"").trim().toLowerCase();
+    if(/^you (said|wrote|sent)\b/.test(label)||/^user\b/.test(label))return "user";
+    if(/^chatgpt (said|wrote)\b/.test(label)||/^assistant\b/.test(label))return "assistant";
+    const userChild=el?.querySelector?.('[data-message-author-role="user"],[data-testid*="user-message" i]');
+    if(userChild)return "user";
+    const assistantChild=el?.querySelector?.('[data-message-author-role="assistant"],[data-testid*="assistant-message" i]');
+    if(assistantChild)return "assistant";
+  }catch{}
+  return "unknown";
+}
 function conversationTextsForVisibility(){
+  const roots=[];
+  const add=el=>{if(el&&roleOfVisibilityRoot(el)==="user"&&!roots.includes(el))roots.push(el)};
+  try{
+    for(const q of [
+      '[data-message-author-role="user"]',
+      '[data-testid*="user-message" i]',
+      '[data-testid^="conversation-turn-"]',
+      '[data-testid*="conversation-turn" i]'
+    ]){
+      for(const el of [...document.querySelectorAll(q)])add(el);
+    }
+  }catch{}
+  if(roots.length)return {scope:"user-message-shells",authoritative:true,texts:roots.map(el=>String(el.innerText||el.textContent||""))};
+  const b=document.body;
+  return {scope:"body-fallback",authoritative:false,texts:b?[String(b.innerText||b.textContent||"")]:[]};
+}
+function extractBridgeEnvelopes(text){
+  const out=[],re=/\[(SOKNA-V2-(?:RESULT|STATUS))\]([\s\S]*?)\[\/\1\]/g;
+  let m;
+  while((m=re.exec(String(text||"")))!==null){
+    try{
+      const payload=JSON.parse(m[2]);
+      out.push({kind:m[1]==="SOKNA-V2-RESULT"?"result":"status",tag:m[1],payload,raw:m[0],match:"full-envelope"});
+    }catch{}
+    if(m.index===re.lastIndex)re.lastIndex++;
+  }
+  return out;
+}
+function escapeRegex(s){return String(s||"").replace(/[.*+?^${}()|[\]\\]/g,"\\function conversationTextsForVisibility(){
   const roots=[];
   try{
     for(const q of [
@@ -221,6 +268,63 @@ function resultVisibleInUserTurn(payload){
     const el=composer();
     const stillDraft=!!el&&samePayload(textOf(el),String(payload||""));
     lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched.kind,matchedId,decision:stillDraft?"not-visible":"existing-bubble",reason:stillDraft?"payload-still-in-composer":"exact-envelope-match",scope:conv.scope,ts:Date.now()};
+    return !stillDraft;
+  }catch(e){
+    lastVisibilityDecision={expectedKind:"unknown",expectedId:"",matchedKind:"",matchedId:"",decision:"not-visible",reason:"visibility-exception:"+String(e),scope:"unknown",ts:Date.now()};
+    return false;
+  }
+}
+")}
+function visibleIdentityHeader(text,kind,id){
+  id=String(id||"");if(!id)return false;
+  const tag=kind==="result"?"SOKNA-V2-RESULT":"SOKNA-V2-STATUS",field=kind==="result"?"id":"eventId";
+  const t=String(text||"").trim(),start=t.indexOf(`[${tag}]`);
+  if(start<0||start>128)return false;
+  const head=t.slice(start,Math.min(t.length,start+32768));
+  return new RegExp(`"${field}"\\s*:\\s*"${escapeRegex(id)}"`).test(head);
+}
+function resultVisibleInUserTurn(payload){
+  try{
+    const expected=parseBridgeEnvelope(payload);
+    if(!expected){
+      lastVisibilityDecision={expectedKind:"unknown",expectedId:"",matchedKind:"",matchedId:"",decision:"not-visible",reason:"invalid-expected-envelope",scope:"none",ts:Date.now()};
+      return false;
+    }
+    const expectedId=expected.kind==="result"
+      ?String(expected.payload?.id||"")
+      :String(expected.payload?.eventId||"");
+    const conv=conversationTextsForVisibility();
+    let matched=null,matchReason="";
+    for(const text of conv.texts){
+      for(const env of extractBridgeEnvelopes(text)){
+        if(env.kind!==expected.kind)continue;
+        if(expected.kind==="result"){
+          if(expectedId&&String(env.payload?.id||"")===expectedId){matched=env;matchReason="exact-envelope-match";break}
+        }else if(expectedId){
+          if(String(env.payload?.eventId||"")===expectedId){matched=env;matchReason="exact-envelope-match";break}
+        }else if(JSON.stringify(env.payload)===JSON.stringify(expected.payload)){
+          matched=env;matchReason="exact-envelope-match";break;
+        }
+      }
+      if(matched)break;
+      if(visibleIdentityHeader(text,expected.kind,expectedId)){
+        matched={kind:expected.kind,payload:expected.kind==="result"?{id:expectedId}:{eventId:expectedId},match:"type-id-header"};
+        matchReason="type-id-header-match";
+        break;
+      }
+    }
+    const matchedId=matched?(matched.kind==="result"?String(matched.payload?.id||""):String(matched.payload?.eventId||"")):"";
+    if(!conv.authoritative){
+      lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched?.kind||"",matchedId,decision:"not-visible",reason:"body-fallback-diagnostic-only",scope:conv.scope,observedIdentity:!!matched,ts:Date.now()};
+      return false;
+    }
+    if(!matched){
+      lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:"",matchedId:"",decision:"not-visible",reason:"no-type-aware-envelope-match",scope:conv.scope,ts:Date.now()};
+      return false;
+    }
+    const el=composer();
+    const stillDraft=!!el&&samePayload(textOf(el),String(payload||""));
+    lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched.kind,matchedId,decision:stillDraft?"not-visible":"existing-bubble",reason:stillDraft?"payload-still-in-composer":matchReason,scope:conv.scope,ts:Date.now()};
     return !stillDraft;
   }catch(e){
     lastVisibilityDecision={expectedKind:"unknown",expectedId:"",matchedKind:"",matchedId:"",decision:"not-visible",reason:"visibility-exception:"+String(e),scope:"unknown",ts:Date.now()};
