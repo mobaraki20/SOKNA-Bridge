@@ -6,6 +6,7 @@ const DELIVERY=globalThis.__SOKNA_DELIVERY_STATE_CORE_V1__;
 const TERMINAL=globalThis.__SOKNA_TERMINAL_OUTCOME_CORE_V1__;
 const RUNTIME=globalThis.__SOKNA_RUNTIME_STATE_CORE_V1__;
 const ORIGIN=globalThis.__SOKNA_CHAT_ORIGIN_REGISTRY_V1__;
+const SESSION_GATE=globalThis.__SOKNA_SESSION_GATE_RUNTIME_V1__;
 const HOST="com.sokna.bridge.v3";
 const VERSION="3.12.5";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
@@ -102,10 +103,30 @@ function agentActionsFromBootstrap(b){
   const a=b?.agent_capabilities?.capabilities?.actions||b?.agent_capabilities?.actions||[];
   return Array.isArray(a)?a.map(String).filter(Boolean):[];
 }
-async function extensionBootstrap(command){
+function bootstrapNextAction(b){
+  if(b?.ready===true)return {action:null,reason:"active_session_ready",params:{}};
+  const sessions=Array.isArray(b?.recent_sessions)?b.recent_sessions:[];
+  const resumable=sessions.find(x=>String(x?.state||"").toLowerCase()!=="closed");
+  if(resumable?.id)return {action:"session.resume",reason:"resumable_session_available",params:{id:String(resumable.id)}};
+  return {action:"session.open",reason:"no_ready_session",params:{project:"SOKNA Bridge",phase:"connected"}};
+}
+async function extensionBootstrap(command,tabId=null){
   const b=await agentExec(command),agent_actions=agentActionsFromBootstrap(b),extension_actions=extensionActions();
-  const effective_actions=[...new Set([...agent_actions,...extension_actions])].sort();
-  return {...b,capabilities:{agent_actions,extension_actions,effective_actions},effective_actions};
+  const effective_actions=[...new Set([...agent_actions,...extension_actions])].sort(),recovery_actions=[...(globalThis.__SOKNA_RECOVERY_ACTIONS_V1__||[])].map(String).sort();
+  const armed=Number.isInteger(tabId)?await isArmed(tabId):{armed:false,registered:null},challenge=String(armed?.registered?.intakeChallenge||"");
+  const origins=await approvedChatOrigins();
+  const extension_policy={
+    schema:"sokna-extension-bootstrap-policy-v1",
+    protocol:{version:String(PROTO?.protocolVersion||"2"),schema_version:String(PROTO?.schemaVersion||"2"),max_control_bytes:Number(PROTO?.maxControlBytes||800),max_expanded_command_bytes:Number(PROTO?.maxExpandedCommandBytes||4096)},
+    command:{idempotency_scope:"conversation+command_id",terminal_outcome_required:true,rejection_requires_visible_nack:true},
+    semantic:{transport:"SOKNA-INTENT",nonce_required:!!challenge,nonce_source:challenge?"connection-handshake":"none",route_policy:"semantic-compiler"},
+    delivery:{ack_contract:"user-message-shell+envelope-type+id-v3",body_fallback_positive_ack:false,uncertain_auto_resubmit:false},
+    artifact:{control_payload_max_bytes:Number(b?.control_plane_max_bytes||PROTO?.maxControlBytes||800),artifact_chunk_max_bytes:Number(b?.artifact_chunk_max_bytes||0),large_bytes_route:"Artifact Plane by ref/hash"},
+    recovery_actions,
+    origins:{policy:"explicit-https-user-approval",approved:origins,current:armed?.registered?.url?ORIGIN.normalizeOrigin(armed.registered.url):""},
+    next_action:bootstrapNextAction(b)
+  };
+  return {...b,capabilities:{agent_actions,extension_actions,effective_actions},effective_actions,extension_policy};
 }
 async function connectionProbe(tabId){
   const out={semantic:{ok:false},message_intake:{ready:false},background:true,agent:{ok:false},session:{ready:false},delivery:{ready:false},verified:false};
@@ -129,7 +150,7 @@ async function fullDiagnostics(tabId,conversationKey="",mode="full"){
   let host={ok:false},agent={ok:false},bootstrap={ok:false};
   try{host=await hostPing()}catch(e){host={ok:false,error:String(e)}}
   try{agent=await agentExec(unifiedLocalCommand("ping",{}))}catch(e){agent={ok:false,error:String(e)}}
-  try{bootstrap=await extensionBootstrap(unifiedLocalCommand("bridge.bootstrap",{}))}catch(e){bootstrap={ok:false,error:String(e)}}
+  try{bootstrap=await extensionBootstrap(unifiedLocalCommand("bridge.bootstrap",{}),tabId)}catch(e){bootstrap={ok:false,error:String(e)}}
   const traces=(await transportTraceAll()).filter(x=>!Number.isInteger(tabId)||x.tabId===tabId).slice(bounded?-24:-80);
   const fallback=(await semanticFallbackAll()).slice(bounded?-12:-40),contentFallback=(await contentFallbackAll()).slice(bounded?-12:-40);
   const extensionVersion=chrome.runtime.getManifest?.().version||VERSION;
@@ -226,8 +247,8 @@ async function reconcileAllFrames(tabId){
   for(const f of frames){
     try{
       const rr=await messageFrame(tabId,f.frameId,{type:"RECONCILE"});
-      const persisted=await seenAll();
-      const fresh=(rr?.commands||[]).filter(c=>c?.id&&!persisted[c.id]);
+      const persisted=await seenAll(),armed=await isArmed(tabId),conversationKey=String(armed?.registered?.conversationKey||"");
+      const fresh=(rr?.commands||[]).filter(c=>{if(!c?.id)return false;const k=commandStorageKey(conversationKey,c.id);return !persisted[k]&&!(persisted[c.id]?.conversationKey===conversationKey)});
       for(const c of fresh)await handleCommand(tabId,c);
     }catch{}
   }
@@ -260,12 +281,22 @@ async function arm(tabId){
   await appendTrace(tabId,"semantic.armed",{conversationKey:conv(tab.url),baselineCount:Number(sem?.baseline_count||0)});
   return {ok:true,armed:true,version:VERSION,conversationKey:conv(tab.url),baselineCount:Number(sem?.baseline_count||0),transport_verified:false};
 }
+async function migrateArmedConversationIfProvisional(tabId,url){
+  const all=await armedAll(),r=all[String(tabId)];if(!r)return null;
+  const oldUrl=String(r.url||""),oldOrigin=ORIGIN.normalizeOrigin(oldUrl),newOrigin=ORIGIN.normalizeOrigin(url),oldId=ORIGIN.conversationId(oldUrl),newId=ORIGIN.conversationId(url);
+  if(oldOrigin&&oldOrigin===newOrigin&&!oldId&&newId){
+    const oldKey=String(r.conversationKey||""),newKey=conv(url);r.url=url;r.conversationKey=newKey;
+    if(r.intakeProof&&String(r.intakeProof.conversationKey||"")===oldKey)r.intakeProof={...r.intakeProof,conversationKey:newKey};
+    all[String(tabId)]=r;await saveArmed(all);await SESSION_GATE?.markTab?.(tabId,url);await appendTrace(tabId,"conversation.identity_migrated",{from:oldKey,to:newKey});return r;
+  }
+  return r;
+}
 async function disarm(tabId){
   try{
     for(const f of await frameList(tabId)){try{await messageFrame(tabId,f.frameId,{type:"STOP"})}catch{}}
   }catch{}
   const a=await armedAll();delete a[String(tabId)];await saveArmed(a);
-  await clearRetryAlarm(tabId);await clearStatus(tabId);await clearBadge(tabId);return {ok:true,armed:false}
+  await SESSION_GATE?.clearTab?.(tabId);await clearRetryAlarm(tabId);await clearStatus(tabId);await clearBadge(tabId);return {ok:true,armed:false}
 }
 
 async function connectChat(tabId){
@@ -279,6 +310,7 @@ async function connectChat(tabId){
     session=opened?.session||session;
     boot=await agentExec(unifiedLocalCommand("bridge.bootstrap",{}));
   }
+  await SESSION_GATE?.markTab?.(tabId,tab.url);
   const challenge=("probe-"+uid()).slice(0,96);
   try{
     const sc=await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge});
@@ -930,7 +962,7 @@ async function handleCommandInner(tabId,command,meta={}){
   let result;
   try{
     if(command.action==="artifact.chat.apply")result=await registerChatArtifactApply(tabId,command,a.registered.conversationKey);
-    else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command);
+    else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command,tabId);
     else if(command.action==="bridge.diagnostics.get")result=await fullDiagnostics(tabId,a.registered.conversationKey,"bounded");
     else if(command.action==="instagram.adapter.status")result=await instagramAdapterStatus(command.params||{});
     else if(command.action==="instagram.profile.scan")result=await instagramProfileScan(command.params||{});
@@ -1043,9 +1075,11 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
       }
       if(m.type==="DELIVERY_READY"){const a=await isArmed(tabId);if(a.armed)retryPending(tabId,!!m.force).catch(()=>{});return reply({ok:true,armed:a.armed})}
       if(m.type==="CONTENT_READY"){
+        const currentUrl=sender.tab?.url||m.url||"";
+        await migrateArmedConversationIfProvisional(tabId,currentUrl);
         const a=await isArmed(tabId);
         if(a.armed){
-          const currentKey=conv(sender.tab?.url||m.url||"");
+          const currentKey=conv(currentUrl);
           if(currentKey&&a.registered?.conversationKey&&currentKey!==a.registered.conversationKey)return reply({ok:true,armed:false,reason:"conversation changed"});
           const frameId=Number.isInteger(sender.frameId)?sender.frameId:0,isTop=frameId===0||m.topFrame===true;
           try{
