@@ -25,6 +25,7 @@ jobs:
           done
       - name: Reliability stress and fault injection
         run: node tools/tests/test_reliability_stress.mjs
-      - name: Contract Python compile
+      - name: Contract Python tests
         run: |
-          python -m py_compile tools/tests/test_r2_contract_reliability.py tools/tests/test_r2_session_continuity.py
+          python tools/tests/test_r2_contract_reliability.py
+          python tools/tests/test_r2_session_continuity.py
