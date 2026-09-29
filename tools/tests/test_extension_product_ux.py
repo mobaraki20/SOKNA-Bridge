@@ -18,7 +18,7 @@ assert "https://www.instagram.com/*" in matches, "Instagram origin missing"
 assert "downloads" in manifest.get("permissions",[]), "Instagram media download permission missing"
 
 popup=read(Path("extension/chrome/popup.html"))
-for marker in ["Connect this Chat","Instagram Assistant","Advanced diagnostics","باز کردن Control Center"]:
+for marker in ["Connect this Chat","Instagram Research Assistant","Advanced diagnostics","باز کردن Control Center"]:
     assert marker in popup, f"popup UX missing {marker}"
 assert "Test Credentials" not in popup, "developer credential UI must not be in primary popup"
 
