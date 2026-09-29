@@ -18,7 +18,12 @@ assert 'mutation_requires_ready_session' in SESSION
 assert 'active.json' in SESSION
 assert 'sensitiveKey' in SESSION and 'token' in SESSION and 'secret' in SESSION and 'credential' in SESSION
 assert 'localSession(c)' in OUT
-assert 'bootstrappedConversations' in GATE
+assert 'BOOTSTRAP_GATE_KEY="bootstrap_gate_v1"' in GATE
+assert 'chrome.storage.session.get([BOOTSTRAP_GATE_KEY])' in GATE
+assert 'markBootstrappedSender' in GATE
+assert 'hasBootstrappedSender' in GATE
+assert 'session_gate_state_core.js' in GATE
+assert 'bootstrappedConversations=new Set' not in GATE
 assert 'conversationKey(sender)' in GATE
 assert 'BOOTSTRAP_REQUIRED' in GATE
 assert 'SESSION_NOT_READY' in GATE
