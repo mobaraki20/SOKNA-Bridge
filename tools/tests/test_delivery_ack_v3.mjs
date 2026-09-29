@@ -5,8 +5,15 @@ assert.ok(c.includes('scope:"user-message-shells",authoritative:true'),"ACK must
 assert.ok(c.includes('scope:"body-fallback",authoritative:false'),"body fallback must be diagnostic-only");
 assert.ok(c.includes('"type-id-header-match"'),"large-result ACK needs type+id header correlation");
 assert.ok(c.includes('"body-fallback-diagnostic-only"'),"fallback must never silently acknowledge");
+assert.ok(c.includes("\'[data-message-id]\'"),"ACK visibility must inspect current conversation turn shells");
+assert.ok(c.includes("\'.user-turn\'"),"ACK visibility must recognize explicit user-turn shells");
+assert.ok(c.includes('button[aria-label*="good response" i]'),"ACK role classifier should share assistant action-control evidence used by semantic intake");
 assert.ok(c.includes("function settleSubmitAttempt"),"delivery must centralize single-submit settlement");
 assert.ok(c.includes("Automatic fallback submit is disabled to prevent duplicate delivery."),"unconfirmed submit must fail safe into ACK polling");
 assert.ok(!c.includes("if(await clickAttempt(el,payload))return"),"legacy chained click->requestSubmit->Enter delivery must stay removed");
 assert.ok(c.includes("Handshake submission was attempted once; automatic fallback submit is disabled to prevent duplicate delivery."),"handshake must also be single-submit fail-safe");
+const b=fs.readFileSync("extension/chrome/background.js","utf8");
+assert.ok(b.includes("const delivery=await postPending(tabId,commandKey,seen[commandKey]);"),"command execution must capture delivery separately");
+assert.ok(b.includes("return {ok:true,executed:true,result_ok:result?.ok!==false,delivery};"),"semantic dispatch success must not depend on conversation ACK");
+assert.ok(!b.includes("return await postPending(tabId,commandKey,seen[commandKey]);"),"background must not expose pending delivery as command dispatch failure");
 console.log("DELIVERY_ACK_V3_SOURCE_PASS");
