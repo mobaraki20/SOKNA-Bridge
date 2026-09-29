@@ -9,7 +9,7 @@ body{width:420px;margin:0;padding:14px;background:#f4f5f7}.header{display:flex;a
 summary{cursor:pointer;font-size:12px;font-weight:700}.diag-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}.diag-grid button{width:100%}
 pre{direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-word;background:#f6f7f9;padding:9px;border-radius:8px;max-height:250px;overflow:auto;font-size:10px}.activity{max-height:170px;overflow:auto;font-size:10px}.event{border-top:1px solid #eee;padding:6px 0}.event:first-child{border-top:0}.substate{font-size:10px;color:#667085;line-height:1.55;margin:4px 18px 0 0}.pill{display:inline-block;border-radius:999px;padding:2px 7px;background:#eef2f6;font-size:10px;color:#475467}
 </style></head><body>
-<div class="header"><div><div class="brand">SOKNA Bridge</div><div class="ver">Extension 3.12.0</div></div><div id="pageType" class="ver">در حال بررسی…</div></div>
+<div class="header"><div><div class="brand">SOKNA Bridge</div><div id="extensionVersion" class="ver">Extension …</div></div><div id="pageType" class="ver">در حال بررسی…</div></div>
 
 <div class="card"><div class="title">وضعیت سیستم</div>
   <div class="status"><span id="agentDot" class="dot"></span><span id="agentState">در حال بررسی Agent…</span></div>
@@ -22,6 +22,12 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-word;bac
   <div id="chatState" class="status"><span id="chatDot" class="dot"></span><span>در حال بررسی…</span></div>
   <div id="chatSubstate" class="substate"></div>
   <div class="muted" style="margin-top:8px">سبز کامل فقط وقتی نمایش داده می‌شود که Semantic Adapter، Background، Agent، Session و مسیر Delivery همگی بررسی شده باشند.</div>
+  <div id="deliveryRecovery" class="card hidden" style="margin-top:10px;background:#fff8eb;border-color:#f2c66d">
+    <div class="title">Delivery uncertain</div>
+    <div class="muted">Result: <span id="deliveryRecoveryId" class="pill"></span></div>
+    <div class="muted" style="margin-top:6px">این نتیجه قبلاً submit شده اما visibility آن در گفتگو تأیید نشده است. Re-check فقط visibility را بررسی می‌کند و RESULT را دوباره ارسال نمی‌کند.</div>
+    <div class="actions"><button id="recheckDelivery" class="primary">Re-check delivery</button></div>
+  </div>
   <div class="actions"><button id="connectChat" class="primary">Connect this Chat</button><button id="disconnectChat" class="hidden danger">قطع اتصال</button></div>
   <div id="chatMsg" class="msg"></div>
 </div>
@@ -47,4 +53,4 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-word;bac
   <div class="actions"><button id="hostTest">Native Host</button><button id="agentTest">Agent Ping</button><button id="selfTest">Self Test</button><button id="refreshActivity">Agent Activity</button></div>
   <div id="diagMsg" class="msg"></div><div id="activity" class="activity"></div><pre id="diag">برای مشاهده جزئیات «Refresh Full Diagnostics» را بزن.</pre>
 </details>
-<script src="popup.js"></script></body></html>
+<script src="popup_state_core.js"></script><script src="popup.js"></script></body></html>
