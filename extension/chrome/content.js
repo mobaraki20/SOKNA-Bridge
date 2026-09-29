@@ -222,16 +222,7 @@ function extractBridgeEnvelopes(text){
   }
   return out;
 }
-function escapeRegex(s){return String(s||"").replace(/[|\\{}()[\]^$+*?.-]/g,"\\function escapeRegex(s){return String(s||"").replace(/[|\\{}()[\]^$+*?.-]/g,"\\$&")}
-function visibleIdentityHeader(text,kind,id){
-  id=String(id||"");if(!id)return false;
-  const tag=kind==="result"?"SOKNA-V2-RESULT":"SOKNA-V2-STATUS",field=kind==="result"?"id":"eventId";
-  const t=String(text||"").trim(),start=t.indexOf("["+tag+"]");
-  if(start<0||start>128)return false;
-  const head=t.slice(start,Math.min(t.length,start+32768));
-  return new RegExp('"'+field+'"\\s*:\\s*"'+escapeRegex(id)+'"').test(head);
-}
-")}
+function escapeRegex(s){return String(s||"").replace(/[|\\{}()[\]^$+*?.-]/g,"\\$&")}
 function normalizeVisibilityText(text){return String(text||"").replace(/[\u200B-\u200D\uFEFF]/g,"").replace(/\u00A0/g," ")}
 function visibleIdentityHeader(text,kind,id){
   id=String(id||"");if(!id)return false;
