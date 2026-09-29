@@ -989,6 +989,17 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         if(d.final===true&&hard.has(d.reason)&&correlated)return reply(await queueTransportNack(tabId,d));
         return reply({ok:true,recorded:true,uncorrelated:d.final===true&&hard.has(d.reason)&&!correlated});
       }
+      if(m.type==="RECHECK_DELIVERY"){
+        const a=await isArmed(tabId,m.conversationKey||"");
+        if(!a.armed)return reply({ok:false,error:"Chat is not armed"});
+        const seen=await seenAll(),pending=classifyPending(seen,a.registered,now(),false);
+        const wanted=String(m.recordId||"");
+        const target=wanted?pending.uncertain.find(x=>x[0]===wanted):pending.uncertain[0];
+        if(!target)return reply({ok:false,reason:"no_uncertain_delivery",error:"No delivery_uncertain record is pending for this conversation"});
+        const result=await postPending(tabId,target[0],target[1],true);
+        await appendTrace(tabId,"chat.delivery_manual_recheck",{record_id:target[0],ok:!!result?.ok,reason:String(result?.reason||"")});
+        return reply({...result,record_id:target[0],visibility_only:true,resubmitted:false});
+      }
       if(m.type==="DELIVERY_READY"){const a=await isArmed(tabId);if(a.armed)retryPending(tabId,!!m.force).catch(()=>{});return reply({ok:true,armed:a.armed})}
       if(m.type==="CONTENT_READY"){
         const a=await isArmed(tabId);
@@ -1052,7 +1063,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         const nextRetryAt=Number(currentRec?.nextPostAt||0),dprobe=top?.deliveryProbe||{};
         const child=pageDiagnostics.filter(x=>!x?.topFrame),childReady=child.filter(x=>x?.ok&&x.armed===a.armed).length,childFailed=child.length-childReady;
         const health={
-          runtimeVersion:VERSION,armed:a.armed,transportVerified:!!probe.verified,conversationKeySuffix:(registered?.conversationKey||"").slice(-12),
+          runtimeVersion:VERSION,armed:a.armed,transportVerified:status?.transportVerified===true,conversationKeySuffix:(registered?.conversationKey||"").slice(-12),
           state:status?.state||"Ready",currentCommandId:status?.currentCommandId||"",
           pendingRetryEligibleCount:pending.retryEligible.length,deferredPendingCount:pending.deferred.length,uncertainPendingCount:pending.uncertain.length,staleUnpostedCount:pending.stale.length,suppressedCount:pending.suppressed.length,activePostCount,
           waitReason:currentRec?.waitReason||"",deliveryState:currentRec?.deliveryState||"",submitted:!!currentRec?.submitted,ackPolls:Number(currentRec?.ackPolls||0),ackDeadlineAt:Number(currentRec?.ackDeadlineAt||0),postAttempts:Number(currentRec?.postAttempts||0),nextRetryAt,nextRetryInMs:nextRetryAt?Math.max(0,nextRetryAt-now()):0,
