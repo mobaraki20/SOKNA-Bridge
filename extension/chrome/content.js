@@ -207,81 +207,14 @@ function extractBridgeEnvelopes(text){
   }
   return out;
 }
-function escapeRegex(s){return String(s||"").replace(/[.*+?^${}()|[\]\\]/g,"\\function conversationTextsForVisibility(){
-  const roots=[];
-  try{
-    for(const q of [
-      '[data-message-author-role="user"]',
-      '[data-testid*="user-message" i]',
-      '[data-testid*="conversation-turn" i][data-message-author-role="user"]'
-    ]){
-      const found=[...document.querySelectorAll(q)];
-      for(const el of found)if(!roots.includes(el))roots.push(el);
-    }
-  }catch{}
-  if(roots.length)return {scope:"user-turns",texts:roots.map(el=>String(el.innerText||el.textContent||""))};
-  const b=document.body;
-  return {scope:"body-fallback",texts:b?[String(b.innerText||b.textContent||"")]:[]};
-}
-function extractBridgeEnvelopes(text){
-  const out=[],re=/\[(SOKNA-V2-(?:RESULT|STATUS))\]([\s\S]*?)\[\/\1\]/g;
-  let m;
-  while((m=re.exec(String(text||"")))!==null){
-    try{
-      const payload=JSON.parse(m[2]);
-      out.push({kind:m[1]==="SOKNA-V2-RESULT"?"result":"status",tag:m[1],payload,raw:m[0]});
-    }catch{}
-    if(m.index===re.lastIndex)re.lastIndex++;
-  }
-  return out;
-}
-function resultVisibleInUserTurn(payload){
-  try{
-    const expected=parseBridgeEnvelope(payload);
-    if(!expected){
-      lastVisibilityDecision={expectedKind:"unknown",expectedId:"",matchedKind:"",matchedId:"",decision:"not-visible",reason:"invalid-expected-envelope",scope:"none",ts:Date.now()};
-      return false;
-    }
-    const expectedId=expected.kind==="result"
-      ?String(expected.payload?.id||"")
-      :String(expected.payload?.eventId||"");
-    const conv=conversationTextsForVisibility();
-    let matched=null;
-    for(const text of conv.texts){
-      for(const env of extractBridgeEnvelopes(text)){
-        if(env.kind!==expected.kind)continue;
-        if(expected.kind==="result"){
-          if(expectedId&&String(env.payload?.id||"")===expectedId){matched=env;break}
-        }else if(expectedId){
-          if(String(env.payload?.eventId||"")===expectedId){matched=env;break}
-        }else if(JSON.stringify(env.payload)===JSON.stringify(expected.payload)){
-          matched=env;break;
-        }
-      }
-      if(matched)break;
-    }
-    const matchedId=matched?(matched.kind==="result"?String(matched.payload?.id||""):String(matched.payload?.eventId||"")):"";
-    if(!matched){
-      lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:"",matchedId:"",decision:"not-visible",reason:"no-type-aware-envelope-match",scope:conv.scope,ts:Date.now()};
-      return false;
-    }
-    const el=composer();
-    const stillDraft=!!el&&samePayload(textOf(el),String(payload||""));
-    lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched.kind,matchedId,decision:stillDraft?"not-visible":"existing-bubble",reason:stillDraft?"payload-still-in-composer":"exact-envelope-match",scope:conv.scope,ts:Date.now()};
-    return !stillDraft;
-  }catch(e){
-    lastVisibilityDecision={expectedKind:"unknown",expectedId:"",matchedKind:"",matchedId:"",decision:"not-visible",reason:"visibility-exception:"+String(e),scope:"unknown",ts:Date.now()};
-    return false;
-  }
-}
-")}
+function escapeRegex(s){return String(s||"").replace(/[|\\{}()[\]^$+*?.-]/g,"\\$&")}
 function visibleIdentityHeader(text,kind,id){
   id=String(id||"");if(!id)return false;
   const tag=kind==="result"?"SOKNA-V2-RESULT":"SOKNA-V2-STATUS",field=kind==="result"?"id":"eventId";
-  const t=String(text||"").trim(),start=t.indexOf(`[${tag}]`);
+  const t=String(text||"").trim(),start=t.indexOf("["+tag+"]");
   if(start<0||start>128)return false;
   const head=t.slice(start,Math.min(t.length,start+32768));
-  return new RegExp(`"${field}"\\s*:\\s*"${escapeRegex(id)}"`).test(head);
+  return new RegExp('"'+field+'"\\s*:\\s*"'+escapeRegex(id)+'"').test(head);
 }
 function resultVisibleInUserTurn(payload){
   try{
@@ -290,9 +223,7 @@ function resultVisibleInUserTurn(payload){
       lastVisibilityDecision={expectedKind:"unknown",expectedId:"",matchedKind:"",matchedId:"",decision:"not-visible",reason:"invalid-expected-envelope",scope:"none",ts:Date.now()};
       return false;
     }
-    const expectedId=expected.kind==="result"
-      ?String(expected.payload?.id||"")
-      :String(expected.payload?.eventId||"");
+    const expectedId=expected.kind==="result"?String(expected.payload?.id||""):String(expected.payload?.eventId||"");
     const conv=conversationTextsForVisibility();
     let matched=null,matchReason="";
     for(const text of conv.texts){
