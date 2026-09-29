@@ -7,11 +7,11 @@ def need(path,*terms):
     for t in terms: assert t in s, f'{path}: missing {t}'
     return s
 
-builder=need(Path('tools/release/Build-R1SourceRC.py'),'R1_DIRTY_SOURCE_NOT_ALLOWED','R1_COMMIT_NOT_HEAD','git_mode','git_blob','FIXED_ZIP_TIME','__SOKNA_RC__/SOURCE_MANIFEST.json','sokna-r1-source-rc-manifest-v1','requires_exact_rc_windows_ci_pass',"default='sokna-agent-2.7.1-r8'","--agent-version","--extension-version","--accepted-live-agent-baseline","'candidate_agent_version':args.agent_version","'extension_version':args.extension_version")
+builder=need(Path('tools/release/Build-R1SourceRC.py'),'R1_DIRTY_SOURCE_NOT_ALLOWED','R1_COMMIT_NOT_HEAD','git_mode','git_blob','FIXED_ZIP_TIME','__SOKNA_RC__/SOURCE_MANIFEST.json','sokna-r1-source-rc-manifest-v1','requires_exact_rc_windows_ci_pass',"default='sokna-agent-2.7.1-r9'","--agent-version","--extension-version","--accepted-live-agent-baseline","'candidate_agent_version':args.agent_version","'extension_version':args.extension_version")
 assert "git(root,'cat-file','blob',oid" in builder
 assert "git(root,'ls-tree','-r','-z','--full-tree',commit" in builder
 build=need(Path('tools/installer/Build-P1Installer.ps1'),'ExpectedSourceCommit','SOURCE_COMMIT_MISMATCH')
-wf=need(Path('.github/workflows/windows-agent-validation.yml'),'expected_commit','EXACT_RC_EXPECTED_COMMIT_REQUIRED','Build-R1SourceRC.py','Write-ExactRCEvidence.ps1','upload-artifact@v4','sokna-agent-2.7.1-r8','--agent-version 2.7.1','--extension-version 3.12.5','--accepted-live-agent-baseline 2.7.1','SOKNA Bridge 2.7.1-r8','docs/releases/2.7.1-r8.md')
+wf=need(Path('.github/workflows/windows-agent-validation.yml'),'expected_commit','EXACT_RC_EXPECTED_COMMIT_REQUIRED','Build-R1SourceRC.py','Write-ExactRCEvidence.ps1','upload-artifact@v4','sokna-agent-2.7.1-r9','--agent-version 2.7.1','--extension-version 3.12.6','--accepted-live-agent-baseline 2.7.1','SOKNA Bridge 2.7.1-r9','docs/releases/2.7.1-r9.md')
 evidence=need(Path('tools/ci/Write-ExactRCEvidence.ps1'),'EXACT_RC_SOURCE_COMMIT_MISMATCH','EXACT_RC_PAYLOAD_COMMIT_MISMATCH','EXACT_RC_AGENT_VERSION_MISSING','EXACT_RC_AGENT_CAPABILITIES_MISSING','EXACT_RC_AGENT_VERSION_MISMATCH','EXACT_RC_EXTENSION_VERSION_MISMATCH','source.candidate_agent_version','whole_product_acceptance_passed','browser_runner_sha256','artifact_provider_runner_sha256')
 assert "native/runtime/v2.6.0/AGENT_CAPABILITIES.json" not in evidence
 status=need(Path('docs/status/R1_RELEASE_CANDIDATE_FREEZE.md'),'base Workspace Policy','job-scoped grant','exact source','CI','LIVE','2.5.7 R4','3.10.5')
