@@ -8,4 +8,5 @@ assert.ok(c.includes('"body-fallback-diagnostic-only"'),"fallback must never sil
 assert.ok(c.includes("function settleSubmitAttempt"),"delivery must centralize single-submit settlement");
 assert.ok(c.includes("Automatic fallback submit is disabled to prevent duplicate delivery."),"unconfirmed submit must fail safe into ACK polling");
 assert.ok(!c.includes("if(await clickAttempt(el,payload))return"),"legacy chained click->requestSubmit->Enter delivery must stay removed");
+assert.ok(c.includes("Handshake submission was attempted once; automatic fallback submit is disabled to prevent duplicate delivery."),"handshake must also be single-submit fail-safe");
 console.log("DELIVERY_ACK_V3_SOURCE_PASS");

@@ -348,28 +348,39 @@ async function postUserText(text){
     let el=composer();if(!el){await wait(400);continue}
     if(textOf(el).trim())return {ok:false,waiting:true,reason:"user_draft",error:"Composer contains user text."};
     setInput(el,text);await wait(80);el=composer()||el;
+
+    const observe=async method=>{
+      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method}}
+      const cur=composer(),retained=!!cur&&samePayload(textOf(cur),text);
+      return {ok:false,waiting:true,submitted:true,reason:"handshake_submit_unconfirmed",method,bridgeDraftRetained:retained,error:"Handshake submission was attempted once; automatic fallback submit is disabled to prevent duplicate delivery."};
+    };
+
     const b=sendButton(el,text);
     if(b){
-      try{b.click()}catch{}
-      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method:"user-click"}}
+      let fired=false;try{b.click();fired=true}catch{}
+      if(fired)return await observe("user-click");
     }
+
     el=composer()||el;
-    const f=nearestForm(el);if(f&&samePayload(textOf(el),text)){
-      try{if(typeof f.requestSubmit==="function")f.requestSubmit();else f.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}))}catch{}
-      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method:"user-requestSubmit"}}
+    if(!samePayload(textOf(el),text))return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed before handshake fallback submit."};
+    const f=nearestForm(el);
+    if(f){
+      let fired=false;
+      try{if(typeof f.requestSubmit==="function")f.requestSubmit();else f.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}));fired=true}catch{}
+      if(fired)return await observe("user-requestSubmit");
     }
+
     el=composer()||el;
-    if(samePayload(textOf(el),text)){
-      try{
-        const opts={key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true,cancelable:true};
-        el.dispatchEvent(new KeyboardEvent("keydown",opts));el.dispatchEvent(new KeyboardEvent("keypress",opts));el.dispatchEvent(new KeyboardEvent("keyup",opts));
-      }catch{}
-      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method:"user-enter"}}
-    }
+    if(!samePayload(textOf(el),text))return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed before handshake Enter fallback."};
+    let fired=false;
+    try{
+      const opts={key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true,cancelable:true};
+      el.dispatchEvent(new KeyboardEvent("keydown",opts));el.dispatchEvent(new KeyboardEvent("keypress",opts));el.dispatchEvent(new KeyboardEvent("keyup",opts));fired=true;
+    }catch{}
+    if(fired)return await observe("user-enter");
   }
   return {ok:false,waiting:true,reason:"submit_blocked",error:"Handshake text remains in the composer."};
 }
-
 async function post(payload){
   if(window.top!==window)return {ok:false,error:"POST_RESULT must target top frame"};
   if(resultVisibleInUserTurn(payload))return {ok:true,method:"existing-bubble"};
