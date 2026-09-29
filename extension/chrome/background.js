@@ -984,7 +984,8 @@ async function handleCommandInner(tabId,command,meta={}){
   seen=await seenAll();seen[commandKey]={...(seen[commandKey]||{}),state:"done",commandId:command.id,completedAt:now(),result,posted:false};await saveSeen(seen);
   await appendTrace(tabId,"result.received",{command_id:command.id,action:command.action,ok:result?.ok!==false});
   await setExecutionFinish(tabId,command.id,result?.ok!==false,String(result?.error||""));
-  return await postPending(tabId,commandKey,seen[commandKey]);
+  const delivery=await postPending(tabId,commandKey,seen[commandKey]);
+  return {ok:true,executed:true,result_ok:result?.ok!==false,delivery};
 }
 function classifyPending(seen,registered,t=now(),force=false){
   const retryEligible=[],deferred=[],stale=[],suppressed=[],uncertain=[];
