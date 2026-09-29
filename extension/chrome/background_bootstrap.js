@@ -1,8 +1,9 @@
 (()=>{
 "use strict";
-importScripts("protocol.js","capability_gate.js","terminal_outcome_core.js");
+importScripts("protocol.js","capability_gate.js","terminal_outcome_core.js","origin_registry_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const CAP=globalThis.__SOKNA_CAPABILITY_GATE_V1__;
+const ORIGIN=globalThis.__SOKNA_CHAT_ORIGIN_REGISTRY_V1__;
 const HOST="com.sokna.bridge.v3";
 const event=chrome.runtime.onMessage;
 const originalAdd=event.addListener.bind(event);
@@ -15,7 +16,7 @@ const bootstrappedConversations=new Set();
 const commandTabs=new Map();
 function idOf(m){const id=String(m?.command?.id||m?.command?.correlationId||"");return ID.test(id)?id:""}
 function uid(prefix="cap"){return crypto.randomUUID?.()||(`${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`)}
-function conversationKey(sender){try{const u=new URL(sender?.url||sender?.tab?.url||"");return `${sender?.tab?.id??"?"}:${u.origin}${u.pathname}`}catch{return `${sender?.tab?.id??"?"}:unknown`}}
+function conversationKey(sender){const url=sender?.url||sender?.tab?.url||"",key=ORIGIN?.conversationKey?.(url)||"";return `${sender?.tab?.id??"?"}:${key||"unknown"}`}
 function rejection(m,error,reason="invalid_compact_command",retryable=false,code="",recoveryAction=""){const cid=idOf(m),rawError=String(error||"REJECTED"),derived=String(code||rawError.split(":",1)[0]||"COMMAND_REJECTED");return {type:"TRANSPORT_DIAG",diagnostic:{kind:"background-command-rejected",final:!!cid,reason,version:"unified-background-gate-v3",commandId:cid,source:String(m?.source||m?.detector||"background-gate"),error:rawError,code:derived,executed:false,retryable:!!retryable,recovery_action:String(recoveryAction||"")}}}
 function nativeMessage(msg){return new Promise((resolve,reject)=>rawNativeSend(HOST,msg,r=>{const e=chrome.runtime.lastError;if(e)reject(new Error(e.message));else resolve(r||{})}))}
 function unifiedCommand(action,params={},parentId=""){const id=uid("bridge"),ts=Date.now();return {protocolVersion:"2",messageId:id,correlationId:id,parentId:String(parentId||""),kind:"command",action,schemaVersion:"2",timestamp:ts,id,params}}

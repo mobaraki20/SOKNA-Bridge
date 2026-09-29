@@ -10,7 +10,8 @@
     "activeTab",
     "nativeMessaging",
     "webNavigation",
-    "downloads"
+    "downloads",
+    "scripting"
   ],
   "background": {
     "service_worker": "background_bootstrap.js"
@@ -61,5 +62,8 @@
     "https://*.cdninstagram.com/*",
     "https://*.fbcdn.net/*"
   ],
-  "minimum_chrome_version": "111"
+  "minimum_chrome_version": "111",
+  "optional_host_permissions": [
+    "https://*/*"
+  ]
 }

@@ -40,7 +40,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-word;bac
   <div id="igMsg" class="msg"></div>
 </div>
 
-<div id="otherCard" class="card hidden"><div class="title">این صفحه ابزار مستقیم ندارد</div><div class="muted">برای Bridge یک تب ChatGPT و برای Instagram Assistant یک تب Instagram باز کن.</div></div>
+<div id="otherCard" class="card hidden"><div class="title">این origin هنوز برای ChatGPT Adapter فعال نیست</div><div class="muted">SOKNA Bridge دامنه‌های ناشناس را خودکار فعال نمی‌کند. اگر این صفحه واقعاً رابط ChatGPT شماست، می‌توانی فقط همین HTTPS origin را تأیید کنی.</div><div class="muted" style="margin-top:6px">Origin: <span id="otherOrigin" class="pill">—</span></div><div class="actions"><button id="approveChatOrigin" class="primary hidden">فعال‌سازی همین ChatGPT origin</button></div><div id="otherMsg" class="msg"></div></div>
 
 <details>
   <summary>Advanced diagnostics</summary>
@@ -53,4 +53,4 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-word;bac
   <div class="actions"><button id="hostTest">Native Host</button><button id="agentTest">Agent Ping</button><button id="selfTest">Self Test</button><button id="refreshActivity">Agent Activity</button></div>
   <div id="diagMsg" class="msg"></div><div id="activity" class="activity"></div><pre id="diag">برای مشاهده جزئیات «Refresh Full Diagnostics» را بزن.</pre>
 </details>
-<script src="popup_state_core.js"></script><script src="popup.js"></script></body></html>
+<script src="origin_registry_core.js"></script><script src="popup_state_core.js"></script><script src="popup.js"></script></body></html>

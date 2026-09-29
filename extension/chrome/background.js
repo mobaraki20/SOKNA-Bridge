@@ -1,10 +1,11 @@
-importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js","delivery_state_core.js","terminal_outcome_core.js","runtime_state_core.js");
+importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js","delivery_state_core.js","terminal_outcome_core.js","runtime_state_core.js","origin_registry_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
 const DELIVERY=globalThis.__SOKNA_DELIVERY_STATE_CORE_V1__;
 const TERMINAL=globalThis.__SOKNA_TERMINAL_OUTCOME_CORE_V1__;
 const RUNTIME=globalThis.__SOKNA_RUNTIME_STATE_CORE_V1__;
+const ORIGIN=globalThis.__SOKNA_CHAT_ORIGIN_REGISTRY_V1__;
 const HOST="com.sokna.bridge.v3";
 const VERSION="3.12.5";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
@@ -30,6 +31,8 @@ const IG_MAX_APPROVALS=20;
 const TRANSPORT_TRACE_KEY="transport_trace_v2";
 const SEMANTIC_FALLBACK_KEY="semantic_fallback_diagnostics_v2";
 const CONTENT_FALLBACK_KEY="content_fallback_diagnostics_v1";
+const CHAT_ORIGINS_KEY="approved_chat_origins_v1";
+const CHAT_SCRIPT_FILES=["protocol.js","semantic_gate.js","semantic_core.js","semantic_intent.js","chat_artifact_core.js","outbound_attachment_core.js","dom_core.js","outbound_attachment.js","content.js"];
 const TRACE_MAX=300;
 const V391_MIGRATION_CUTOFF=1789892342550;
 const RETRY_BASE_MS=3000,RETRY_MAX_MS=60000,MAX_POST_ATTEMPTS=8;
@@ -154,7 +157,24 @@ async function paint(tabId,st){
   try{await chrome.action.setBadgeText({tabId,text:b.t});await chrome.action.setBadgeBackgroundColor({tabId,color:b.c});await chrome.action.setTitle({tabId,title:`SOKNA Bridge V${VERSION} — ${st?.state||"Ready"}${st?.detail?" — "+st.detail:""}`})}catch{}
 }
 async function clearBadge(tabId){try{await chrome.action.setBadgeText({tabId,text:""});await chrome.action.setTitle({tabId,title:`SOKNA Bridge V${VERSION} — disabled`})}catch{}}
-function conv(url){try{const u=new URL(url);return u.origin+u.pathname}catch{return ""}}
+function conv(url){return ORIGIN?.conversationKey?.(url)||""}
+async function approvedChatOrigins(){const d=await sget("local",[CHAT_ORIGINS_KEY]);return ORIGIN.normalizeList(d[CHAT_ORIGINS_KEY]||[])}
+async function saveApprovedChatOrigins(values){const list=ORIGIN.normalizeList(values);await sset("local",{[CHAT_ORIGINS_KEY]:list});return list}
+async function isSupportedChatUrl(url){const origin=ORIGIN.normalizeOrigin(url);if(!origin)return false;return (await approvedChatOrigins()).includes(origin)}
+async function registerChatOrigin(tabId,url){
+  const origin=ORIGIN.normalizeOrigin(url);if(!origin)return {ok:false,code:"CHAT_ORIGIN_INVALID",error:"Only an explicit HTTPS origin can be enabled."};
+  const pattern=ORIGIN.originPattern(origin),permitted=await chrome.permissions.contains({origins:[pattern]});
+  if(!permitted)return {ok:false,code:"CHAT_ORIGIN_PERMISSION_REQUIRED",origin,pattern,error:"Approve this HTTPS origin from the extension popup first."};
+  const list=await approvedChatOrigins();if(!list.includes(origin)){list.push(origin);await saveApprovedChatOrigins(list)}
+  if(!ORIGIN.isBuiltin(origin)){
+    const id=ORIGIN.scriptId(origin);try{const old=await chrome.scripting.getRegisteredContentScripts({ids:[id]});if(old?.length)await chrome.scripting.unregisterContentScripts({ids:[id]})}catch{}
+    await chrome.scripting.registerContentScripts([{id,matches:[pattern],js:CHAT_SCRIPT_FILES,runAt:"document_start",allFrames:true,matchOriginAsFallback:true,persistAcrossSessions:true}]);
+    if(Number.isInteger(tabId)){try{await chrome.scripting.executeScript({target:{tabId,allFrames:true},files:CHAT_SCRIPT_FILES})}catch(e){return {ok:false,code:"CHAT_ORIGIN_INJECTION_FAILED",origin,error:String(e)}}}
+  }
+  return {ok:true,origin,approved:true,builtin:ORIGIN.isBuiltin(origin),conversationKey:conv(url)};
+}
+async function chatOriginStatus(url){const origin=ORIGIN.normalizeOrigin(url),approved=await approvedChatOrigins();return {ok:true,origin,secure:!!origin,approved:!!origin&&approved.includes(origin),builtin:ORIGIN.isBuiltin(origin),approved_origins:approved,conversationKey:conv(url)}}
+async function rehydrateApprovedChatOrigins(){for(const origin of await approvedChatOrigins()){if(ORIGIN.isBuiltin(origin))continue;const pattern=ORIGIN.originPattern(origin);if(!await chrome.permissions.contains({origins:[pattern]}))continue;const id=ORIGIN.scriptId(origin);try{const old=await chrome.scripting.getRegisteredContentScripts({ids:[id]});if(!old?.length)await chrome.scripting.registerContentScripts([{id,matches:[pattern],js:CHAT_SCRIPT_FILES,runAt:"document_start",allFrames:true,matchOriginAsFallback:true,persistAcrossSessions:true}])}catch{}}}
 function b64urlUtf8(s){
   const bytes=new TextEncoder().encode(String(s));let bin="";for(const b of bytes)bin+=String.fromCharCode(b);
   return btoa(bin).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
@@ -224,12 +244,11 @@ async function diagAllFrames(tabId){
   }
   return out;
 }
-function isSupportedChatUrl(url){try{const u=new URL(String(url||""));return u.protocol==="https:"&&(u.hostname==="chatgpt.com"||u.hostname==="gpt.arzanai.com")}catch{return false}}
 function unifiedLocalCommand(action,params={}){
   const id=uid();return {protocolVersion:"2",messageId:id,correlationId:id,parentId:"",kind:"command",action,schemaVersion:"2",timestamp:now(),id,params}
 }
 async function arm(tabId){
-  const tab=await chrome.tabs.get(tabId);if(!isSupportedChatUrl(tab?.url))return {ok:false,error:"Open chatgpt.com in this tab first."};
+  const tab=await chrome.tabs.get(tabId);if(!await isSupportedChatUrl(tab?.url))return {ok:false,error:"This HTTPS ChatGPT origin is not approved for SOKNA Bridge."};
   await setStatus(tabId,{state:"Working",detail:"Preparing page adapters"});
   let base,sem;
   try{base=await baselineAllFrames(tabId);sem=await semanticTop(tabId,"SEMANTIC_BASELINE")}
@@ -250,7 +269,7 @@ async function disarm(tabId){
 }
 
 async function connectChat(tabId){
-  const tab=await chrome.tabs.get(tabId);if(!isSupportedChatUrl(tab?.url))return {ok:false,error:"Open ChatGPT first."};
+  const tab=await chrome.tabs.get(tabId);if(!await isSupportedChatUrl(tab?.url))return {ok:false,error:"This HTTPS ChatGPT origin is not approved for SOKNA Bridge."};
   const armed=await arm(tabId);if(!armed?.ok)return armed;
   let boot=await agentExec(unifiedLocalCommand("bridge.bootstrap",{}));
   let session=boot?.active_session||null;
@@ -975,6 +994,8 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   (async()=>{
     try{
       const tabId=m.tabId??sender.tab?.id;
+      if(m.type==="CHAT_ORIGIN_STATUS")return reply(await chatOriginStatus(m.url||sender.tab?.url||""));
+      if(m.type==="REGISTER_CHAT_ORIGIN")return reply(await registerChatOrigin(tabId,m.url||sender.tab?.url||""));
       if(m.type==="CONNECT_CHAT")return reply(await connectChat(tabId));
       if(m.type==="ARM")return reply(await arm(tabId));
       if(m.type==="DISARM")return reply(await disarm(tabId));
@@ -1143,3 +1164,5 @@ ensureRetryAlarm().catch(()=>{});
 resumeJobWatches().catch(()=>{});
 resumeChatTransfers().catch(()=>{});
 chrome.tabs.onRemoved.addListener(tabId=>{disarm(tabId).catch(()=>{})});
+
+rehydrateApprovedChatOrigins().catch(()=>{});
