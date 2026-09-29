@@ -1,6 +1,7 @@
 const $=id=>document.getElementById(id);
 const msg=m=>new Promise(resolve=>chrome.runtime.sendMessage(m,r=>{const e=chrome.runtime.lastError;resolve(e?{ok:false,error:e.message,runtime_unavailable:true}:(r||{}))}));
 let lastDiagnostics=null;
+const POPSTATE=globalThis.__SOKNA_POPUP_STATE_V1__;
 async function activeTab(){const a=await chrome.tabs.query({active:true,currentWindow:true});return a[0]}
 function isChat(url){try{const h=new URL(url).hostname;return h==="chatgpt.com"||h==="gpt.arzanai.com"}catch{return false}}
 function isIG(url){try{const h=new URL(url).hostname;return h==="www.instagram.com"||h==="instagram.com"}catch{return false}}
@@ -11,22 +12,17 @@ function setMsg(id,text,kind=""){const e=$(id);e.textContent=text||"";e.classNam
 function conversationKey(url){try{const u=new URL(url);return u.origin+u.pathname}catch{return""}}
 function diagText(d){return JSON.stringify(d,null,2)}
 async function agentHealth(){const r=await msg({type:"AGENT_PING"});if(r?.ok){dot("agentDot","ok");$("agentState").textContent="Agent فعال و قابل دسترس است";return true}dot("agentDot","bad");$("agentState").textContent="Agent در دسترس نیست";return false}
-function describeChat(s){
-  const h=s?.health||{},p=h.connectionProbe||{};
-  if(!s?.armed)return {dot:"warn",text:"این گفتگو هنوز متصل نیست",sub:"Page detected؛ برای شروع Connect this Chat را بزن."};
-  if(h.transportVerified)return {dot:"ok",text:"Connected — End-to-End Verified",sub:"Semantic ✓  Background ✓  Agent ✓  Session ✓  Delivery ✓"};
-  if(s?.status?.detail==="Needs Re-arm"||h.pageAdapterState==="arm_mismatch")return {dot:"bad",text:"Needs Re-arm",sub:"Top-frame page adapter آماده نیست."};
-  if(p?.agent?.ok===false)return {dot:"bad",text:"Connected — Agent Unreachable",sub:"صفحه متصل است اما Agent probe موفق نشده."};
-  if(p?.delivery?.ready===false&&p?.semantic?.ok)return {dot:"warn",text:"Connected — Delivery Unavailable",sub:"Semantic/Agent در دسترس‌اند ولی مسیر ارسال نتیجه به Chat آماده نیست."};
-  return {dot:"warn",text:"Connected — Transport Unverified",sub:"اتصال ثبت شده اما probe کامل end-to-end هنوز موفق نشده."};
-}
+function describeChat(s){return POPSTATE.describeChat(s)}
+function recoveryModel(s){return POPSTATE.recoveryModel(s)}
 async function paint(){
+  $("extensionVersion").textContent="Extension "+String(chrome.runtime.getManifest().version||"");
   const t=await activeTab(),url=t?.url||"";await agentHealth();show("chatCard",false);show("igCard",false);show("otherCard",false);
   if(isChat(url)){
     $("pageType").textContent="ChatGPT";show("chatCard");
-    const s=await msg({type:"STATUS",tabId:t.id,conversationKey:conversationKey(url)}),d=describeChat(s);
+    const s=await msg({type:"STATUS",tabId:t.id,conversationKey:conversationKey(url)}),d=describeChat(s),recovery=recoveryModel(s);
     dot("chatDot",d.dot);$("chatState").querySelector("span:last-child").textContent=d.text;$("chatSubstate").textContent=d.sub;
-    show("disconnectChat",!!s?.armed);show("connectChat",!s?.armed||!s?.health?.transportVerified);
+    show("deliveryRecovery",recovery.visible);$("deliveryRecoveryId").textContent=recovery.recordId||"—";$("recheckDelivery").dataset.recordId=recovery.recordId||"";
+    show("disconnectChat",!!s?.armed);show("connectChat",!s?.armed||s?.status?.transportVerified!==true);
     $("connectChat").textContent=s?.armed?"Verify / Reconnect":"Connect this Chat";
     return;
   }
@@ -42,6 +38,7 @@ async function getFullDiagnostics(){
 }
 $("connectChat").onclick=async()=>{const t=await activeTab();$("connectChat").disabled=true;setMsg("chatMsg","در حال اتصال، ساخت session و اجرای probe واقعی…");const r=await msg({type:"CONNECT_CHAT",tabId:t.id});const ok=!!r?.transport_verified;setMsg("chatMsg",ok?"اتصال end-to-end تأیید شد.":(r?.ok?"اتصال ثبت شد اما Transport هنوز کامل تأیید نشده؛ Diagnostics را ببین.":r?.error||"اتصال ناموفق"),ok?"ok":r?.ok?"warn":"err");$("diag").textContent=diagText(r);$("connectChat").disabled=false;await paint()};
 $("disconnectChat").onclick=async()=>{const t=await activeTab();const r=await msg({type:"DISARM",tabId:t.id});setMsg("chatMsg",r?.ok?"اتصال این گفتگو قطع شد.":r?.error||"",r?.ok?"ok":"err");await paint()};
+$("recheckDelivery").onclick=async()=>{const t=await activeTab(),recordId=$("recheckDelivery").dataset.recordId||"";$("recheckDelivery").disabled=true;setMsg("chatMsg","در حال بررسی visibility نتیجه؛ بدون ارسال مجدد…");const r=await msg({type:"RECHECK_DELIVERY",tabId:t.id,conversationKey:conversationKey(t.url),recordId});setMsg("chatMsg",r?.ok?"Delivery در گفتگو تأیید شد.":(r?.reason==="delivery_uncertain"?"هنوز visibility نتیجه تأیید نشده؛ RESULT دوباره ارسال نشد.":r?.error||r?.reason||"Re-check ناموفق"),r?.ok?"ok":r?.reason==="delivery_uncertain"?"warn":"err");$("recheckDelivery").disabled=false;await paint()};
 $("igDownload").onclick=async()=>{const t=await activeTab();$("igDownload").disabled=true;setMsg("igMsg","در حال جمع‌آوری و دانلود مدیا…");const r=await msg({type:"IG_POPUP_DOWNLOAD",tabId:t.id,url:t.url});setMsg("igMsg",r?.ok?String(r.count||0)+" فایل برای دانلود ارسال شد.":r?.error||"دانلود ناموفق",r?.ok?"ok":"err");$("diag").textContent=diagText(r);$("igDownload").disabled=false};
 $("igScan").onclick=async()=>{const t=await activeTab(),limit=Number($("igLimit").value||10);$("igScan").disabled=true;setMsg("igMsg","در حال ایندکس "+limit+" پست…");const r=await msg({type:"IG_POPUP_SCAN",tabId:t.id,url:t.url,limit});setMsg("igMsg",r?.ok?"اسکن ذخیره شد: "+r.scan_id+" — "+r.post_count+" پست.":r?.error||"اسکن ناموفق",r?.ok?"ok":"err");$("diag").textContent=diagText(r);$("igScan").disabled=false};
 $("controlCenter").onclick=async()=>{$("diag").textContent=diagText(await msg({type:"OPEN_CONTROL_CENTER"}))};

@@ -31,6 +31,10 @@ assert.equal(exhausted.state,"delivery_uncertain","missing ACK must become bound
 assert.equal(exhausted.record.nextPostAt,0);
 assert.equal(D.mode(exhausted.record,t0+999999,false),"uncertain","uncertain delivery must not auto-resend");
 assert.equal(D.mode(exhausted.record,t0+999999,true),"ack_poll","manual recovery may visibility-check but must still not send");
+const manualMiss=D.pollResult(exhausted.record,false,t0+1_000_000);
+assert.equal(manualMiss.state,"delivery_uncertain","failed manual visibility re-check must remain uncertain");
+assert.equal(D.mode(manualMiss.record,t0+1_000_001,false),"uncertain","failed manual re-check must not become sendable");
+assert.equal(manualMiss.record.submitted,true,"failed manual re-check must preserve submitted state");
 
 const visible=D.pollResult(submitted,true,t0+3000);
 assert.equal(visible.state,"acknowledged");
