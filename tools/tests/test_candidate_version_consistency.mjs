@@ -27,8 +27,10 @@ function walk(dir){
     const p=path.join(dir,ent.name);
     if(ent.isDirectory())walk(p);
     else if(/\.(?:js|mjs|py|ps1|yml|yaml|json|html)$/.test(ent.name)){
+      const rel=path.relative(ROOT,p).replaceAll("\\","/");
+      if(rel==="tools/tests/test_candidate_version_consistency.mjs")continue;
       const text=fs.readFileSync(p,"utf8");
-      if(text.includes(STALE))stale.push(path.relative(ROOT,p).replaceAll("\\","/"));
+      if(text.includes(STALE))stale.push(rel);
     }
   }
 }
