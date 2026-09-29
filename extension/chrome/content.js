@@ -180,16 +180,26 @@ function roleOfVisibilityRoot(el){
     const direct=String(el?.getAttribute?.("data-message-author-role")||"").trim().toLowerCase();
     if(direct==="user")return "user";
     if(direct==="assistant")return "assistant";
-    const tid=String(el?.getAttribute?.("data-testid")||"").toLowerCase();
-    if(tid.includes("user-message"))return "user";
-    if(tid.includes("assistant-message"))return "assistant";
-    const label=String(el?.getAttribute?.("aria-label")||"").trim().toLowerCase();
-    if(/^you (said|wrote|sent)\b/.test(label)||/^user\b/.test(label))return "user";
-    if(/^chatgpt (said|wrote)\b/.test(label)||/^assistant\b/.test(label))return "assistant";
-    const userChild=el?.querySelector?.('[data-message-author-role="user"],[data-testid*="user-message" i]');
+
+    const nested=el?.querySelector?.('[data-message-author-role="assistant"],[data-message-author-role="user"]');
+    const nestedRole=String(nested?.getAttribute?.("data-message-author-role")||"").trim().toLowerCase();
+    if(nestedRole==="user"||nestedRole==="assistant")return nestedRole;
+
+    const cls=String(el?.className||"");
+    if(/(^|\s)user-turn(\s|$)/i.test(cls))return "user";
+    if(/(^|\s)(agent-turn|assistant-turn)(\s|$)/i.test(cls))return "assistant";
+
+    const attrs=["data-author","data-role","data-turn","aria-label","data-testid"]
+      .map(a=>String(el?.getAttribute?.(a)||"")).join(" | ");
+    if(/(^|\b)(user message|user said|you said|you wrote|you sent)(\b|$)/i.test(attrs))return "user";
+    if(/(^|\b)(assistant message|assistant response|assistant said|chatgpt said|chatgpt wrote)(\b|$)/i.test(attrs))return "assistant";
+
+    const userChild=el?.querySelector?.('[data-testid*="user-message" i],.user-turn');
     if(userChild)return "user";
-    const assistantChild=el?.querySelector?.('[data-message-author-role="assistant"],[data-testid*="assistant-message" i]');
+    const assistantChild=el?.querySelector?.('[data-testid*="assistant-message" i],.agent-turn,.assistant-turn');
     if(assistantChild)return "assistant";
+
+    if(el?.querySelector?.('[data-testid*="good-response" i],[data-testid*="bad-response" i],[data-testid*="regenerate" i],button[aria-label*="good response" i],button[aria-label*="bad response" i],button[aria-label*="regenerate" i]'))return "assistant";
   }catch{}
   return "unknown";
 }
@@ -201,7 +211,12 @@ function conversationTextsForVisibility(){
       '[data-message-author-role="user"]',
       '[data-testid*="user-message" i]',
       '[data-testid^="conversation-turn-"]',
-      '[data-testid*="conversation-turn" i]'
+      '[data-testid*="conversation-turn" i]',
+      '[data-message-id]',
+      'article',
+      '.user-turn',
+      '.agent-turn',
+      '.assistant-turn'
     ]){
       for(const el of [...document.querySelectorAll(q)])add(el);
     }
