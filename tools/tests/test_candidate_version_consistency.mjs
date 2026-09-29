@@ -3,8 +3,8 @@ import path from "node:path";
 import assert from "node:assert/strict";
 
 const ROOT=process.cwd();
-const EXPECTED="3.12.7";
-const STALE="3.12.6";
+const EXPECTED="3.12.8";
+const STALE="3.12.7";
 
 const manifest=JSON.parse(fs.readFileSync(path.join(ROOT,"extension/chrome/manifest.json"),"utf8"));
 assert.equal(manifest.version,EXPECTED,"manifest candidate version mismatch");
@@ -35,5 +35,5 @@ function walk(dir){
   }
 }
 for(const r of roots)walk(path.join(ROOT,r));
-assert.deepEqual(stale,[],"stale active 3.12.5 references: "+stale.join(", "));
+assert.deepEqual(stale,[],"stale active 3.12.7 references: "+stale.join(", "));
 console.log("CANDIDATE_VERSION_CONSISTENCY_PASS");
