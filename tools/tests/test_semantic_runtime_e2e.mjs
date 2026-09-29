@@ -44,7 +44,7 @@ function genericTurn(main,text,cls="turn"){
 }
 function runtime(){
   const assistant=[],turns=[],sent=[],listeners=[],storage={},observers=[],main=domEl("MAIN","","conversation-main");
-  let rejectCommand=false;
+  let rejectCommand=false,commandResponse=null;
   const body=domEl("BODY","");append(body,main);
   const document={
     querySelector(sel){if(sel==="main,[role=\'main\']")return main;return null},
@@ -62,7 +62,7 @@ function runtime(){
   };
   const chrome={runtime:{
     onMessage:{addListener(fn){listeners.push(fn)}},
-    async sendMessage(m){sent.push(m);if(rejectCommand&&m?.type==="COMMAND")throw new Error("mock runtime unavailable");return {ok:true,agent_ok:true,agent_version:"2.7.1"}}
+    async sendMessage(m){sent.push(m);if(rejectCommand&&m?.type==="COMMAND")throw new Error("mock runtime unavailable");if(m?.type==="COMMAND"&&commandResponse)return commandResponse;return {ok:true,agent_ok:true,agent_version:"2.7.1"}}
   },storage:{local}};
   const ctx={console,TextEncoder,Date,Set,Map,WeakMap,Math,JSON,Promise,setTimeout,clearTimeout,MutationObserver:MO,document,chrome,location:{href:"https://chatgpt.com/c/test"},window:null,globalThis:null};
   ctx.window=ctx;ctx.top=ctx;ctx.globalThis=ctx;
@@ -75,7 +75,7 @@ function runtime(){
       try{const asyncFlag=fn(m,{},reply);if(asyncFlag!==true&&!settled)resolve(undefined)}catch(e){reject(e)}
     });
   }
-  return {ctx,assistant,turns,main,sent,storage,message,addGeneric:(text,cls="turn")=>genericTurn(main,text,cls),setReject:v=>{rejectCommand=v},mutate:async()=>{for(const o of observers)o.cb();await new Promise(r=>setTimeout(r,90))}};
+  return {ctx,assistant,turns,main,sent,storage,message,addGeneric:(text,cls="turn")=>genericTurn(main,text,cls),setReject:v=>{rejectCommand=v},setCommandResponse:v=>{commandResponse=v},mutate:async()=>{for(const o of observers)o.cb();await new Promise(r=>setTimeout(r,90))}};
 }
 function command(id,action="ping",bridgeNonce=""){const spec={id,intent:"exec",action,params:{}};if(bridgeNonce)spec.bridge_nonce=bridgeNonce;return START+JSON.stringify(spec)+END}
 function commands(r){return r.sent.filter(x=>x?.type==="COMMAND")}
@@ -145,6 +145,15 @@ function commands(r){return r.sent.filter(x=>x?.type==="COMMAND")}
   await r.mutate();
   assert.equal(commands(r).length,1);
   assert.equal(commands(r)[0].command.id,"new-after-baseline");
+}
+{
+  const r=runtime();await r.message({type:"SEMANTIC_BASELINE"});
+  r.setCommandResponse({ok:false,rejected:true,final:true,executed:false,commandId:"preboot-reject",code:"BOOTSTRAP_REQUIRED",reason:"session_gate_rejected",retryable:true,recovery_action:"bridge.bootstrap"});
+  r.assistant.push(node("reject-1",command("preboot-reject","job.batch")));await r.mutate();
+  const d=await r.message({type:"SEMANTIC_DIAG"});
+  assert.equal(d.semantic.last_dispatch_ok,false,"background terminal rejection must not be counted as dispatched");
+  assert.ok(r.sent.some(x=>x?.type==="SEMANTIC_TRACE"&&x.trace?.event==="semantic.rejected"&&x.trace?.code==="BOOTSTRAP_REQUIRED"),"terminal rejection must emit semantic.rejected");
+  assert.equal(r.sent.some(x=>x?.type==="SEMANTIC_TRACE"&&x.trace?.event==="semantic.dispatched"&&x.trace?.command_id==="preboot-reject"),false,"rejected command must never emit semantic.dispatched");
 }
 {
   const r=runtime();await r.message({type:"SEMANTIC_BASELINE"});r.setReject(true);

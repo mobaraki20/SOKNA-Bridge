@@ -1,6 +1,6 @@
 (()=>{
 "use strict";
-importScripts("protocol.js","capability_gate.js");
+importScripts("protocol.js","capability_gate.js","terminal_outcome_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const CAP=globalThis.__SOKNA_CAPABILITY_GATE_V1__;
 const HOST="com.sokna.bridge.v3";
@@ -16,7 +16,7 @@ const commandTabs=new Map();
 function idOf(m){const id=String(m?.command?.id||m?.command?.correlationId||"");return ID.test(id)?id:""}
 function uid(prefix="cap"){return crypto.randomUUID?.()||(`${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`)}
 function conversationKey(sender){try{const u=new URL(sender?.url||sender?.tab?.url||"");return `${sender?.tab?.id??"?"}:${u.origin}${u.pathname}`}catch{return `${sender?.tab?.id??"?"}:unknown`}}
-function rejection(m,error,reason="invalid_compact_command",retryable=false){const cid=idOf(m);return {type:"TRANSPORT_DIAG",diagnostic:{kind:"background-command-rejected",final:!!cid,reason,version:"unified-background-gate-v3",commandId:cid,source:String(m?.source||m?.detector||"background-gate"),error:String(error||"REJECTED"),executed:false,retryable:!!retryable}}}
+function rejection(m,error,reason="invalid_compact_command",retryable=false,code="",recoveryAction=""){const cid=idOf(m),rawError=String(error||"REJECTED"),derived=String(code||rawError.split(":",1)[0]||"COMMAND_REJECTED");return {type:"TRANSPORT_DIAG",diagnostic:{kind:"background-command-rejected",final:!!cid,reason,version:"unified-background-gate-v3",commandId:cid,source:String(m?.source||m?.detector||"background-gate"),error:rawError,code:derived,executed:false,retryable:!!retryable,recovery_action:String(recoveryAction||"")}}}
 function nativeMessage(msg){return new Promise((resolve,reject)=>rawNativeSend(HOST,msg,r=>{const e=chrome.runtime.lastError;if(e)reject(new Error(e.message));else resolve(r||{})}))}
 function unifiedCommand(action,params={},parentId=""){const id=uid("bridge"),ts=Date.now();return {protocolVersion:"2",messageId:id,correlationId:id,parentId:String(parentId||""),kind:"command",action,schemaVersion:"2",timestamp:ts,id,params}}
 function capabilityCommand(){return unifiedCommand("agent.capabilities",{})}
@@ -107,10 +107,10 @@ function wrapListener(listener){return function(m,sender,reply){
   capabilityGate.check(m.command.action).then(async g=>{
     if(!g?.ok)return listener(rejection(m,`${g?.code||"CAPABILITY_PREFLIGHT_FAILED"}:${g?.error||m.command.action}`),sender,reply);
     const gate=await ensureSessionGate(m,sender);
-    if(!gate.ok)return listener(rejection(m,`${gate.code}:${gate.error}`,"session_gate_rejected",true),sender,reply);
+    if(!gate.ok)return listener(rejection(m,`${gate.code}:${gate.error}`,"session_gate_rejected",true,gate.code,gate.code==="BOOTSTRAP_REQUIRED"?"bridge.bootstrap":(gate.code==="SESSION_NOT_READY"?"session.resume":"bridge.diagnostics.get")),sender,reply);
     if(m.command.action==="artifact.out.attach")rememberCommandTab(String(m.command.id||""),sender);
     return listener(m,sender,reply);
-  }).catch(e=>listener(rejection(m,"PREFLIGHT_FAILED:"+String(e),"session_gate_rejected",true),sender,reply));
+  }).catch(e=>listener(rejection(m,"PREFLIGHT_FAILED:"+String(e),"session_gate_rejected",true,"PREFLIGHT_FAILED","bridge.diagnostics.get"),sender,reply));
   return true
 }}
 try{event.addListener=function(listener){return originalAdd(wrapListener(listener))}}catch(e){throw new Error("BACKGROUND_FAIL_CLOSED_GATE_INSTALL_FAILED:"+String(e))}

@@ -1,8 +1,9 @@
-importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js","delivery_state_core.js");
+importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js","delivery_state_core.js","terminal_outcome_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
 const DELIVERY=globalThis.__SOKNA_DELIVERY_STATE_CORE_V1__;
+const TERMINAL=globalThis.__SOKNA_TERMINAL_OUTCOME_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
 const VERSION="3.12.5";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
@@ -860,7 +861,7 @@ async function queueTransportNack(t,d){
   const ref=cid;
   const k=`__nack__:${ref}:${d.reason||"rejected"}`;
   let s=await seenAll();if(s[k]?.posted)return{ok:true,duplicate:true};
-  if(!s[k])s[k]={state:"done",kind:"transport-nack",ts:now(),conversationKey:a.registered.conversationKey,posted:false,result:{kind:"transport-nack",commandId:d.commandId||"",transportRef:d.transportRef||"",reason:d.reason||"rejected",executed:false,retryable:true,source:d.source||"",error:d.error||"",payloadBytes:d.payloadBytes??null,maxBytes:d.maxBytes??null}};
+  if(!s[k])s[k]={state:"done",kind:"transport-nack",ts:now(),conversationKey:a.registered.conversationKey,posted:false,result:{kind:"transport-nack",...TERMINAL.terminalEvent(d)}};
   await saveSeen(s);return await postPending(t,k,s[k]);
 }
 const commandTails=new Map();
@@ -984,10 +985,13 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
       }
       if(m.type==="TRANSPORT_DIAG"){
         const d=m.diagnostic||{};await setStatus(tabId,{lastTransportDiagnostic:d});
-        const hard=new Set(["contract_budget_exceeded","contract_payload_budget_exceeded","invalid_base64url","invalid_json","invalid_compact_command","invalid_outer_id","outer_id_mismatch","carrier_parse_failed","carrier_incomplete"]);
         const correlated=VALID_COMMAND_ID.test(String(d.commandId||""));
-        if(d.final===true&&hard.has(d.reason)&&correlated)return reply(await queueTransportNack(tabId,d));
-        return reply({ok:true,recorded:true,uncorrelated:d.final===true&&hard.has(d.reason)&&!correlated});
+        if(TERMINAL?.isTerminalCommandRejection?.(d)){
+          const queued=await queueTransportNack(tabId,d);
+          await appendTrace(tabId,"command.terminal_rejected",{command_id:String(d.commandId||""),code:TERMINAL.code(d),reason:String(d.reason||""),retryable:!!d.retryable,recovery_action:TERMINAL.recoveryAction(d)});
+          return reply(TERMINAL.response(d,{nack_queued:queued?.ok!==false||!!queued?.duplicate,delivery:queued}));
+        }
+        return reply({ok:true,recorded:true,uncorrelated:d.final===true&&d.executed===false&&!correlated});
       }
       if(m.type==="RECHECK_DELIVERY"){
         const a=await isArmed(tabId,m.conversationKey||"");

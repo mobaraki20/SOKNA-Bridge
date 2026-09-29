@@ -252,9 +252,13 @@ async function dispatchCandidate(c,trigger,provenance={evidence:"",requiresNonce
   const meta={intent:compiled.intent,route:compiled.route,bytes:compiled.bytes,trigger,attemptKey:c.attempt_key,messageIdentity:c.message_identity,semanticVersion:VERSION,provenance:String(provenance?.evidence||""),nonceBound:nonceRequired};
   state.last_send_error="";
   const r=await sendRuntime({type:"COMMAND",command:compiled.command,detector:"semantic-v2",source:"semantic:"+compiled.route,semantic:meta},"semantic.dispatch_failed");
-  const ok=!!r?.ok&&!r?.runtime_unavailable;
-  state.last_dispatch_ok=ok;attempts.get(c.attempt_key).state=ok?"dispatched":"dispatch_failed";
-  if(ok)await trace("semantic.dispatched",{command_id:cid,action:compiled.command.action,attempt_key:c.attempt_key,trigger});
+  const rejected=!!r?.rejected||r?.executed===false;
+  const ok=!!r?.ok&&!r?.runtime_unavailable&&!rejected;
+  state.last_dispatch_ok=ok;attempts.get(c.attempt_key).state=rejected?"rejected":(ok?"dispatched":"dispatch_failed");
+  if(rejected){
+    state.last_send_error=String(r?.error||r?.code||r?.reason||"command rejected");
+    await trace("semantic.rejected",{command_id:cid,action:compiled.command.action,attempt_key:c.attempt_key,trigger,code:String(r?.code||""),reason:String(r?.reason||""),executed:false,retryable:!!r?.retryable,recovery_action:String(r?.recovery_action||"")});
+  }else if(ok)await trace("semantic.dispatched",{command_id:cid,action:compiled.command.action,attempt_key:c.attempt_key,trigger});
   else{
     state.last_send_error=String(r?.error||"background command dispatch failed");
     await persistFallback({event:"semantic.dispatch_failed",command_id:cid,action:compiled.command.action,attempt_key:c.attempt_key,trigger,error:state.last_send_error});

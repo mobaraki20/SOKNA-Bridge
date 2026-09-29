@@ -1,0 +1,15 @@
+import fs from "node:fs";
+import vm from "node:vm";
+import assert from "node:assert/strict";
+const src=fs.readFileSync("extension/chrome/terminal_outcome_core.js","utf8");
+const ctx={globalThis:null,String,Object};ctx.globalThis=ctx;vm.runInNewContext(src,ctx,{filename:"terminal_outcome_core.js"});
+const T=ctx.__SOKNA_TERMINAL_OUTCOME_CORE_V1__;assert.ok(T);
+const d={kind:"background-command-rejected",final:true,executed:false,commandId:"newchat-batch-003",reason:"session_gate_rejected",code:"BOOTSTRAP_REQUIRED",error:"BOOTSTRAP_REQUIRED:bootstrap first",retryable:true};
+assert.equal(T.isTerminalCommandRejection(d),true);
+assert.equal(T.code(d),"BOOTSTRAP_REQUIRED");
+assert.equal(T.recoveryAction(d),"bridge.bootstrap");
+const e=T.terminalEvent(d);assert.equal(e.executed,false);assert.equal(e.status,"rejected");assert.equal(e.code,"BOOTSTRAP_REQUIRED");assert.equal(e.retryable,true);
+const r=T.response(d);assert.equal(r.ok,false);assert.equal(r.rejected,true);assert.equal(r.executed,false);assert.equal(r.recovery_action,"bridge.bootstrap");
+assert.equal(T.isTerminalCommandRejection({...d,commandId:"bad id"}),false);
+assert.equal(T.isTerminalCommandRejection({...d,executed:true}),false);
+console.log("TERMINAL_OUTCOME_CORE_PASS");
