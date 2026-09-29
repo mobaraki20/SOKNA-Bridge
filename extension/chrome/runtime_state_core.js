@@ -17,14 +17,14 @@ function executionFinish(prev,id,ok,error="",t=Date.now()){
 function deliveryUpdate(prev,{recordId="",commandId="",deliveryState="",uiState="Waiting",detail="",lastError="",actionRequired=false,transportVerified}={}){
   const out={deliveryPendingRecordId:String(recordId||""),deliveryPendingCommandId:String(commandId||""),deliveryState:String(deliveryState||""),deliveryDetail:String(detail||""),deliveryLastError:String(lastError||""),deliveryActionRequired:!!actionRequired};
   if(transportVerified!==undefined)out.transportVerified=!!transportVerified;
-  if(!executionRunning(prev)){out.state:String(uiState||"Waiting");out.detail=String(detail||"");out.lastError=String(lastError||"");out.actionRequired=!!actionRequired;}
+  if(!executionRunning(prev)){out.state=String(uiState||"Waiting");out.detail=String(detail||"");out.lastError=String(lastError||"");out.actionRequired=!!actionRequired;}
   return out;
 }
 function deliveryClear(prev,recordId,{uiState="Ready",detail="",lastError="",actionRequired=false,transportVerified}={}){
   const current=String(prev?.deliveryPendingRecordId||"");if(current&&recordId&&current!==String(recordId))return {};
   const out={deliveryPendingRecordId:"",deliveryPendingCommandId:"",deliveryState:"",deliveryDetail:"",deliveryLastError:"",deliveryActionRequired:false};
   if(transportVerified!==undefined)out.transportVerified=!!transportVerified;
-  if(!executionRunning(prev)){out.state:String(uiState||"Ready");out.detail=String(detail||"");out.lastError=String(lastError||"");out.actionRequired=!!actionRequired;}
+  if(!executionRunning(prev)){out.state=String(uiState||"Ready");out.detail=String(detail||"");out.lastError=String(lastError||"");out.actionRequired=!!actionRequired;}
   return out;
 }
 function connectionUpdate(prev,patch={}){
