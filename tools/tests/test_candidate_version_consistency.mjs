@@ -3,8 +3,8 @@ import path from "node:path";
 import assert from "node:assert/strict";
 
 const ROOT=process.cwd();
-const EXPECTED="3.12.6";
-const STALE="3.12.5";
+const EXPECTED="3.12.7";
+const STALE="3.12.6";
 
 const manifest=JSON.parse(fs.readFileSync(path.join(ROOT,"extension/chrome/manifest.json"),"utf8"));
 assert.equal(manifest.version,EXPECTED,"manifest candidate version mismatch");

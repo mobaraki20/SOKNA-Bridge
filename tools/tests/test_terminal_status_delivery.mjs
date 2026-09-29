@@ -66,8 +66,12 @@ const longId='long-result-ack-001';
 const longResult=`[SOKNA-V2-RESULT]{"id":"${longId}","ok":true,"data":"${'x'.repeat(50000)}"}[/SOKNA-V2-RESULT]`;
 const truncatedVisible=longResult.slice(0,700);
 if(!run(truncatedVisible,longResult))throw new Error('truncated/virtualized large RESULT must ACK from authoritative type+id header');
+const prefixedVisible=('Open message actions '.repeat(24))+truncatedVisible;
+if(!run(prefixedVisible,longResult))throw new Error('large RESULT must ACK even when the authoritative user shell has a long accessibility prefix');
+const wrongIdVisible=`[SOKNA-V2-RESULT]{"id":"other-long-result","ok":true,"data":"partial"}[/SOKNA-V2-RESULT]`;
+if(run(wrongIdVisible,longResult))throw new Error('RESULT with a different id must not ACK the expected RESULT');
 const wrongType=`[SOKNA-V2-STATUS]{"eventId":"${longId}","status":"ok"}[/SOKNA-V2-STATUS]`;
 if(run(wrongType,longResult))throw new Error('STATUS with same-looking id must not ACK RESULT');
 if(run(truncatedVisible,longResult,longResult))throw new Error('payload still present in composer must not count as delivered');
 
-console.log(JSON.stringify({ok:true,tests:12}));
+console.log(JSON.stringify({ok:true,tests:14}));

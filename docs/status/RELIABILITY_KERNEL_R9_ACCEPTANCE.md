@@ -4,7 +4,7 @@ Baseline: `sokna-agent-2.7.1-r8` / `2d2ca6e91be76297f8a3aed2d5910b627230880c`.
 
 Candidate:
 - Agent: 2.7.1 (core preserved)
-- Extension: 3.12.6
+- Extension: 3.12.7
 - Semantic adapter: 2.1.1
 - Working branch: `refactor/reliability-kernel-r9`
 - Planned immutable tag after promotion: `sokna-agent-2.7.1-r9`
