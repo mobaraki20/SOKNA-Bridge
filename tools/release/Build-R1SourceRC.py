@@ -51,7 +51,7 @@ def main():
     ap.add_argument('--commit',default='HEAD')
     ap.add_argument('--candidate-ref',default='sokna-agent-2.7.1-r9')
     ap.add_argument('--agent-version',default='2.7.1')
-    ap.add_argument('--extension-version',default='3.12.7')
+    ap.add_argument('--extension-version',default='3.12.8')
     ap.add_argument('--accepted-live-agent-baseline',default='2.7.1')
     ap.add_argument('--output',required=True)
     ap.add_argument('--manifest-output',required=True)
