@@ -1,9 +1,10 @@
-importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js","delivery_state_core.js","terminal_outcome_core.js");
+importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js","delivery_state_core.js","terminal_outcome_core.js","runtime_state_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
 const DELIVERY=globalThis.__SOKNA_DELIVERY_STATE_CORE_V1__;
 const TERMINAL=globalThis.__SOKNA_TERMINAL_OUTCOME_CORE_V1__;
+const RUNTIME=globalThis.__SOKNA_RUNTIME_STATE_CORE_V1__;
 const HOST="com.sokna.bridge.v3";
 const VERSION="3.12.5";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
@@ -61,6 +62,11 @@ async function setStatus(tabId,patch){
   a[String(tabId)]=next;await sset("session",{[STATUS_KEY]:a});await paint(tabId,next);return next;
 }
 async function clearStatus(tabId){const a=await statusAll();delete a[String(tabId)];await sset("session",{[STATUS_KEY]:a})}
+async function setExecutionStart(tabId,id,action){const prev=await getStatus(tabId)||{};return await setStatus(tabId,RUNTIME.executionStart(prev,id,action,now()))}
+async function setExecutionFinish(tabId,id,ok,error=""){const prev=await getStatus(tabId)||{};return await setStatus(tabId,RUNTIME.executionFinish(prev,id,ok,error,now()))}
+async function setDeliveryStatus(tabId,recordId,rec,uiState,detail,patch={}){const prev=await getStatus(tabId)||{};return await setStatus(tabId,RUNTIME.deliveryUpdate(prev,{recordId,commandId:deliveryCommandId(recordId,rec),deliveryState:String(rec?.deliveryState||patch.deliveryState||""),uiState,detail,lastError:String(patch.lastError||""),actionRequired:!!patch.actionRequired,transportVerified:patch.transportVerified}))}
+async function clearDeliveryStatus(tabId,recordId,patch={}){const prev=await getStatus(tabId)||{};return await setStatus(tabId,RUNTIME.deliveryClear(prev,recordId,patch))}
+async function setConnectionStatus(tabId,patch={}){const prev=await getStatus(tabId)||{};return await setStatus(tabId,RUNTIME.connectionUpdate(prev,patch))}
 async function jobWatchesAll(){const d=await sget("local",[JOB_WATCH_KEY]);return d[JOB_WATCH_KEY]||{}}
 async function saveJobWatches(v){await sset("local",{[JOB_WATCH_KEY]:v})}
 async function jobWatchDiag(){const d=await sget("local",[JOB_WATCH_DIAG_KEY]);return d[JOB_WATCH_DIAG_KEY]||{}}
@@ -154,6 +160,10 @@ function b64urlUtf8(s){
   return btoa(bin).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
 }
 function resultEnvelope(obj){return `[SOKNA-V2-RESULT]${JSON.stringify(obj)}[/SOKNA-V2-RESULT]`}
+function stateHash(s){s=String(s||"");let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0).toString(16).padStart(8,"0")}
+function commandStorageKey(conversationKey,id){return `__cmd__:${stateHash(conversationKey)}:${String(id||"")}`}
+function resultIdOf(recordKey,rec){return String(rec?.commandId||recordKey||"")}
+function deliveryCommandId(recordKey,rec){return String(rec?.parentCommandId||rec?.commandId||recordKey||"")}
 function statusEnvelope(obj){return `[SOKNA-V2-STATUS]${JSON.stringify(obj)}[/SOKNA-V2-STATUS]`}
 const lastTransportDiagByTab=new Map();
 function nativeMessage(msg){return new Promise((resolve,reject)=>chrome.runtime.sendNativeMessage(HOST,msg,r=>{const e=chrome.runtime.lastError;if(e)reject(new Error(e.message));else resolve(r||{})}))}
@@ -316,12 +326,12 @@ async function postPendingInner(tabId,id,rec,force=false){
     return {ok:false,waiting:true,reason:"backoff"};
   }
   if(mode==="uncertain"){
-    await setStatus(tabId,{state:"Needs Action",detail:`Delivery uncertain for ${id}`,currentCommandId:id,lastError:"Conversation ACK was not observed before the safety deadline. Result will not be re-submitted automatically.",actionRequired:true});
+    await setDeliveryStatus(tabId,id,rec,"Needs Action",`Delivery uncertain for ${id}`,{lastError:"Conversation ACK was not observed before the safety deadline. Result will not be re-submitted automatically.",actionRequired:true});
     return {ok:false,waiting:false,reason:"delivery_uncertain"};
   }
 
   const isStatusEvent=rec.kind==="transport-nack"||rec.kind==="status-event";
-  const env=isStatusEvent?statusEnvelope({eventId:id,...rec.result}):resultEnvelope({id,...rec.result});
+  const env=isStatusEvent?statusEnvelope({eventId:id,...rec.result}):resultEnvelope({id:resultIdOf(id,rec),...rec.result});
 
   if(mode==="ack_poll"){
     await appendTrace(tabId,"chat.delivery_ack_poll",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_poll:Number(rec.ackPolls||0)+1});
@@ -333,17 +343,18 @@ async function postPendingInner(tabId,id,rec,force=false){
     if(outcome.state==="acknowledged"){
       await clearRetryAlarm(tabId);
       await appendTrace(tabId,"chat.delivery_completed",{record_id:id,kind:rec.kind||"result",method:"conversation-ack"});
-      await setStatus(tabId,{state:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,...(isStatusEvent?{}:{lastCompletedCommandId:id}),lastPostMethod:"conversation-ack",currentCommandId:"",lastError:"",actionRequired:false});
+      await clearDeliveryStatus(tabId,id,{uiState:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,lastError:"",actionRequired:false});
+      await setStatus(tabId,{...(isStatusEvent?{}:{lastCompletedCommandId:resultIdOf(id,rec)}),lastPostMethod:"conversation-ack"});
       setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
       return {ok:true,method:"conversation-ack"};
     }
     if(outcome.state==="delivery_uncertain"){
       await appendTrace(tabId,"chat.delivery_uncertain",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_polls:Number(rec.ackPolls||0),submitted_at:Number(rec.submittedAt||0)});
-      await setStatus(tabId,{state:"Needs Action",detail:`Delivery uncertain for ${id}`,currentCommandId:id,lastError:"Conversation ACK was not observed before the safety deadline. Result was submitted once and will not be sent again automatically.",actionRequired:true});
+      await setDeliveryStatus(tabId,id,rec,"Needs Action",`Delivery uncertain for ${id}`,{lastError:"Conversation ACK was not observed before the safety deadline. Result was submitted once and will not be sent again automatically.",actionRequired:true});
       setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
       return {ok:false,waiting:false,reason:"delivery_uncertain"};
     }
-    await setStatus(tabId,{state:"Waiting",detail:`Submitted ${id}; waiting for conversation ACK`,currentCommandId:id,lastError:"",actionRequired:false});
+    await setDeliveryStatus(tabId,id,rec,"Waiting",`Submitted ${id}; waiting for conversation ACK`,{lastError:"",actionRequired:false});
     if(rec.nextPostAt)await scheduleRetryAlarm(tabId,rec.nextPostAt);
     const delay=Math.max(500,(rec.nextPostAt||now()+DELIVERY.ACK_POLL_MS)-now());
     setTimeout(()=>retryPending(tabId).catch(()=>{}),delay);
@@ -351,7 +362,7 @@ async function postPendingInner(tabId,id,rec,force=false){
   }
 
   await appendTrace(tabId,"chat.delivery_started",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id)});
-  await setStatus(tabId,{state:"Posting",detail:`Sending ${id}`,currentCommandId:id,actionRequired:false});
+  await setDeliveryStatus(tabId,id,rec,"Posting",`Sending ${id}`,{lastError:"",actionRequired:false,deliveryState:"queued"});
   let p;try{p=await chrome.tabs.sendMessage(tabId,{type:"POST_RESULT",envelope:env},{frameId:0})}catch(e){p={ok:false,waiting:true,reason:"page_unavailable",error:String(e)}}
 
   seen=await seenAll();
@@ -373,13 +384,14 @@ async function postPendingInner(tabId,id,rec,force=false){
 
   if(p?.ok){
     await appendTrace(tabId,"chat.delivery_completed",{record_id:id,kind:rec.kind||"result",method:String(p.method||"")});
-    await setStatus(tabId,{state:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,...(isStatusEvent?{}:{lastCompletedCommandId:id}),lastPostMethod:p.method||"",currentCommandId:"",lastError:"",actionRequired:false});
+    await clearDeliveryStatus(tabId,id,{uiState:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,lastError:"",actionRequired:false});
+    await setStatus(tabId,{...(isStatusEvent?{}:{lastCompletedCommandId:resultIdOf(id,rec)}),lastPostMethod:p.method||""});
     setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
     return {ok:true};
   }
   if(rec?.deliveryState==="submitted_awaiting_ack"){
     await appendTrace(tabId,"chat.delivery_submitted",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_deadline_at:Number(rec.ackDeadlineAt||0)});
-    await setStatus(tabId,{state:"Waiting",detail:`Submitted ${id}; waiting for conversation ACK`,currentCommandId:id,lastError:"",actionRequired:false});
+    await setDeliveryStatus(tabId,id,rec,"Waiting",`Submitted ${id}; waiting for conversation ACK`,{lastError:"",actionRequired:false});
     const delay=Math.max(500,(rec.nextPostAt||now()+DELIVERY.ACK_POLL_MS)-now());
     setTimeout(()=>retryPending(tabId).catch(()=>{}),delay);
     return {ok:false,waiting:true,submitted:true,reason:"awaiting_conversation_ack"};
@@ -388,9 +400,9 @@ async function postPendingInner(tabId,id,rec,force=false){
   await appendTrace(tabId,"chat.delivery_failed",{record_id:id,kind:rec.kind||"result",reason:String(p?.reason||"retry"),error:String(p?.error||"Submit failed")});
   const exhausted=(rec?.postAttempts||0)>=MAX_POST_ATTEMPTS&&!p?.waiting;
   if(exhausted){
-    await setStatus(tabId,{state:"Needs Action",detail:"Queued result needs attention",currentCommandId:id,lastError:p?.error||"Submit failed",actionRequired:true});
+    await setDeliveryStatus(tabId,id,rec,"Needs Action","Queued result needs attention",{lastError:p?.error||"Submit failed",actionRequired:true});
   }else{
-    await setStatus(tabId,{state:"Waiting",detail:`Queued ${id}: ${p?.reason||"retry"}`,currentCommandId:id,lastError:p?.error||"",actionRequired:false});
+    await setDeliveryStatus(tabId,id,rec,"Waiting",`Queued ${id}: ${p?.reason||"retry"}`,{lastError:p?.error||"",actionRequired:false});
     const delay=Math.max(1000,(rec?.nextPostAt||now()+RETRY_BASE_MS)-now());
     setTimeout(()=>retryPending(tabId).catch(()=>{}),delay);
   }
@@ -880,8 +892,10 @@ async function handleCommandInner(tabId,command,meta={}){
   const a=await isArmed(tabId);if(!a.armed)return {ok:false,ignored:true};
   await appendTrace(tabId,"background.received",{command_id:String(command?.id||""),action:String(command?.action||""),trigger:String(meta?.trigger||""),attempt_key:String(meta?.attemptKey||"")});
   let seen=await seenAll();
-  if(seen[command.id]){
-    const original=seen[command.id];
+  const commandKey=commandStorageKey(a.registered.conversationKey,command.id);
+  const legacy=(seen[command.id]?.conversationKey===a.registered.conversationKey)?seen[command.id]:null;
+  const original=seen[commandKey]||legacy;
+  if(original){
     await appendTrace(tabId,"semantic.duplicate",{command_id:command.id,action:command.action,original_state:String(original?.state||""),trigger:String(meta?.trigger||"")});
     if(String(meta?.trigger||"")==="reconcile")return {ok:true,duplicate:true,state:original.state,reconcile_duplicate:true};
     const result={kind:"duplicate",status:"duplicate",commandId:command.id,correlationId:command.correlationId||command.id,action:command.action,executed:false,original_command_id:command.id,original_state:String(original?.state||""),original_result_ref:resultRefOf(original,command.id)};
@@ -889,8 +903,9 @@ async function handleCommandInner(tabId,command,meta={}){
     const q=await queueStatusEvent(tabId,a.registered.conversationKey,key,command.id,result);
     return {ok:true,duplicate:true,state:original.state,status_event:q};
   }
-  const acceptedAt=now();seen[command.id]={state:"running",ts:acceptedAt,acceptedAt,ackAt:acceptedAt,conversationKey:a.registered.conversationKey,sessionId:a.registered.conversationKey,sequence:acceptedAt,action:command.action,posted:false};await saveSeen(seen);
-  await setStatus(tabId,{state:"Working",detail:`Executing ${command.action}`,currentCommandId:command.id,etaMs:null,etaConfidence:"unknown"});
+  const acceptedAt=now();seen[commandKey]={state:"running",commandId:command.id,ts:acceptedAt,acceptedAt,ackAt:acceptedAt,conversationKey:a.registered.conversationKey,sessionId:a.registered.conversationKey,sequence:acceptedAt,action:command.action,posted:false};await saveSeen(seen);
+  await setExecutionStart(tabId,command.id,command.action);
+  await setStatus(tabId,{etaMs:null,etaConfidence:"unknown"});
   await appendTrace(tabId,"agent.forward_started",{command_id:command.id,action:command.action});
   await queueStatusEvent(tabId,a.registered.conversationKey,"accepted:"+command.id,command.id,{kind:"command-accepted",status:"accepted",commandId:command.id,correlationId:command.correlationId||command.id,action:command.action,accepted_at:acceptedAt});
   let result;
@@ -915,9 +930,10 @@ async function handleCommandInner(tabId,command,meta={}){
     await appendTrace(tabId,"agent.accepted",{command_id:command.id,action:command.action,ok:result?.ok!==false});
   }catch(e){result={ok:false,error:String(e)};await appendTrace(tabId,"agent.forward_failed",{command_id:command.id,action:command.action,error:String(e)})}
   for(const submitted of JOBCORE.findSubmittedJobs(command.action,result)){try{await registerJobWatch(tabId,command.id,submitted,a.registered.conversationKey)}catch{}}
-  seen=await seenAll();seen[command.id]={...(seen[command.id]||{}),state:"done",completedAt:now(),result,posted:false};await saveSeen(seen);
+  seen=await seenAll();seen[commandKey]={...(seen[commandKey]||{}),state:"done",commandId:command.id,completedAt:now(),result,posted:false};await saveSeen(seen);
   await appendTrace(tabId,"result.received",{command_id:command.id,action:command.action,ok:result?.ok!==false});
-  return await postPending(tabId,command.id,seen[command.id]);
+  await setExecutionFinish(tabId,command.id,result?.ok!==false,String(result?.error||""));
+  return await postPending(tabId,commandKey,seen[commandKey]);
 }
 function classifyPending(seen,registered,t=now(),force=false){
   const retryEligible=[],deferred=[],stale=[],suppressed=[],uncertain=[];
@@ -1058,17 +1074,18 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           const nextState=hasUncertain?"Needs Action":(probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action"));
           const detail=hasUncertain?"Delivery uncertain — review queued result":(probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable"))));
           const lastError=hasUncertain?"A submitted result was not acknowledged before the safety deadline; automatic re-send is disabled.":(probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||""));
-          status=await setStatus(tabId,{state:nextState,detail,transportVerified:!!probe.verified&&!hasUncertain,connectionProbe:probe,actionRequired:nextState==="Needs Action",lastError});
+          status=await setConnectionStatus(tabId,{state:nextState,detail,transportVerified:!!probe.verified&&!hasUncertain,connectionProbe:probe,actionRequired:nextState==="Needs Action",lastError});
         }
         const jobWatches=await jobWatchesAll(),jobWatchIds=Object.keys(jobWatches),jobWatchCount=jobWatchIds.length,jobDiag=await jobWatchDiag();
         const chatTransfers=await chatTransfersAll(),chatTransferIds=Object.keys(chatTransfers),chatDiag=await chatTransferDiag();
-        const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame),activePostCount=status?.state==="Posting"&&status?.currentCommandId?1:0;
-        const currentRec=(status?.currentCommandId&&seen[status.currentCommandId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||pending.uncertain[0]?.[1]||null;
+        const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame),activePostCount=status?.deliveryState==="queued"||status?.state==="Posting"?1:0;
+        const deliveryRecordId=String(status?.deliveryPendingRecordId||"");
+        const currentRec=(deliveryRecordId&&seen[deliveryRecordId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||pending.uncertain[0]?.[1]||null;
         const nextRetryAt=Number(currentRec?.nextPostAt||0),dprobe=top?.deliveryProbe||{};
         const child=pageDiagnostics.filter(x=>!x?.topFrame),childReady=child.filter(x=>x?.ok&&x.armed===a.armed).length,childFailed=child.length-childReady;
         const health={
           runtimeVersion:VERSION,armed:a.armed,transportVerified:status?.transportVerified===true,conversationKeySuffix:(registered?.conversationKey||"").slice(-12),
-          state:status?.state||"Ready",currentCommandId:status?.currentCommandId||"",
+          state:status?.state||"Ready",currentCommandId:status?.executionCurrentCommandId||status?.currentCommandId||"",executionState:status?.executionState||"idle",deliveryPendingRecordId:status?.deliveryPendingRecordId||"",deliveryPendingCommandId:status?.deliveryPendingCommandId||"",
           pendingRetryEligibleCount:pending.retryEligible.length,deferredPendingCount:pending.deferred.length,uncertainPendingCount:pending.uncertain.length,staleUnpostedCount:pending.stale.length,suppressedCount:pending.suppressed.length,activePostCount,
           waitReason:currentRec?.waitReason||"",deliveryState:currentRec?.deliveryState||"",submitted:!!currentRec?.submitted,ackPolls:Number(currentRec?.ackPolls||0),ackDeadlineAt:Number(currentRec?.ackDeadlineAt||0),postAttempts:Number(currentRec?.postAttempts||0),nextRetryAt,nextRetryInMs:nextRetryAt?Math.max(0,nextRetryAt-now()):0,
           sendControlReady:!!dprobe.chosenSend&&!dprobe.chosenSend.disabled&&dprobe.chosenSend.ariaDisabled!=="true",composerTextLen:Number(dprobe.composer?.textLen||0),composerKind:dprobe.composerKind||"",

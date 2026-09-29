@@ -48,7 +48,7 @@
     if(eventRec?.kind!=="status-event")return false;
     const parentId=String(eventRec?.parentCommandId||"");
     if(!parentId)return false;
-    const parent=seen?.[parentId];
+    const parent=seen?.[parentId]||Object.values(seen||{}).find(x=>String(x?.commandId||"")===parentId&&x?.conversationKey===conversationKey);
     if(!parent)return false;
     return parent.state==="done"&&!parent.posted&&!parent.suppressed&&parent.conversationKey===conversationKey&&!!parent.result;
   }
