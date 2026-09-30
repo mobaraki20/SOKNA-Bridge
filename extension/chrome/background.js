@@ -93,7 +93,7 @@ async function semanticTop(tabId,type,extra={}){
 function extensionActions(){
   const x=globalThis.__SOKNA_EXTENSION_ACTIONS_V1__;
   return Array.isArray(x)?[...new Set(x.map(String).filter(Boolean))]:[
-    "artifact.chat.apply","job.list","job.events","bridge.activity","artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach",
+    "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.command.get","bridge.command.list","artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach",
     "browser.audit.run","bridge.bootstrap","bridge.diagnostics.get","session.open","session.resume","session.checkpoint","session.close","session.list",
     "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search","instagram.media.download","instagram.media.attach",
     "instagram.research.plan","instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm","instagram.selection.reject","instagram.export"
