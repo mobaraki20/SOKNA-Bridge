@@ -34,4 +34,20 @@ if(!listing.find(x=>x.name==="unknown.action"&&!x.contracted))throw new Error("l
 const tools=R.tools(["browser.audit.run","unknown.action"]);
 if(tools.length!==1||tools[0].name!=="browser.audit.run")throw new Error("MCP tools projection incorrect");
 
+
+const agentCaps=JSON.parse(fs.readFileSync("native/runtime/v2.7.1/AGENT_CAPABILITIES.json","utf8"));
+const bootstrapSrc=fs.readFileSync("extension/chrome/background_bootstrap.js","utf8");
+const block=bootstrapSrc.match(/const bridgeLocalActions=\[([\s\S]*?)\];/);
+if(!block)throw new Error("extension action catalog missing");
+const extensionActions=[...block[1].matchAll(/"([^"]+)"/g)].map(m=>m[1]);
+const effective=[...new Set([...(agentCaps.actions||[]),...extensionActions])].sort();
+const missing=effective.filter(name=>!R.describe(name));
+if(missing.length)throw new Error("uncontracted effective actions: "+missing.join(", "));
+if(!R.describe("bridge.doctor"))throw new Error("doctor contract missing");
+for(const name of effective){
+  const t=R.describe(name);
+  if(!t.inputSchema?.$schema||!t.outputSchema?.$schema)throw new Error("schema dialect missing: "+name);
+  if(!t.annotations||typeof t.annotations.readOnlyHint!=="boolean"||typeof t.annotations.destructiveHint!=="boolean")throw new Error("annotations incomplete: "+name);
+}
+
 console.log("ACTION_CONTRACTS_CORE_PASS");
