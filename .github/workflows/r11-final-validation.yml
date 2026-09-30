@@ -1,0 +1,189 @@
+name: R11 Final Integrated Validation
+
+on:
+  push:
+    branches:
+      - refactor/r11-bulk-delivery
+    paths:
+      - docs/status/R11_CANDIDATE_READY.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sokna-r11-final-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  final:
+    name: Exact r11 Windows candidate
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      SOKNA_CANDIDATE_REF: sokna-agent-2.7.1-r11
+      SOKNA_AGENT_VERSION: 2.7.1
+      SOKNA_EXTENSION_VERSION: 3.14.0
+      SOKNA_SEMANTIC_VERSION: 2.1.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Verify immutable candidate marker
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $marker=Get-Content 'docs/status/R11_CANDIDATE_READY.json' -Raw | ConvertFrom-Json
+          $head=((& git rev-parse HEAD)-join '').Trim()
+          $parent=((& git rev-parse HEAD^)-join '').Trim()
+          if([string]$marker.schema -ne 'sokna-r11-candidate-ready-v1'){throw 'R11_MARKER_SCHEMA_INVALID'}
+          if([string]$marker.candidate_ref -ne $env:SOKNA_CANDIDATE_REF){throw 'R11_MARKER_REF_MISMATCH'}
+          if([string]$marker.agent_version -ne $env:SOKNA_AGENT_VERSION){throw 'R11_MARKER_AGENT_VERSION_MISMATCH'}
+          if([string]$marker.extension_version -ne $env:SOKNA_EXTENSION_VERSION){throw 'R11_MARKER_EXTENSION_VERSION_MISMATCH'}
+          if([string]$marker.semantic_version -ne $env:SOKNA_SEMANTIC_VERSION){throw 'R11_MARKER_SEMANTIC_VERSION_MISMATCH'}
+          if(-not [string]::Equals([string]$marker.code_commit,$parent,[StringComparison]::OrdinalIgnoreCase)){throw "R11_MARKER_CODE_COMMIT_MISMATCH: marker=$($marker.code_commit) parent=$parent"}
+          $changed=@(& git diff --name-only HEAD^ HEAD)
+          if($changed.Count-ne1-or$changed[0]-ne'docs/status/R11_CANDIDATE_READY.json'){throw ('R11_MARKER_COMMIT_NOT_ISOLATED: '+($changed-join','))}
+          if(@(& git status --porcelain --untracked-files=all).Count-gt0){throw 'R11_DIRTY_CHECKOUT'}
+          "SOKNA_EXPECTED_COMMIT=$head" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Extension syntax and all JavaScript contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem extension/chrome -Filter '*.js' -File | ForEach-Object {
+            node --check $_.FullName
+            if($LASTEXITCODE-ne0){throw "JS_SYNTAX_FAILED: $($_.Name)"}
+          }
+          Get-ChildItem tools/tests -Filter 'test_*.mjs' -File | Sort-Object Name | ForEach-Object {
+            Write-Host "=== $($_.Name) ==="
+            node $_.FullName
+            if($LASTEXITCODE-ne0){throw "JS_CONTRACT_FAILED: $($_.Name)"}
+          }
+
+      - name: All Python source and product contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem tools/tests -Filter 'test_*.py' -File | Sort-Object Name | ForEach-Object {
+            Write-Host "=== $($_.Name) ==="
+            python $_.FullName
+            if($LASTEXITCODE-ne0){throw "PY_CONTRACT_FAILED: $($_.Name)"}
+          }
+
+      - name: Go unit and integration tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($dir in @('native/agent','native/host','native/browser','native/provider')){
+            Write-Host "=== $dir ==="
+            Push-Location $dir
+            try {
+              go test ./...
+              if($LASTEXITCODE-ne0){throw "GO_TEST_FAILED: $dir"}
+            } finally { Pop-Location }
+          }
+
+      - name: PowerShell runtime and subsystem acceptance
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($file in Get-ChildItem 'native/runtime/v2.7.1' -File | Where-Object { $_.Extension -in @('.ps1','.psm1') }){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count){throw "POWERSHELL_PARSE_FAILED: $($file.Name): $($errors[0].Message)"}
+          }
+          foreach($test in @('./tools/runtime/releases/2.7.1/Test-ArtifactRoot271.ps1','./tools/runtime/releases/2.7.1/Test-Workspace271.ps1','./tools/runtime/releases/2.7.1/Test-AdvancedWorkspace271.ps1','./tools/runtime/releases/2.7.1/Test-ArtifactProviders271.ps1','./tools/runtime/releases/2.7.1/Test-BrowserQA271.ps1','./tools/runtime/releases/2.7.1/Test-ComponentAutomation271.ps1')){
+            Write-Host "=== $test ==="
+            & $test
+            if($LASTEXITCODE-ne0){throw "POWERSHELL_ACCEPTANCE_FAILED: $test"}
+          }
+
+      - name: Build exact r11 source candidate
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir=Join-Path $env:RUNNER_TEMP 'sokna-r11'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          python tools/release/Build-R1SourceRC.py --commit $env:SOKNA_EXPECTED_COMMIT --candidate-ref $env:SOKNA_CANDIDATE_REF --agent-version $env:SOKNA_AGENT_VERSION --extension-version $env:SOKNA_EXTENSION_VERSION --accepted-live-agent-baseline 2.7.1 --output (Join-Path $dir 'SOKNA-Agent-2.7.1-r11-source.zip') --manifest-output (Join-Path $dir 'source-manifest.json')
+          if($LASTEXITCODE-ne0){throw 'R11_SOURCE_BUNDLE_BUILD_FAILED'}
+          "SOKNA_R11_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Acquire pinned Inno Setup compiler
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Path .ci/tools -Force | Out-Null
+          nuget install Tools.InnoSetup -Version 6.7.3 -OutputDirectory .ci/tools -NonInteractive
+          $iscc=Get-ChildItem .ci/tools -Filter ISCC.exe -File -Recurse | Select-Object -First 1
+          if(-not $iscc){throw 'PINNED_INNO_COMPILER_NOT_FOUND'}
+          $iscc.FullName | Set-Content .ci/inno-compiler-path.txt -Encoding ASCII
+
+      - name: Build exact installer with Control Center credential UI
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $iscc=(Get-Content .ci/inno-compiler-path.txt -Raw).Trim()
+          $output=@(./tools/installer/Build-P1Installer.ps1 -InnoCompiler $iscc -ExpectedSourceCommit $env:SOKNA_EXPECTED_COMMIT)
+          $result=($output|Select-Object -Last 1)|ConvertFrom-Json
+          if(-not$result.ok){throw 'R11_INSTALLER_BUILD_FAILED'}
+          $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Bridge-Setup-*.exe' -File | Select-Object -First 1
+          if(-not$setup){throw 'R11_SETUP_MISSING'}
+          $final=Join-Path $setup.DirectoryName 'SOKNA-Bridge-Setup-2.7.1-r11-x64.exe'
+          Copy-Item $setup.FullName $final -Force
+          $cc=Join-Path 'artifacts/windows/installer-payload' 'Sokna.Bridge.ControlCenter.exe'
+          if(-not(Test-Path $cc)){throw 'R11_CONTROL_CENTER_MISSING'}
+          $browser=Join-Path 'artifacts/windows/installer-payload/browser' 'sokna-browser-qa.exe'
+          if(-not(Test-Path $browser)){throw 'R11_BROWSER_HELPER_MISSING'}
+          $manifest=Get-Content 'artifacts/windows/installer-payload/extension/manifest.json' -Raw|ConvertFrom-Json
+          if([string]$manifest.version-ne$env:SOKNA_EXTENSION_VERSION){throw "R11_PACKAGED_EXTENSION_VERSION_MISMATCH: $($manifest.version)"}
+
+      - name: Clean install repair upgrade rollback uninstall acceptance
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Bridge-Setup-2.7.1-r11-x64.exe' -File | Select-Object -First 1
+          if(-not$setup){throw 'R11_SETUP_MISSING_FOR_ACCEPTANCE'}
+          ./tools/installer/Test-P1Windows.ps1 -SetupPath $setup.FullName
+          if($LASTEXITCODE-ne0){throw 'R11_WINDOWS_INSTALL_ACCEPTANCE_FAILED'}
+
+      - name: Write exact candidate evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $setup=Get-ChildItem artifacts/windows/setup -Filter 'SOKNA-Bridge-Setup-2.7.1-r11-x64.exe' -File | Select-Object -First 1
+          ./tools/ci/Write-ExactRCEvidence.ps1 -SourceManifestPath (Join-Path $env:SOKNA_R11_DIR 'source-manifest.json') -SourceBundlePath (Join-Path $env:SOKNA_R11_DIR 'SOKNA-Agent-2.7.1-r11-source.zip') -SetupPath $setup.FullName -PayloadManifestPath 'artifacts/windows/installer-payload/manifests/installed-manifest.json' -AcceptanceStatus passed -OutputPath (Join-Path $env:SOKNA_R11_DIR 'windows-exact-r11-evidence.json')
+          $e=Get-Content (Join-Path $env:SOKNA_R11_DIR 'windows-exact-r11-evidence.json') -Raw|ConvertFrom-Json
+          if([string]$e.candidate_agent_version-ne$env:SOKNA_AGENT_VERSION){throw 'R11_EVIDENCE_AGENT_VERSION_MISMATCH'}
+          if([string]$e.extension_version-ne$env:SOKNA_EXTENSION_VERSION){throw 'R11_EVIDENCE_EXTENSION_VERSION_MISMATCH'}
+          if(-not[string]::Equals([string]$e.source_commit,[string]$env:SOKNA_EXPECTED_COMMIT,[StringComparison]::OrdinalIgnoreCase)){throw 'R11_EVIDENCE_COMMIT_MISMATCH'}
+          $setupHash=(Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          [ordered]@{schema='sokna-r11-final-validation-v1';ok=$true;candidate_ref=$env:SOKNA_CANDIDATE_REF;source_commit=$env:SOKNA_EXPECTED_COMMIT;agent_version=$env:SOKNA_AGENT_VERSION;extension_version=$env:SOKNA_EXTENSION_VERSION;semantic_version=$env:SOKNA_SEMANTIC_VERSION;setup_name=$setup.Name;setup_sha256=$setupHash;manual_black_box_uat_required=$true}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $env:SOKNA_R11_DIR 'r11-final-validation.json') -Encoding UTF8
+
+      - name: Upload installable r11 candidate and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOKNA-Bridge-2.7.1-r11-${{ github.sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}\sokna-r11\SOKNA-Agent-2.7.1-r11-source.zip
+            ${{ runner.temp }}\sokna-r11\source-manifest.json
+            ${{ runner.temp }}\sokna-r11\windows-exact-r11-evidence.json
+            ${{ runner.temp }}\sokna-r11\r11-final-validation.json
+            artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-r11-x64.exe
+            artifacts/windows/installer-payload/manifests/installed-manifest.json
