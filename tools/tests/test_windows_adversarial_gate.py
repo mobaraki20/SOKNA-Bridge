@@ -3,9 +3,9 @@ import json,re
 
 ROOT=Path(__file__).resolve().parents[2]
 MODEL=(ROOT/'native/provider/model.go').read_text(encoding='utf-8')
-PROVIDER=(ROOT/'native/runtime/v2.6.0/Sokna.ArtifactProvider.psm1').read_text(encoding='utf-8')
-BROWSER=(ROOT/'tools/runtime/releases/2.6.0/Test-BrowserQA260.ps1').read_text(encoding='utf-8')
-PROVIDER_WIN=(ROOT/'tools/runtime/releases/2.6.0/Test-ArtifactProviders260.ps1').read_text(encoding='utf-8')
+PROVIDER=(ROOT/'native/runtime/v2.7.1/Sokna.ArtifactProvider.psm1').read_text(encoding='utf-8')
+BROWSER=(ROOT/'tools/runtime/releases/2.7.1/Test-BrowserQA271.ps1').read_text(encoding='utf-8')
+PROVIDER_WIN=(ROOT/'tools/runtime/releases/2.7.1/Test-ArtifactProviders271.ps1').read_text(encoding='utf-8')
 PREFLIGHT=(ROOT/'tools/ci/Test-WindowsAdversarialPreflight.ps1').read_text(encoding='utf-8')
 WORKFLOW=(ROOT/'.github/workflows/windows-agent-validation.yml').read_text(encoding='utf-8')
 GATE=(ROOT/'docs/BRIDGE_SESSION_EXECUTION_GATE_V1_FA.md').read_text(encoding='utf-8')
@@ -31,9 +31,9 @@ for marker in [
     'ProviderResult',
     'WIN_ADV_PROVIDER_OPTIONAL_DIRECT_ACCESS',
     'WIN_ADV_PROVIDER_HELPER_SEMANTICS',
-    'Test-ArtifactRoot260.ps1',
-    'Test-Workspace260.ps1',
-    'Test-AdvancedWorkspace260.ps1',
+    'Test-ArtifactRoot271.ps1',
+    'Test-Workspace271.ps1',
+    'Test-AdvancedWorkspace271.ps1',
     'sokna-windows-adversarial-preflight-v1',
 ]:
     assert marker in PREFLIGHT, marker
