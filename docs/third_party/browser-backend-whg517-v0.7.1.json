@@ -1,7 +1,7 @@
 {
   "schema": "sokna-third-party-pin-v1",
   "id": "browser-backend-whg517-browser-bridge",
-  "role": "real-chrome-browser-backend-candidate",
+  "role": "browser-engine-reference-and-adapted-source-provenance",
   "upstream": {
     "repository": "whg517/browser-bridge",
     "license": "Apache-2.0",
@@ -21,7 +21,8 @@
       "tag": "v0.7.1",
       "asset": "browser-bridge-v0.7.1-windows-x64.zip"
     },
-    "expected_sha256": "46ac3c0935b569ca31f998491230c9c751b0879754779985d6bcec4788b3e832"
+    "expected_sha256": "46ac3c0935b569ca31f998491230c9c751b0879754779985d6bcec4788b3e832",
+    "prototype_only": true
   },
   "extension": {
     "store_asset": "browser-bridge-extension-v0.7.1-store.zip",
@@ -52,5 +53,12 @@
     "sbom_required": true,
     "third_party_notices_required": true
   },
-  "adoption_status": "pinned-for-prototype-not-yet-shipped"
+  "adoption_status": "source-patterns-adapted-with-attribution-no-runtime-binary-shipped",
+  "runtime_dependency": false,
+  "adopted_source_files": [
+    "extension/src/content/refs.ts",
+    "extension/src/content/snapshot.ts",
+    "extension/src/content/actions.ts"
+  ],
+  "sokna_adaptation": "extension/chrome/browser_page.js"
 }
