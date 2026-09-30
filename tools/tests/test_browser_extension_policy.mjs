@@ -21,7 +21,9 @@ assert.ok(!page.includes("localStorage")&&!page.includes("sessionStorage"),"brow
 assert.ok(bg.includes('debugTarget={tabId:target.tab.id}'),"CDP screenshot must bind exact claimed tab");
 assert.ok(bg.includes('chrome.tabs.sendMessage(target.tab.id'),"DOM actions must target exact claimed tab");
 assert.ok(bg.includes('{frameId:0}'),"v1 browser page actions must explicitly target top frame");
-assert.ok(bg.includes("BROWSER_TARGET_ORIGIN_CHANGED"),"origin navigation must invalidate target");
+const targetCore=fs.readFileSync("extension/chrome/browser_target_core.js","utf8");
+assert.ok(targetCore.includes("BROWSER_TARGET_ORIGIN_CHANGED"),"origin navigation must invalidate target in the policy core");
+assert.ok(bg.includes("BROWSER_TARGET.validateRecord"),"background router must enforce the target policy core before page actions");
 assert.ok(!bg.includes("tab_focus"),"SOKNA Browser router must not use focus-then-act targeting");
 assert.ok(!bg.includes('chrome.tabs.update(target.tab.id,{active:true}'),"screenshot must not require active-tab focus");
 
