@@ -317,6 +317,76 @@ func listCommandRecords(scope string, since int64, limit int) ([]commandLedgerRe
 	return items, next, hasMore, nil
 }
 
+func externalLedgerPayload(rec commandLedgerRecord, duplicate bool) json.RawMessage {
+	payload := map[string]any{
+		"ok": true, "schema": commandLedgerSchema, "duplicate": duplicate,
+		"id": rec.ID, "conversation_key": rec.ConversationKey, "state": rec.State,
+	}
+	if len(rec.Result) > 0 {
+		payload["result"] = rec.Result
+	}
+	if rec.Error != "" {
+		payload["error"] = rec.Error
+	}
+	b, _ := json.Marshal(payload)
+	return b
+}
+
+func handleExternalLedgerBegin(m InMsg) OutMsg {
+	c, err := parseCommand(m.Command)
+	if err != nil {
+		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
+	}
+	rec, duplicate, err := beginCommandRecord(c)
+	if err != nil {
+		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
+	}
+	if !duplicate {
+		if err := markCommandRunning(c); err != nil {
+			return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:"COMMAND_LEDGER_RUNNING_FAILED: "+err.Error()}
+		}
+		rec, _ = readCommandRecord(commandScope(c), c.ID)
+	}
+	return OutMsg{OK:true,Type:"ledger.external",RequestID:m.RequestID,Version:version,Result:externalLedgerPayload(rec,duplicate)}
+}
+
+func handleExternalLedgerComplete(m InMsg) OutMsg {
+	c, err := parseCommand(m.Command)
+	if err != nil {
+		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
+	}
+	if len(m.Result) == 0 {
+		m.Result = json.RawMessage(`{"ok":true}`)
+	}
+	if err := completeCommandRecord(c,m.Result); err != nil {
+		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
+	}
+	rec, err := readCommandRecord(commandScope(c),c.ID)
+	if err != nil {
+		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
+	}
+	return OutMsg{OK:true,Type:"ledger.external",RequestID:m.RequestID,Version:version,Result:externalLedgerPayload(rec,false)}
+}
+
+func handleExternalLedgerFail(m InMsg) OutMsg {
+	c, err := parseCommand(m.Command)
+	if err != nil {
+		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
+	}
+	cause := errors.New(strings.TrimSpace(m.Error))
+	if strings.TrimSpace(m.Error)=="" {
+		cause = errors.New("extension action failed")
+	}
+	if err := failCommandRecord(c,cause); err != nil {
+		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
+	}
+	rec, err := readCommandRecord(commandScope(c),c.ID)
+	if err != nil {
+		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
+	}
+	return OutMsg{OK:true,Type:"ledger.external",RequestID:m.RequestID,Version:version,Result:externalLedgerPayload(rec,false)}
+}
+
 func localCommandLedger(c CommandEnvelope) (json.RawMessage, bool, error) {
 	if c.Action != "bridge.command.get" && c.Action != "bridge.command.list" {
 		return nil, false, nil
