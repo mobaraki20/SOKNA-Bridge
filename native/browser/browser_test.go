@@ -124,6 +124,13 @@ func TestKnownRecipeSecretRedaction(t *testing.T) {
 	}
 }
 
+func TestViewportClipUsesExplicitDimensions(t *testing.T) {
+	clip := viewportClip(Viewport{ID: "desktop", Width: 1366, Height: 768, DPR: 1})
+	if clip["width"] != float64(1366) || clip["height"] != float64(768) || clip["scale"] != 1 {
+		t.Fatalf("unexpected viewport clip: %+v", clip)
+	}
+}
+
 func TestAssertionEvidenceFallback(t *testing.T) {
 	arts := []Artifact{{ID: "browser-page-proof", Kind: "page-metadata"}}
 	if got := evidenceForAssertion("visual_changed_ratio_max", arts); got != "browser-page-proof" {
