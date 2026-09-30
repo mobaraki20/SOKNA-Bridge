@@ -1028,7 +1028,12 @@ async function handleCommandInner(tabId,command,meta={}){
       }
       extensionLedgerActive=true;
     }catch(e){
-      result={ok:false,error:String(e)};await appendTrace(tabId,"ledger.external_begin_failed",{command_id:command.id,action:command.action,error:String(e)});
+      result={ok:false,error:"COMMAND_LEDGER_BEGIN_FAILED: "+String(e)};
+      await appendTrace(tabId,"ledger.external_begin_failed",{command_id:command.id,action:command.action,error:String(e)});
+      seen=await seenAll();seen[commandKey]={...(seen[commandKey]||{}),state:"done",commandId:command.id,completedAt:now(),result,posted:false};await saveSeen(seen);
+      await setExecutionFinish(tabId,command.id,false,result.error);
+      const delivery=await postPending(tabId,commandKey,seen[commandKey]);
+      return {ok:true,executed:false,result_ok:false,ledger_failed:true,delivery};
     }
   }
   try{
