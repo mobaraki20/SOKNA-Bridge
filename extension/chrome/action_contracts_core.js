@@ -82,7 +82,7 @@ function list(effective=[]){
  const names=[...new Set((effective||[]).map(String).filter(Boolean))].sort();
  return names.map(name=>{
    const t=describe(name);
-   return {name,action:name,contracted:!!t,owner:t?._meta?.["sokna/owner"]||"legacy":"legacy",read_only:t?.annotations?.readOnlyHint??null,idempotent:t?.annotations?.idempotentHint??null};
+   return {name,action:name,contracted:!!t,owner:(t?._meta?.["sokna/owner"]||"legacy"),read_only:t?.annotations?.readOnlyHint??null,idempotent:t?.annotations?.idempotentHint??null};
  });
 }
 function tools(effective=[]){return list(effective).filter(x=>x.contracted).map(x=>describe(x.name))}
