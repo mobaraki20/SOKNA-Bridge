@@ -41,7 +41,7 @@ func TestBootstrapIsFailClosedWhenAgentUnavailable(t *testing.T){
 	if b["ready"]==true{t.Fatal("bootstrap must not be ready when agent capabilities cannot be verified")}
 	if b["agent_ready"]==true{t.Fatal("agent_ready must be false")}
 	if b["protocol_version"]!="2"||b["semantic_transport"]!="SOKNA-INTENT"{t.Fatalf("bootstrap contract missing: %#v",b)}
-	routes:=b["route_policy"].(map[string]any);if routes["large_bytes"]==nil||routes["browser_inspection"]==nil{t.Fatalf("route policy incomplete: %#v",routes)}
+	routes:=b["route_policy"].(map[string]any);if routes["large_bytes"]==nil||routes["browser_interactive"]==nil||routes["browser_evidence"]==nil||routes["browser_qa"]==nil{t.Fatalf("route policy incomplete: %#v",routes)}
 	files:=b["file_delivery_rules"].(map[string]any);if files["local_path_is_delivery"]!=false{t.Fatalf("unsafe file delivery rule: %#v",files)}
 }
 
