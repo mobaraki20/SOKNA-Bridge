@@ -66,6 +66,15 @@ function rememberCommandTab(commandId,sender){
   setTimeout(()=>{const cur=commandTabs.get(commandId);if(cur&&cur.expiresAt<=Date.now())commandTabs.delete(commandId)},5*60*1000+1000);
 }
 async function topMessage(tabId,msg){return await chrome.tabs.sendMessage(tabId,msg,{frameId:0})}
+async function topMessageAfterAssistantIdle(tabId,msg,timeoutMs=30000){
+  const deadline=Date.now()+Math.max(1000,Number(timeoutMs)||30000);
+  for(;;){
+    const r=await topMessage(tabId,msg);
+    if(r?.ok||r?.code!=="ATTACHMENT_ASSISTANT_BUSY")return r;
+    if(Date.now()>=deadline)return {...r,deferred_timeout:true,retryable:true};
+    await new Promise(resolve=>setTimeout(resolve,500));
+  }
+}
 async function deliverOutboundAttachment(command,tabId){
   const artifactId=String(command?.params?.id||command?.params?.artifact_id||"").trim().toLowerCase();
   if(!SHA.test(artifactId))throw new Error("OUTBOUND_ATTACHMENT_ID_INVALID");
@@ -77,7 +86,7 @@ async function deliverOutboundAttachment(command,tabId){
   const transferId=`out-${artifactId.slice(0,12)}-${uid("x").replace(/[^A-Za-z0-9._-]/g,"").slice(-12)}`;
   let begun=false;
   try{
-    const begin=await topMessage(tabId,{type:"OUTBOUND_ATTACHMENT_BEGIN",transferId,artifactRef:ref});
+    const begin=await topMessageAfterAssistantIdle(tabId,{type:"OUTBOUND_ATTACHMENT_BEGIN",transferId,artifactRef:ref});
     if(!begin?.ok)throw new Error(`${begin?.code||"OUTBOUND_ATTACHMENT_BEGIN_FAILED"}:${begin?.error||"page rejected transfer"}`);begun=true;
     let offset=0,index=0;
     while(offset<bytes){
@@ -90,7 +99,7 @@ async function deliverOutboundAttachment(command,tabId){
       offset=next;index++;
       if(part?.eof===true&&offset!==bytes)throw new Error("OUTBOUND_ATTACHMENT_EARLY_EOF");
     }
-    const committed=await topMessage(tabId,{type:"OUTBOUND_ATTACHMENT_COMMIT",transferId});
+    const committed=await topMessageAfterAssistantIdle(tabId,{type:"OUTBOUND_ATTACHMENT_COMMIT",transferId});
     if(!committed?.ok)throw new Error(`${committed?.code||"OUTBOUND_ATTACHMENT_COMMIT_FAILED"}:${committed?.error||"page rejected commit"}`);
     return {ok:true,artifact_ref:ref,transfer_id:transferId,delivery:{user:"chat_attachment",status:String(committed.status||"submitted_to_conversation"),method:String(committed.method||""),public_url:false,local_path_is_delivery:false}};
   }catch(e){if(begun){try{await topMessage(tabId,{type:"OUTBOUND_ATTACHMENT_ABORT",transferId})}catch{}}throw e}
