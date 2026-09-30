@@ -16,6 +16,27 @@ function normalizeRef(ref){
   if(bytes>MAX_ATTACH_BYTES)fail("OUTBOUND_ATTACHMENT_TOO_LARGE",`artifact exceeds ${MAX_ATTACH_BYTES} byte attachment limit`);
   return Object.freeze({id,name,bytes,sha256:sha,content_type:contentType});
 }
+function selectInputCandidate(candidates){
+  const a=Array.isArray(candidates)?candidates:[];
+  if(!a.length)fail("ATTACHMENT_INPUT_MISSING","No file input is available in the active composer");
+  if(a.length===1)return a[0].index;
+  const hasInside=a.some(x=>x?.inComposerForm===true);
+  const scored=a.map(x=>{
+    const accept=String(x?.accept||"").toLowerCase(),meta=[x?.name,x?.id,x?.testid,x?.ariaLabel].map(v=>String(v||"").toLowerCase()).join(" ");
+    let score=0;
+    if(x?.inComposerForm===true)score+=100;
+    else if(hasInside)score-=100;
+    if(/upload|attach|file/.test(meta))score+=35;
+    if(x?.multiple===true)score+=18;
+    if(!accept||accept==="*/*")score+=20;
+    else if(/application\/(pdf|zip|json)|text\/|image\//.test(accept))score+=8;
+    if(x?.capture)score-=80;
+    if(/camera|capture/.test(meta))score-=45;
+    return {index:x.index,score};
+  }).sort((a,b)=>b.score-a.score||Number(a.index)-Number(b.index));
+  if(scored.length>1&&scored[0].score===scored[1].score)fail("ATTACHMENT_INPUT_AMBIGUOUS","Multiple file inputs are equally plausible for the active composer");
+  return scored[0].index;
+}
 function decodeBase64(s){
   s=String(s||"");if(!s&&s!=="")fail("ATTACHMENT_CHUNK_INVALID");
   let bin;try{bin=atob(s)}catch{fail("ATTACHMENT_CHUNK_BASE64_INVALID","invalid base64 chunk")}
@@ -41,5 +62,5 @@ function createTransfer(transferId,ref){
   }
   return Object.freeze({ref,get received(){return received},get nextIndex(){return nextIndex},add,finalize});
 }
-globalThis[G]=Object.freeze({version:"1",maxAttachBytes:MAX_ATTACH_BYTES,normalizeRef,createTransfer});
+globalThis[G]=Object.freeze({version:"2",maxAttachBytes:MAX_ATTACH_BYTES,normalizeRef,selectInputCandidate,createTransfer});
 })();
