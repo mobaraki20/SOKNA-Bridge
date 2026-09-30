@@ -34,7 +34,7 @@ func fatal(s string) { fmt.Fprintln(os.Stderr, s); os.Exit(2) }
 
 func credentialCmd(args []string) {
 	if len(args) < 1 {
-		fatal("usage: sokna-browser-qa credential <set|list|delete> ...")
+		fatal("usage: sokna-browser-qa credential <set|list|delete|resolve> ...")
 	}
 	switch args[0] {
 	case "set":
@@ -67,6 +67,21 @@ func credentialCmd(args []string) {
 			fatal(err.Error())
 		}
 		out := map[string]any{"ok": true, "credentials": items, "store": "windows-dpapi"}
+		enc, _ := json.Marshal(out)
+		fmt.Println(string(enc))
+	case "resolve":
+		fs := flag.NewFlagSet("credential resolve", flag.ExitOnError)
+		id := fs.String("id", "", "credential id")
+		field := fs.String("field", "", "username or secret")
+		_ = fs.Parse(args[1:])
+		if *id == "" || (*field != "username" && *field != "secret" && *field != "password") {
+			fatal("--id and --field=username|secret required")
+		}
+		value, err := credentialValue(*id, *field)
+		if err != nil {
+			fatal(err.Error())
+		}
+		out := map[string]any{"ok": true, "id": *id, "field": *field, "value": value}
 		enc, _ := json.Marshal(out)
 		fmt.Println(string(enc))
 	case "delete":
