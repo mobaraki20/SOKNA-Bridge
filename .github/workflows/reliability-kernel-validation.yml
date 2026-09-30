@@ -1,7 +1,7 @@
 name: Reliability Kernel Validation
 on:
   push:
-    branches: [refactor/reliability-kernel-r9, refactor/reliability-kernel-r10]
+    branches: [refactor/reliability-kernel-r9, refactor/reliability-kernel-r10, refactor/r11-bulk-delivery]
   pull_request:
     branches: [release/2.7.1]
 permissions:
