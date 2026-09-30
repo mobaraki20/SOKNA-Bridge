@@ -161,6 +161,7 @@ func intParam(m map[string]any,key string,def int)int{v,ok:=m[key];if !ok{return
 
 func localObservability(c CommandEnvelope)(json.RawMessage,bool,error){
 	if r,handled,err:=localCommandLedger(c);handled{return r,true,err}
+	if r,handled,err:=localSession(c);handled{return r,true,err}
 	if r,handled,err:=localOutbound(c);handled{return r,true,err}
 	if c.Action!="job.list"&&c.Action!="job.events"&&c.Action!="bridge.activity"{return nil,false,nil}
 	jobs,err:=readJobs();if err!=nil{return nil,true,err};observeJobStates(jobs);p:=parseParams(c.Params);limit:=intParam(p,"limit",100);if limit<1{limit=1};if limit>500{limit=500};if len(jobs)>limit{jobs=jobs[:limit]};owned:=make([]map[string]any,0);for _,j:=range jobs{if j.WorkerPID>0&&(j.Status=="queued"||j.Status=="running"||j.Status=="waiting"){owned=append(owned,map[string]any{"job_id":j.ID,"pid":j.WorkerPID,"state":j.Status,"owned":true})}}
