@@ -93,7 +93,7 @@ async function semanticTop(tabId,type,extra={}){
 function extensionActions(){
   const x=globalThis.__SOKNA_EXTENSION_ACTIONS_V1__;
   return Array.isArray(x)?[...new Set(x.map(String).filter(Boolean))]:[
-    "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.command.get","bridge.command.list","artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach",
+    "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.actions.list","bridge.action.describe","bridge.command.get","bridge.command.list","artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach",
     "browser.audit.run","bridge.bootstrap","bridge.diagnostics.get","session.open","session.resume","session.checkpoint","session.close","session.list",
     "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search","instagram.media.download","instagram.media.attach",
     "instagram.research.plan","instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm","instagram.selection.reject","instagram.export"
@@ -212,6 +212,23 @@ async function hostPing(){return await nativeMessage({type:"host.ping",request_i
 async function agentExec(command){
   const r=await nativeMessage({type:"agent.exec",request_id:uid(),command});
   if(!r.ok)throw new Error(r.error||"Native host execution failed");return r.result;
+}
+function actionContracts(){return globalThis.__SOKNA_ACTION_CONTRACTS_V1__}
+async function bridgeActionsList(){
+  const reg=actionContracts();if(!reg)throw new Error("ACTION_CONTRACT_REGISTRY_UNAVAILABLE");
+  const cap=await agentExec(unifiedLocalCommand("agent.capabilities",{}));
+  const agentActions=Array.isArray(cap?.capabilities?.actions)?cap.capabilities.actions:[];
+  const extensionActions=Array.isArray(globalThis.__SOKNA_EXTENSION_ACTIONS_V1__)?globalThis.__SOKNA_EXTENSION_ACTIONS_V1__:[];
+  const effective=[...new Set([...agentActions,...extensionActions])].sort();
+  const actions=reg.list(effective);
+  return {ok:true,schema:reg.schema,version:reg.version,actions,contracted_count:actions.filter(x=>x.contracted).length,uncontracted_count:actions.filter(x=>!x.contracted).length};
+}
+function bridgeActionDescribe(params={}){
+  const reg=actionContracts();if(!reg)throw new Error("ACTION_CONTRACT_REGISTRY_UNAVAILABLE");
+  const action=String(params?.action||"").trim();if(!action)throw new Error("bridge.action.describe requires action");
+  const contract=reg.describe(action);
+  if(!contract)return {ok:false,code:"ACTION_CONTRACT_NOT_MIGRATED",action,contracted:false};
+  return {ok:true,action,contracted:true,contract};
 }
 async function isArmed(tabId,conversationKey=""){
   const a=await armedAll(),r=a[String(tabId)];return {armed:!!r&&(!conversationKey||r.conversationKey===conversationKey),registered:r||null};
@@ -962,6 +979,8 @@ async function handleCommandInner(tabId,command,meta={}){
   let result;
   try{
     if(command.action==="artifact.chat.apply")result=await registerChatArtifactApply(tabId,command,a.registered.conversationKey);
+    else if(command.action==="bridge.actions.list")result=await bridgeActionsList();
+    else if(command.action==="bridge.action.describe")result=bridgeActionDescribe(command.params||{});
     else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command,tabId);
     else if(command.action==="bridge.diagnostics.get")result=await fullDiagnostics(tabId,a.registered.conversationKey,"bounded");
     else if(command.action==="instagram.adapter.status")result=await instagramAdapterStatus(command.params||{});
