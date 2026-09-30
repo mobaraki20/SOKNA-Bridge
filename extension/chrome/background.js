@@ -348,10 +348,11 @@ async function agentExec(command){
   if(!r.ok)throw new Error(r.error||"Native host execution failed");return r.result;
 }
 function actionContracts(){return globalThis.__SOKNA_ACTION_CONTRACTS_V1__}
-async function bridgeDoctor(){
+async function bridgeDoctor(conversationKey=""){
   const checks=[];
   async function check(name,fn){try{const data=await fn();checks.push({name,ok:true,data});return data}catch(e){checks.push({name,ok:false,error:String(e?.message||e)});return null}}
   const caps=await check("agent.capabilities",()=>agentExec(unifiedLocalCommand("agent.capabilities",{})));
+  await check("broker.ledger",()=>agentExec({...unifiedLocalCommand("bridge.command.list",{limit:1}),conversationKey:String(conversationKey||"")}));
   await check("artifact.root",()=>agentExec(unifiedLocalCommand("artifact.root.status",{})));
   await check("workspace.registry",()=>agentExec(unifiedLocalCommand("workspace.registry.status",{})));
   await check("browser.qa",()=>agentExec(unifiedLocalCommand("browser.qa.status",{})));
@@ -1194,7 +1195,7 @@ async function handleCommandInner(tabId,command,meta={}){
     if(command.action==="artifact.chat.apply")result=await registerChatArtifactApply(tabId,command,a.registered.conversationKey);
     else if(command.action==="bridge.actions.list")result=await bridgeActionsList();
     else if(command.action==="bridge.action.describe")result=bridgeActionDescribe(command.params||{});
-    else if(command.action==="bridge.doctor")result=await bridgeDoctor();
+    else if(command.action==="bridge.doctor")result=await bridgeDoctor(a.registered.conversationKey);
     else if(command.action==="credential.ref.list"||command.action==="browser.backend.status"||command.action==="browser.tabs.list"||command.action==="browser.tab.open"||command.action==="browser.tab.claim"||command.action==="browser.tab.release"||BROWSER_TARGET.isPageAction(command.action))result=await browserSemanticAction(command,a.registered.conversationKey);
     else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command,tabId);
     else if(command.action==="bridge.diagnostics.get")result=await fullDiagnostics(tabId,a.registered.conversationKey,"bounded");
