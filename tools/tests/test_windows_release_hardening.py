@@ -59,5 +59,6 @@ assert 'const q=await queueStatusEvent' in background
 assert 'lastTerminalDeliveryOk' in background and 'jobWatchIds' in background
 content=(ROOT/'extension/chrome/content.js').read_text(encoding='utf-8')
 assert 'statusEnvelope({eventId:id,...rec.result})' in background
-assert 'p.match(/"eventId"' in content
+for x in ['expected.payload?.eventId','env.payload?.eventId','SOKNA-V2-(?:RESULT|STATUS)']:
+    assert x in content,x
 print('WINDOWS_RELEASE_HARDENING_PASS')
