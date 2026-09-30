@@ -10,6 +10,9 @@ HOST = ROOT / "native" / "host" / "credential_local.go"
 HOST_MAIN = ROOT / "native" / "host" / "main.go"
 POPUP = ROOT / "extension" / "chrome" / "popup.js"
 POPUP_HTML = ROOT / "extension" / "chrome" / "popup.html"
+BACKGROUND = ROOT / "extension" / "chrome" / "background.js"
+CONTROL_CENTER = ROOT / "maintenance" / "Sokna.Bridge.ControlCenter" / "MainForm.cs"
+CREDENTIAL_DIALOG = ROOT / "maintenance" / "Sokna.Bridge.ControlCenter" / "CredentialDialog.cs"
 
 
 def text(path: Path) -> str:
@@ -67,6 +70,35 @@ def test_stored_credential_values_are_in_redaction_set():
     assert "loadCredential(a.CredentialRef)" in r
     assert "addValue(rec.Secret)" in r
     assert "addValue(rec.Username)" in r
+
+
+
+
+def test_real_browser_fill_uses_opaque_ref_and_private_native_resolve():
+    b = text(BACKGROUND)
+    assert '"credential.ref.list"' in b
+    assert 'credential_ref' in b
+    assert 'type:"credential.resolve"' in b
+    assert 'delete args.credential_ref' in b
+    assert 'delete args.credential_field' in b
+    assert 'value=await resolveCredentialField' in b
+    h = text(HOST)
+    assert '"credential.resolve"' in h
+    helper = text(ROOT / "native" / "browser" / "main.go")
+    assert 'case "resolve":' in helper
+    assert 'credentialValue(*id, *field)' in helper
+
+
+def test_control_center_owns_secret_crud_and_uses_stdin():
+    ui = text(CONTROL_CENTER)
+    dialog = text(CREDENTIAL_DIALOG)
+    assert 'BuildCredentialsTab()' in ui
+    assert 'RunCredentialHelperAsync("set"' in ui
+    assert 'RedirectStandardInput = secret is not null' in ui
+    assert 'await p.StandardInput.WriteAsync(secret)' in ui
+    assert 'UseSystemPasswordChar = true' in dialog
+    assert 'Secret فقط در Windows DPAPI' in dialog
+    assert 'SecretValue' in dialog
 
 
 if __name__ == "__main__":
