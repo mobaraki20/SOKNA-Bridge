@@ -26,6 +26,7 @@ internal sealed class MainForm : Form
     private readonly TextBox _artifactInput = new();
     private readonly CheckBox _autostart = new();
     private readonly ListView _workspaces = new();
+    private readonly ListView _credentials = new();
     private readonly Label _extensionInfo = new();
     private readonly Button _saveSettings = new();
     private bool _busy;
@@ -51,6 +52,7 @@ internal sealed class MainForm : Form
         var tabs = new TabControl { Dock = DockStyle.Fill, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, Padding = new Point(14, 6) };
         tabs.TabPages.Add(BuildHomeTab());
         tabs.TabPages.Add(BuildWorkspaceTab());
+        tabs.TabPages.Add(BuildCredentialsTab());
         tabs.TabPages.Add(BuildSettingsTab());
         tabs.TabPages.Add(BuildDiagnosticsTab());
         tabs.TabPages.Add(BuildGettingStartedTab());
@@ -223,6 +225,142 @@ internal sealed class MainForm : Form
         return page;
     }
 
+    private TabPage BuildCredentialsTab()
+    {
+        var page = NewPage("Credentialها");
+        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16) };
+
+        _credentials.Dock = DockStyle.Fill;
+        _credentials.View = View.Details;
+        _credentials.FullRowSelect = true;
+        _credentials.MultiSelect = false;
+        _credentials.Columns.Add("شناسه", 260);
+        _credentials.Columns.Add("نام کاربری", 360);
+        _credentials.Columns.Add("ذخیره‌سازی", 160);
+        panel.Controls.Add(_credentials);
+
+        var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 58, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 8) };
+        top.Controls.Add(ActionButton("افزودن", AddCredentialAsync));
+        top.Controls.Add(ActionButton("ویرایش", EditCredentialAsync));
+        top.Controls.Add(ActionButton("حذف", DeleteCredentialAsync));
+        top.Controls.Add(ActionButton("تازه‌سازی", RefreshCredentialsAsync));
+        panel.Controls.Add(top);
+
+        var note = new Label
+        {
+            Dock = DockStyle.Bottom,
+            Height = 70,
+            Text = "Secretها با Windows DPAPI و فقط برای کاربر فعلی Windows ذخیره می‌شوند. ChatGPT فقط شناسه Credential را می‌بیند؛ مقدار Secret در Diagnostics، Ledger و Result نمایش داده نمی‌شود.",
+            AutoEllipsis = true,
+            Padding = new Padding(8)
+        };
+        panel.Controls.Add(note);
+        page.Controls.Add(panel);
+        return page;
+    }
+
+    private string BrowserCredentialHelper()
+    {
+        var p = Path.Combine(_installRoot, "browser", "sokna-browser-qa.exe");
+        if (!File.Exists(p)) throw new FileNotFoundException("Browser credential helper پیدا نشد.", p);
+        return p;
+    }
+
+    private async Task<JsonObject> RunCredentialHelperAsync(string operation, string id = "", string username = "", string? secret = null)
+    {
+        var psi = new ProcessStartInfo(BrowserCredentialHelper())
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            RedirectStandardInput = secret is not null,
+            WorkingDirectory = _installRoot
+        };
+        psi.ArgumentList.Add("credential");
+        psi.ArgumentList.Add(operation);
+        if (!string.IsNullOrWhiteSpace(id)) { psi.ArgumentList.Add("--id"); psi.ArgumentList.Add(id); }
+        if (operation == "set") { psi.ArgumentList.Add("--username"); psi.ArgumentList.Add(username ?? ""); }
+
+        using var p = Process.Start(psi) ?? throw new InvalidOperationException("Credential helper اجرا نشد.");
+        if (secret is not null)
+        {
+            await p.StandardInput.WriteAsync(secret);
+            p.StandardInput.Close();
+        }
+        var stdoutTask = p.StandardOutput.ReadToEndAsync();
+        var stderrTask = p.StandardError.ReadToEndAsync();
+        await p.WaitForExitAsync();
+        var stdout = await stdoutTask; var stderr = await stderrTask;
+        if (p.ExitCode != 0) throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr) ? "Credential operation failed." : stderr.Trim());
+        return JsonNode.Parse(stdout)?.AsObject() ?? throw new InvalidDataException("Credential helper پاسخ معتبر نداد.");
+    }
+
+    private async Task RefreshCredentialsAsync()
+    {
+        try
+        {
+            var result = await RunCredentialHelperAsync("list");
+            _credentials.Items.Clear();
+            if (result["credentials"] is JsonArray items)
+            {
+                foreach (var node in items.OfType<JsonObject>())
+                {
+                    var id = node["id"]?.GetValue<string>() ?? "";
+                    var username = node["username"]?.GetValue<string>() ?? "";
+                    var row = new ListViewItem(id);
+                    row.SubItems.Add(username);
+                    row.SubItems.Add("Windows DPAPI");
+                    row.Tag = new[] { id, username };
+                    _credentials.Items.Add(row);
+                }
+            }
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private async Task AddCredentialAsync()
+    {
+        using var dialog = new CredentialDialog();
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            await RunCredentialHelperAsync("set", dialog.CredentialId, dialog.UsernameValue, dialog.SecretValue);
+            await RefreshCredentialsAsync();
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private async Task EditCredentialAsync()
+    {
+        if (_credentials.SelectedItems.Count != 1) { MessageBox.Show(this, "یک Credential را انتخاب کن.", Text); return; }
+        var data = _credentials.SelectedItems[0].Tag as string[] ?? Array.Empty<string>();
+        var id = data.ElementAtOrDefault(0) ?? "";
+        var username = data.ElementAtOrDefault(1) ?? "";
+        using var dialog = new CredentialDialog(id, username);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            await RunCredentialHelperAsync("set", id, dialog.UsernameValue, dialog.SecretValue);
+            await RefreshCredentialsAsync();
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private async Task DeleteCredentialAsync()
+    {
+        if (_credentials.SelectedItems.Count != 1) { MessageBox.Show(this, "یک Credential را انتخاب کن.", Text); return; }
+        var data = _credentials.SelectedItems[0].Tag as string[] ?? Array.Empty<string>();
+        var id = data.ElementAtOrDefault(0) ?? "";
+        if (MessageBox.Show(this, $"Credential «{id}» حذف شود؟", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+        try
+        {
+            await RunCredentialHelperAsync("delete", id);
+            await RefreshCredentialsAsync();
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
     private TabPage BuildGettingStartedTab()
     {
         var page = NewPage("شروع کار / Getting Started");
@@ -299,6 +437,7 @@ internal sealed class MainForm : Form
             }
 
             await RefreshWorkspacesAsync(silent: true);
+            try { await RefreshCredentialsAsync(); } catch { }
         }
         finally { _busy = false; }
     }
