@@ -336,8 +336,6 @@ async function prepareBatchCaptureItem(conversationKey,item){
     await waitBrowserTabComplete(target.tab.id,30000);
     await ensureBrowserPage(target.tab.id);
   }
-  const settle=Math.max(0,Math.min(10000,Number(item?.settle_ms)||0));
-  if(settle)await new Promise(resolve=>setTimeout(resolve,settle));
   return await chrome.tabs.get(target.tab.id);
 }
 async function browserCaptureBatch(command,conversationKey,params={}){
@@ -349,6 +347,15 @@ async function browserCaptureBatch(command,conversationKey,params={}){
     const item=items[i]||{},itemId=String(item.id||String(i+1).padStart(3,"0")).replace(/[^A-Za-z0-9._-]/g,"_").slice(0,80)||String(i+1);
     try{
       await prepareBatchCaptureItem(conversationKey,item);
+      const actions=Array.isArray(item?.actions)?item.actions:[];
+      if(actions.length>10)throw Object.assign(new Error("A capture item may contain at most 10 page actions."),{code:"BROWSER_CAPTURE_ACTION_LIMIT"});
+      for(const step of actions){
+        const action=String(step?.action||"");
+        if(!["browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait"].includes(action))throw Object.assign(new Error("Unsupported action inside browser.capture.batch."),{code:"BROWSER_CAPTURE_ACTION_UNSUPPORTED"});
+        await sendClaimedBrowserPage(conversationKey,action,step?.params||{});
+      }
+      const settle=Math.max(0,Math.min(10000,Number(item?.settle_ms)||0));
+      if(settle)await new Promise(resolve=>setTimeout(resolve,settle));
       const shot=await captureClaimedBrowserScreenshot(conversationKey,command.id+"-"+itemId,{full_page:item.full_page===true});
       records.push({index:i,id:itemId,ok:true,url:shot.target.url,title:shot.target.title,capture:shot.capture,artifact_ref:shot.artifact_ref});
       captured++;
