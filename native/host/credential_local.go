@@ -13,6 +13,7 @@ type credentialHostRequest struct {
 	ID       string `json:"id"`
 	Username string `json:"username,omitempty"`
 	Secret   string `json:"secret,omitempty"`
+	Field    string `json:"field,omitempty"`
 }
 
 func browserCredentialExecutable() (string, error) {
@@ -66,6 +67,21 @@ func handleCredentialMessage(m InMsg) (OutMsg, bool) {
 		}
 		r, err := runBrowserCredential([]string{"credential", "set", "--id", q.ID, "--username", q.Username}, q.Secret)
 		q.Secret = ""
+		if err != nil {
+			return OutMsg{OK: false, Type: "credential.result", RequestID: m.RequestID, Error: err.Error()}, true
+		}
+		return OutMsg{OK: true, Type: "credential.result", RequestID: m.RequestID, Version: version, Result: r}, true
+	case "credential.resolve":
+		var q credentialHostRequest
+		if len(m.Command) == 0 || json.Unmarshal(m.Command, &q) != nil {
+			return OutMsg{OK: false, Type: "credential.result", RequestID: m.RequestID, Error: "invalid credential request"}, true
+		}
+		q.ID = strings.TrimSpace(q.ID)
+		q.Field = strings.ToLower(strings.TrimSpace(q.Field))
+		if !safeID.MatchString(q.ID) || (q.Field != "username" && q.Field != "secret" && q.Field != "password") {
+			return OutMsg{OK: false, Type: "credential.result", RequestID: m.RequestID, Error: "invalid credential resolve fields"}, true
+		}
+		r, err := runBrowserCredential([]string{"credential", "resolve", "--id", q.ID, "--field", q.Field}, "")
 		if err != nil {
 			return OutMsg{OK: false, Type: "credential.result", RequestID: m.RequestID, Error: err.Error()}, true
 		}
