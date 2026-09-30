@@ -93,6 +93,37 @@ func TestCommandLedgerScopesSameIDByConversation(t *testing.T) {
 	}
 }
 
+func TestExternalLedgerRoundTrip(t *testing.T) {
+	withLedgerTemp(t)
+	c := CommandEnvelope{ConversationKey: "chatgpt:c:ext", ID: "ext-1", Action: "bridge.diagnostics.get", Params: json.RawMessage(`{}`)}
+	raw, _ := json.Marshal(c)
+	begin := handleExternalLedgerBegin(InMsg{Type:"ledger.external.begin", RequestID:"r1", Command:raw})
+	if !begin.OK {
+		t.Fatalf("external begin failed: %+v", begin)
+	}
+	var bp map[string]any
+	if json.Unmarshal(begin.Result,&bp) != nil || bp["duplicate"] != false || bp["state"] != "running" {
+		t.Fatalf("external begin payload invalid: %s", string(begin.Result))
+	}
+	result := json.RawMessage(`{"ok":true,"diagnostic":"done"}`)
+	done := handleExternalLedgerComplete(InMsg{Type:"ledger.external.complete", RequestID:"r2", Command:raw, Result:result})
+	if !done.OK {
+		t.Fatalf("external complete failed: %+v", done)
+	}
+	replay := handleExternalLedgerBegin(InMsg{Type:"ledger.external.begin", RequestID:"r3", Command:raw})
+	if !replay.OK {
+		t.Fatalf("external replay failed: %+v", replay)
+	}
+	var rp map[string]any
+	if json.Unmarshal(replay.Result,&rp) != nil || rp["duplicate"] != true || rp["state"] != "succeeded" {
+		t.Fatalf("external replay payload invalid: %s", string(replay.Result))
+	}
+	embedded, ok := rp["result"].(map[string]any)
+	if !ok || embedded["diagnostic"] != "done" {
+		t.Fatalf("external replay result missing: %+v", rp)
+	}
+}
+
 func TestChildCommandsAreNotLedgerAuthorities(t *testing.T) {
 	withLedgerTemp(t)
 	c := CommandEnvelope{ConversationKey: "chatgpt:c:test-a", ID: "child-1", ParentID: "parent-1", Action: "artifact.out.get", Params: json.RawMessage(`{"id":"x"}`)}
