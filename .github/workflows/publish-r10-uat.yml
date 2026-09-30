@@ -1,0 +1,60 @@
+name: Publish r10 UAT Download
+
+on:
+  push:
+    branches:
+      - ops/publish-r10-uat
+    paths:
+      - .github/workflows/publish-r10-uat.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      ARTIFACT_ID: "11090224666"
+      TAG: "sokna-agent-2.7.1-r10-uat"
+      TARGET: "ffe321019b2968310c6ffc26700ce3f54374b73d"
+      INSTALLER: "SOKNA-Bridge-Setup-2.7.1-r10-x64.exe"
+      INSTALLER_SHA256: "953ebad2fec7a9362724b15c19826e7a7797fc7ddaf8632f6a34ec1bd65c484b"
+    steps:
+      - name: Download qualified artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github+json" \
+            "/repos/$REPO/actions/artifacts/$ARTIFACT_ID/zip" > artifact.zip
+          mkdir artifact
+          unzip -q artifact.zip -d artifact
+
+      - name: Verify exact qualified installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          path="$(find artifact -type f -name "$INSTALLER" -print -quit)"
+          test -n "$path"
+          actual="$(sha256sum "$path" | awk '{print $1}')"
+          test "$actual" = "$INSTALLER_SHA256"
+          cp "$path" "./$INSTALLER"
+          printf '%s  %s\n' "$actual" "$INSTALLER" > SOKNA-Bridge-2.7.1-r10-SHA256.txt
+
+      - name: Publish prerelease download
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$INSTALLER" SOKNA-Bridge-2.7.1-r10-SHA256.txt --repo "$REPO" --clobber
+          else
+            gh release create "$TAG" \
+              "$INSTALLER" SOKNA-Bridge-2.7.1-r10-SHA256.txt \
+              --repo "$REPO" \
+              --target "$TARGET" \
+              --title "SOKNA Bridge 2.7.1-r10 UAT Candidate" \
+              --prerelease \
+              --notes "Qualified Windows UAT candidate from successful run 36702656556. Installer SHA-256: $INSTALLER_SHA256. This prerelease is for final black-box UAT before immutable final promotion."
+          fi
