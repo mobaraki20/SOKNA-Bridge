@@ -28,6 +28,11 @@ async function clearBootstrappedTab(tabId){const all=await gateAll();delete all[
 globalThis.__SOKNA_SESSION_GATE_RUNTIME_V1__=Object.freeze({markTab:markBootstrappedTab,clearTab:clearBootstrappedTab});
 function rejection(m,error,reason="invalid_compact_command",retryable=false,code="",recoveryAction=""){const cid=idOf(m),rawError=String(error||"REJECTED"),derived=String(code||rawError.split(":",1)[0]||"COMMAND_REJECTED");return {type:"TRANSPORT_DIAG",diagnostic:{kind:"background-command-rejected",final:!!cid,reason,version:"unified-background-gate-v3",commandId:cid,source:String(m?.source||m?.detector||"background-gate"),error:rawError,code:derived,executed:false,retryable:!!retryable,recovery_action:String(recoveryAction||"")}}}
 function nativeMessage(msg){return new Promise((resolve,reject)=>rawNativeSend(HOST,msg,r=>{const e=chrome.runtime.lastError;if(e)reject(new Error(e.message));else resolve(r||{})}))}
+async function externalLedger(type,command,result=null,error=""){
+  const msg={type,request_id:uid("ledger"),command};if(result!==null)msg.result=result;if(error)msg.error=String(error);
+  const r=await nativeMessage(msg);if(!r?.ok)throw new Error(r?.error||"EXTENSION_LEDGER_FAILED");return r?.result||{};
+}
+function externalRecoveredResult(x){return String(x?.state||"")==="succeeded"?(x?.result??{ok:true}):{ok:false,error:String(x?.error||"COMMAND_OUTCOME_UNKNOWN")}}
 function unifiedCommand(action,params={},parentId=""){const id=uid("bridge"),ts=Date.now();return {protocolVersion:"2",messageId:id,correlationId:id,parentId:String(parentId||""),kind:"command",action,schemaVersion:"2",timestamp:ts,id,params}}
 function capabilityCommand(){return unifiedCommand("agent.capabilities",{})}
 const bridgeLocalActions=[
@@ -104,12 +109,24 @@ async function deliverOutboundAttachment(command,tabId){
     return {ok:true,artifact_ref:ref,transfer_id:transferId,delivery:{user:"chat_attachment",status:String(committed.status||"submitted_to_conversation"),method:String(committed.method||""),public_url:false,local_path_is_delivery:false}};
   }catch(e){if(begun){try{await topMessage(tabId,{type:"OUTBOUND_ATTACHMENT_ABORT",transferId})}catch{}}throw e}
 }
+async function deliverOutboundAttachmentLedgered(command,tabId){
+  const begun=await externalLedger("ledger.external.begin",command);
+  if(begun?.duplicate)return externalRecoveredResult(begun);
+  try{
+    const result=await deliverOutboundAttachment(command,tabId);
+    await externalLedger("ledger.external.complete",command,result);
+    return result;
+  }catch(e){
+    try{await externalLedger("ledger.external.fail",command,null,String(e?.message||e))}catch{}
+    throw e;
+  }
+}
 function installOutboundNativeInterceptor(){
   try{
     chrome.runtime.sendNativeMessage=function(host,msg,callback){
       const command=host===HOST&&msg?.type==="agent.exec"?msg?.command:null;
       if(command?.action!=="artifact.out.attach")return rawNativeSend(host,msg,callback);
-      const id=String(command?.id||""),entry=commandTabs.get(id),p=deliverOutboundAttachment(command,entry?.tabId).finally(()=>commandTabs.delete(id));
+      const id=String(command?.id||""),entry=commandTabs.get(id),p=deliverOutboundAttachmentLedgered(command,entry?.tabId).finally(()=>commandTabs.delete(id));
       if(typeof callback==="function"){
         p.then(result=>callback({ok:true,type:"agent.result",request_id:msg?.request_id||"",version:"3.1.0-r2c",result}),e=>callback({ok:false,type:"error",request_id:msg?.request_id||"",error:String(e?.message||e)}));
         return;
