@@ -98,7 +98,7 @@ function extensionActions(){
   const x=globalThis.__SOKNA_EXTENSION_ACTIONS_V1__;
   return Array.isArray(x)?[...new Set(x.map(String).filter(Boolean))]:[
     "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.actions.list","bridge.action.describe","bridge.command.get","bridge.command.list","artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach",
-    "browser.audit.run","bridge.bootstrap","bridge.diagnostics.get","session.open","session.resume","session.checkpoint","session.close","session.list",
+    "browser.audit.run","browser.backend.status","browser.tabs.list","browser.tab.open","browser.tab.claim","browser.tab.release","browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot","bridge.bootstrap","bridge.diagnostics.get","session.open","session.resume","session.checkpoint","session.close","session.list",
     "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search","instagram.media.download","instagram.media.attach",
     "instagram.research.plan","instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm","instagram.selection.reject","instagram.export"
   ];
@@ -165,6 +165,7 @@ async function fullDiagnostics(tabId,conversationKey="",mode="full"){
     semantic_transport:{adapter:semantic?.semantic||null,fallback_diagnostics:fallback,content_fallback_diagnostics:contentFallback,trace:traces},
     delivery:{top_frame:pageDiagnostics.find(x=>x?.ok&&x.topFrame)||null},
     agent:{host_ok:!!host?.ok,ping:agent,bootstrap_ready:bootstrap?.ready===true,active_session:bootstrap?.active_session||null,capabilities:bootstrap?.capabilities||null},
+    browser:{approved_origins:await approvedBrowserOrigins(),targets:Object.values(await browserTargetsAll()).map(x=>({conversation_key:String(x?.conversation_key||""),tab_id:Number(x?.tab_id)||null,origin:String(x?.origin||""),claimed_at:Number(x?.claimed_at)||0})),backend:"sokna-extension-adapted",top_frame_only:true},
     instagram:{scan_count:Object.keys(await igScansAll()).length,approval_count:Object.keys(await igApprovalsAll()).length},
     recent_errors:traces.filter(x=>/failed|rejected|error|duplicate/.test(String(x.event||""))).slice(bounded?-12:-30),bounded
   };
@@ -339,6 +340,8 @@ function bridgeActionDescribe(params={}){
 }
 const extensionOwnedLedgerActions=new Set([
   "artifact.chat.apply","bridge.actions.list","bridge.action.describe","bridge.diagnostics.get",
+  "browser.backend.status","browser.tabs.list","browser.tab.open","browser.tab.claim","browser.tab.release",
+  "browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot",
   "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search",
   "instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.candidates.get","instagram.candidates.attach",
   "instagram.selection.confirm","instagram.selection.reject","instagram.export"
@@ -1147,6 +1150,7 @@ async function handleCommandInner(tabId,command,meta={}){
     if(command.action==="artifact.chat.apply")result=await registerChatArtifactApply(tabId,command,a.registered.conversationKey);
     else if(command.action==="bridge.actions.list")result=await bridgeActionsList();
     else if(command.action==="bridge.action.describe")result=bridgeActionDescribe(command.params||{});
+    else if(command.action==="browser.backend.status"||command.action==="browser.tabs.list"||command.action==="browser.tab.open"||command.action==="browser.tab.claim"||command.action==="browser.tab.release"||BROWSER_TARGET.isPageAction(command.action))result=await browserSemanticAction(command,a.registered.conversationKey);
     else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command,tabId);
     else if(command.action==="bridge.diagnostics.get")result=await fullDiagnostics(tabId,a.registered.conversationKey,"bounded");
     else if(command.action==="instagram.adapter.status")result=await instagramAdapterStatus(command.params||{});
@@ -1220,6 +1224,8 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
       const tabId=m.tabId??sender.tab?.id;
       if(m.type==="CHAT_ORIGIN_STATUS")return reply(await chatOriginStatus(m.url||sender.tab?.url||""));
       if(m.type==="REGISTER_CHAT_ORIGIN")return reply(await registerChatOrigin(tabId,m.url||sender.tab?.url||""));
+      if(m.type==="BROWSER_ORIGIN_STATUS")return reply(await browserOriginStatus(m.url||sender.tab?.url||""));
+      if(m.type==="REGISTER_BROWSER_ORIGIN")return reply(await registerBrowserOrigin(tabId,m.url||sender.tab?.url||""));
       if(m.type==="CONNECT_CHAT")return reply(await connectChat(tabId));
       if(m.type==="ARM")return reply(await arm(tabId));
       if(m.type==="DISARM")return reply(await disarm(tabId));
@@ -1389,6 +1395,6 @@ suppressLegacyPending().catch(()=>{});
 ensureRetryAlarm().catch(()=>{});
 resumeJobWatches().catch(()=>{});
 resumeChatTransfers().catch(()=>{});
-chrome.tabs.onRemoved.addListener(tabId=>{disarm(tabId).catch(()=>{})});
+chrome.tabs.onRemoved.addListener(tabId=>{disarm(tabId).catch(()=>{});browserTargetsAll().then(async all=>{let changed=false;for(const [k,v] of Object.entries(all)){if(Number(v?.tab_id)===Number(tabId)){delete all[k];changed=true}}if(changed)await saveBrowserTargets(all)}).catch(()=>{})});
 
 rehydrateApprovedChatOrigins().catch(()=>{});
