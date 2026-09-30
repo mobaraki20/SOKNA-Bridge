@@ -82,6 +82,9 @@ function Normalize-SoknaWorkspaceScopes([string]$Root,$Scopes){
 function Normalize-SoknaWorkspaceTools($Tools){
   if($null-eq$Tools){return @()}
   $items=@($Tools);if($items.Count-eq0){return @()}
+  # Windows PowerShell 5.1 may bind -Tools @() as a single null sentinel.
+  # Treat only that shape as the intentional empty allowlist; mixed nulls stay invalid.
+  if($items.Count-eq1-and$null-eq$items[0]){return @()}
   $out=@();$seen=@{}
   foreach($x in $items){
     if($null-eq$x){throw 'WORKSPACE_TOOL_INVALID'}
