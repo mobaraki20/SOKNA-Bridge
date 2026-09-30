@@ -230,6 +230,24 @@ function bridgeActionDescribe(params={}){
   if(!contract)return {ok:false,code:"ACTION_CONTRACT_NOT_MIGRATED",action,contracted:false};
   return {ok:true,action,contracted:true,contract};
 }
+const extensionOwnedLedgerActions=new Set([
+  "artifact.chat.apply","bridge.actions.list","bridge.action.describe","bridge.diagnostics.get",
+  "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search",
+  "instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.candidates.get","instagram.candidates.attach",
+  "instagram.selection.confirm","instagram.selection.reject","instagram.export"
+]);
+async function extensionLedgerMessage(type,command,result=null,error=""){
+  const msg={type,request_id:uid(),command};
+  if(result!==null)msg.result=result;
+  if(error)msg.error=String(error);
+  const r=await nativeMessage(msg);if(!r?.ok)throw new Error(r?.error||"EXTENSION_LEDGER_FAILED");
+  return r?.result||{};
+}
+function recoveredLedgerResult(x){
+  const state=String(x?.state||"");
+  if(state==="succeeded")return x?.result??{ok:true};
+  return {ok:false,error:String(x?.error||("COMMAND_"+state.toUpperCase()))};
+}
 async function isArmed(tabId,conversationKey=""){
   const a=await armedAll(),r=a[String(tabId)];return {armed:!!r&&(!conversationKey||r.conversationKey===conversationKey),registered:r||null};
 }
@@ -976,7 +994,24 @@ async function handleCommandInner(tabId,command,meta={}){
   await setStatus(tabId,{etaMs:null,etaConfidence:"unknown"});
   await appendTrace(tabId,"agent.forward_started",{command_id:command.id,action:command.action});
   await queueStatusEvent(tabId,a.registered.conversationKey,"accepted:"+command.id,command.id,{kind:"command-accepted",status:"accepted",commandId:command.id,correlationId:command.correlationId||command.id,action:command.action,accepted_at:acceptedAt});
-  let result;
+  let result,extensionLedgerCommand=null,extensionLedgerActive=false;
+  if(extensionOwnedLedgerActions.has(command.action)){
+    extensionLedgerCommand={...command,conversationKey:a.registered.conversationKey};
+    try{
+      const begun=await extensionLedgerMessage("ledger.external.begin",extensionLedgerCommand);
+      if(begun?.duplicate){
+        result=recoveredLedgerResult(begun);
+        seen=await seenAll();seen[commandKey]={...(seen[commandKey]||{}),state:"done",commandId:command.id,completedAt:now(),result,posted:false};await saveSeen(seen);
+        await appendTrace(tabId,"result.recovered",{command_id:command.id,action:command.action,state:String(begun?.state||"")});
+        await setExecutionFinish(tabId,command.id,result?.ok!==false,String(result?.error||""));
+        const delivery=await postPending(tabId,commandKey,seen[commandKey]);
+        return {ok:true,executed:false,recovered:true,result_ok:result?.ok!==false,delivery};
+      }
+      extensionLedgerActive=true;
+    }catch(e){
+      result={ok:false,error:String(e)};await appendTrace(tabId,"ledger.external_begin_failed",{command_id:command.id,action:command.action,error:String(e)});
+    }
+  }
   try{
     if(command.action==="artifact.chat.apply")result=await registerChatArtifactApply(tabId,command,a.registered.conversationKey);
     else if(command.action==="bridge.actions.list")result=await bridgeActionsList();
@@ -998,7 +1033,13 @@ async function handleCommandInner(tabId,command,meta={}){
     else if(command.action==="instagram.export")result=await instagramExport(command.params||{});
     else result=await agentExec({...command,conversationKey:a.registered.conversationKey});
     await appendTrace(tabId,"agent.accepted",{command_id:command.id,action:command.action,ok:result?.ok!==false});
-  }catch(e){result={ok:false,error:String(e)};await appendTrace(tabId,"agent.forward_failed",{command_id:command.id,action:command.action,error:String(e)})}
+  }catch(e){
+    result={ok:false,error:String(e)};
+    if(extensionLedgerActive){try{await extensionLedgerMessage("ledger.external.fail",extensionLedgerCommand,null,String(e))}catch(le){await appendTrace(tabId,"ledger.external_fail_write_failed",{command_id:command.id,error:String(le)})}}
+    extensionLedgerActive=false;
+    await appendTrace(tabId,"agent.forward_failed",{command_id:command.id,action:command.action,error:String(e)})
+  }
+  if(extensionLedgerActive){try{await extensionLedgerMessage("ledger.external.complete",extensionLedgerCommand,result)}catch(e){result={ok:false,error:"COMMAND_LEDGER_COMMIT_FAILED: "+String(e)};await appendTrace(tabId,"ledger.external_complete_failed",{command_id:command.id,error:String(e)})}}
   for(const submitted of JOBCORE.findSubmittedJobs(command.action,result)){try{await registerJobWatch(tabId,command.id,submitted,a.registered.conversationKey)}catch{}}
   seen=await seenAll();seen[commandKey]={...(seen[commandKey]||{}),state:"done",commandId:command.id,completedAt:now(),result,posted:false};await saveSeen(seen);
   await appendTrace(tabId,"result.received",{command_id:command.id,action:command.action,ok:result?.ok!==false});
