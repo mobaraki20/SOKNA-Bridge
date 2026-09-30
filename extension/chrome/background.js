@@ -284,7 +284,7 @@ async function arm(tabId){
 async function migrateArmedConversationIfProvisional(tabId,url){
   const all=await armedAll(),r=all[String(tabId)];if(!r)return null;
   const oldUrl=String(r.url||""),oldOrigin=ORIGIN.normalizeOrigin(oldUrl),newOrigin=ORIGIN.normalizeOrigin(url),oldId=ORIGIN.conversationId(oldUrl),newId=ORIGIN.conversationId(url);
-  if(oldOrigin&&oldOrigin===newOrigin&&!oldId&&newId){
+  if(newOrigin&&!oldId&&newId){
     const oldKey=String(r.conversationKey||""),newKey=conv(url);r.url=url;r.conversationKey=newKey;
     if(r.intakeProof&&String(r.intakeProof.conversationKey||"")===oldKey)r.intakeProof={...r.intakeProof,conversationKey:newKey};
     all[String(tabId)]=r;await saveArmed(all);await SESSION_GATE?.markTab?.(tabId,url);await appendTrace(tabId,"conversation.identity_migrated",{from:oldKey,to:newKey});return r;
@@ -977,7 +977,7 @@ async function handleCommandInner(tabId,command,meta={}){
     else if(command.action==="instagram.selection.confirm")result=await instagramSelectionConfirm(command.params||{});
     else if(command.action==="instagram.selection.reject")result=await instagramSelectionReject(command.params||{});
     else if(command.action==="instagram.export")result=await instagramExport(command.params||{});
-    else result=await agentExec(command);
+    else result=await agentExec({...command,conversationKey:a.registered.conversationKey});
     await appendTrace(tabId,"agent.accepted",{command_id:command.id,action:command.action,ok:result?.ok!==false});
   }catch(e){result={ok:false,error:String(e)};await appendTrace(tabId,"agent.forward_failed",{command_id:command.id,action:command.action,error:String(e)})}
   for(const submitted of JOBCORE.findSubmittedJobs(command.action,result)){try{await registerJobWatch(tabId,command.id,submitted,a.registered.conversationKey)}catch{}}
