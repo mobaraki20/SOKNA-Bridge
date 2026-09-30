@@ -37,17 +37,17 @@ function unifiedCommand(action,params={},parentId=""){const id=uid("bridge"),ts=
 function capabilityCommand(){return unifiedCommand("agent.capabilities",{})}
 const bridgeLocalActions=[
   "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.actions.list","bridge.action.describe","bridge.doctor","bridge.command.get","bridge.command.list","bridge.diagnostics.get",
-  "artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach","browser.audit.run",
+  "artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach","artifact.out.attach_many","artifact.collection.get","browser.audit.run",
   "credential.ref.list",
   "browser.backend.status","browser.tabs.list","browser.tab.open","browser.tab.claim","browser.tab.release",
-  "browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot",
+  "browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot","browser.capture.batch",
   "bridge.bootstrap","session.open","session.resume","session.checkpoint","session.close","session.list",
   "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search",
   "instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.candidates.get","instagram.candidates.attach",
   "instagram.selection.confirm","instagram.selection.reject","instagram.export"
 ];
 globalThis.__SOKNA_EXTENSION_ACTIONS_V1__=Object.freeze([...bridgeLocalActions]);
-const recoveryActions=new Set(["ping","agent.capabilities","bridge.bootstrap","bridge.actions.list","bridge.action.describe","bridge.doctor","bridge.command.get","bridge.command.list","bridge.diagnostics.get","session.open","session.resume","session.list","session.close","job.list","job.events","bridge.activity","artifact.out.get","artifact.out.info","artifact.out.list","result.get","workspace.registry.status","workspace.list","workspace.inspect","browser.qa.status","browser.backend.status","artifact.root.status","artifact.provider.status","instagram.adapter.status"]);
+const recoveryActions=new Set(["ping","agent.capabilities","bridge.bootstrap","bridge.actions.list","bridge.action.describe","bridge.doctor","bridge.command.get","bridge.command.list","bridge.diagnostics.get","session.open","session.resume","session.list","session.close","job.list","job.events","bridge.activity","artifact.out.get","artifact.out.info","artifact.out.list","artifact.collection.get","result.get","workspace.registry.status","workspace.list","workspace.inspect","browser.qa.status","browser.backend.status","artifact.root.status","artifact.provider.status","instagram.adapter.status"]);
 globalThis.__SOKNA_RECOVERY_ACTIONS_V1__=Object.freeze([...recoveryActions]);
 const capabilityGate=CAP?.create?.({ttlMs:60000,extensionActions:bridgeLocalActions,fetchCapabilities:async()=>{const command=capabilityCommand();const r=await nativeMessage({type:"agent.exec",request_id:uid("cap-request"),command});if(!r?.ok)throw new Error(r?.error||"CAPABILITY_NATIVE_REQUEST_FAILED");const result=r?.result||{};if(result?.ok===false)throw new Error(result?.error||"CAPABILITY_AGENT_REQUEST_FAILED");const actions=result?.capabilities?.actions;if(!Array.isArray(actions)||!actions.length)throw new Error("CAPABILITY_ACTIONS_MISSING");return actions}});
 if(!capabilityGate)throw new Error("BACKGROUND_CAPABILITY_GATE_UNAVAILABLE");
@@ -83,40 +83,78 @@ async function topMessageAfterAssistantIdle(tabId,msg,timeoutMs=30000){
     await new Promise(resolve=>setTimeout(resolve,500));
   }
 }
-async function deliverOutboundAttachment(command,tabId){
-  const artifactId=String(command?.params?.id||command?.params?.artifact_id||"").trim().toLowerCase();
+async function artifactRefForDelivery(artifactId,parentId){
+  artifactId=String(artifactId||"").trim().toLowerCase();
   if(!SHA.test(artifactId))throw new Error("OUTBOUND_ATTACHMENT_ID_INVALID");
-  if(!Number.isInteger(tabId))throw new Error("OUTBOUND_ATTACHMENT_TARGET_TAB_REQUIRED");
-  const info=await directLocal("artifact.out.info",{id:artifactId},command.id),ref=info?.artifact_ref||{};
+  const info=await directLocal("artifact.out.info",{id:artifactId},parentId),ref=info?.artifact_ref||{};
   const bytes=Number(ref?.bytes),sha=String(ref?.sha256||"").toLowerCase();
   if(String(ref?.id||"").toLowerCase()!==artifactId||sha!==artifactId||!Number.isSafeInteger(bytes)||bytes<0)throw new Error("OUTBOUND_ATTACHMENT_REF_INVALID");
   if(bytes>MAX_CHAT_ATTACHMENT_BYTES)throw new Error(`OUTBOUND_ATTACHMENT_TOO_LARGE:${bytes}>${MAX_CHAT_ATTACHMENT_BYTES}`);
-  const transferId=`out-${artifactId.slice(0,12)}-${uid("x").replace(/[^A-Za-z0-9._-]/g,"").slice(-12)}`;
+  return ref;
+}
+async function streamOutboundArtifact(command,tabId,artifactId,{append=false,submit=true,note=""}={}){
+  if(!Number.isInteger(tabId))throw new Error("OUTBOUND_ATTACHMENT_TARGET_TAB_REQUIRED");
+  const ref=await artifactRefForDelivery(artifactId,command.id),bytes=Number(ref.bytes);
+  const transferId=`out-${String(ref.id).slice(0,12)}-${uid("x").replace(/[^A-Za-z0-9._-]/g,"").slice(-12)}`;
   let begun=false;
   try{
-    const begin=await topMessageAfterAssistantIdle(tabId,{type:"OUTBOUND_ATTACHMENT_BEGIN",transferId,artifactRef:ref});
+    const begin=await topMessageAfterAssistantIdle(tabId,{type:"OUTBOUND_ATTACHMENT_BEGIN",transferId,artifactRef:ref,append:append===true});
     if(!begin?.ok)throw new Error(`${begin?.code||"OUTBOUND_ATTACHMENT_BEGIN_FAILED"}:${begin?.error||"page rejected transfer"}`);begun=true;
     let offset=0,index=0;
     while(offset<bytes){
       if(index>400)throw new Error("OUTBOUND_ATTACHMENT_CHUNK_LIMIT_EXCEEDED");
-      const part=await directLocal("artifact.out.get",{id:artifactId,offset,limit:OUT_CHUNK_BYTES},command.id);
+      const part=await directLocal("artifact.out.get",{id:ref.id,offset,limit:OUT_CHUNK_BYTES},command.id);
       const partRef=part?.artifact_ref||{},actualOffset=Number(part?.offset),next=Number(part?.next_offset),dataB64=String(part?.data_b64||"");
-      if(String(partRef?.sha256||"").toLowerCase()!==artifactId||actualOffset!==offset||!Number.isSafeInteger(next)||next<=offset||next>bytes||!dataB64)throw new Error("OUTBOUND_ATTACHMENT_CHUNK_INVALID");
+      if(String(partRef?.sha256||"").toLowerCase()!==String(ref.id).toLowerCase()||actualOffset!==offset||!Number.isSafeInteger(next)||next<=offset||next>bytes||!dataB64)throw new Error("OUTBOUND_ATTACHMENT_CHUNK_INVALID");
       const ack=await topMessage(tabId,{type:"OUTBOUND_ATTACHMENT_CHUNK",transferId,index,dataB64});
       if(!ack?.ok)throw new Error(`${ack?.code||"OUTBOUND_ATTACHMENT_CHUNK_REJECTED"}:${ack?.error||"page rejected chunk"}`);
       offset=next;index++;
       if(part?.eof===true&&offset!==bytes)throw new Error("OUTBOUND_ATTACHMENT_EARLY_EOF");
     }
-    const committed=await topMessageAfterAssistantIdle(tabId,{type:"OUTBOUND_ATTACHMENT_COMMIT",transferId});
+    const committed=await topMessageAfterAssistantIdle(tabId,{type:"OUTBOUND_ATTACHMENT_COMMIT",transferId,append:append===true,submit:submit!==false,note:String(note||"")});
     if(!committed?.ok)throw new Error(`${committed?.code||"OUTBOUND_ATTACHMENT_COMMIT_FAILED"}:${committed?.error||"page rejected commit"}`);
-    return {ok:true,artifact_ref:ref,transfer_id:transferId,delivery:{user:"chat_attachment",status:String(committed.status||"submitted_to_conversation"),method:String(committed.method||""),public_url:false,local_path_is_delivery:false}};
+    return {artifact_ref:ref,transfer_id:transferId,status:String(committed.status||""),method:String(committed.method||"")};
   }catch(e){if(begun){try{await topMessage(tabId,{type:"OUTBOUND_ATTACHMENT_ABORT",transferId})}catch{}}throw e}
+}
+async function waitAttachmentComposerReady(tabId,timeoutMs=60000){
+  const deadline=Date.now()+Math.max(1000,Number(timeoutMs)||60000);
+  for(;;){
+    let r;try{r=await topMessage(tabId,{type:"OUTBOUND_ATTACHMENT_READY"})}catch(e){r={ok:false,code:"ATTACHMENT_PAGE_UNAVAILABLE",error:String(e)}}
+    if(r?.ok)return r;
+    if(!["ATTACHMENT_ASSISTANT_BUSY","ATTACHMENT_EXISTING_FILES_PRESENT","ATTACHMENT_UPLOAD_BUSY"].includes(String(r?.code||"")))throw new Error(`${r?.code||"OUTBOUND_ATTACHMENT_NOT_READY"}:${r?.error||"composer is not safe for attachment delivery"}`);
+    if(Date.now()>=deadline)throw new Error(`${r?.code||"OUTBOUND_ATTACHMENT_READY_TIMEOUT"}:timed out waiting for attachment composer`);
+    await new Promise(resolve=>setTimeout(resolve,500));
+  }
+}
+async function deliverOutboundAttachment(command,tabId){
+  const artifactId=String(command?.params?.id||command?.params?.artifact_id||"").trim().toLowerCase();
+  const one=await streamOutboundArtifact(command,tabId,artifactId,{append:false,submit:true});
+  return {ok:true,artifact_ref:one.artifact_ref,transfer_id:one.transfer_id,delivery:{user:"chat_attachment",status:one.status||"submitted_to_conversation",method:one.method||"",public_url:false,local_path_is_delivery:false}};
+}
+async function deliverOutboundAttachmentMany(command,tabId){
+  const ids=[...new Set((Array.isArray(command?.params?.ids)?command.params.ids:[]).map(x=>String(x||"").trim().toLowerCase()))];
+  if(!ids.length||ids.length>100||ids.some(x=>!SHA.test(x)))throw new Error("OUTBOUND_ATTACHMENT_MANY_IDS_INVALID");
+  const batchSize=Math.min(10,Math.max(1,Number(command?.params?.batch_size)||5));
+  const customNote=String(command?.params?.note||"").trim();
+  const batches=[];
+  for(let start=0;start<ids.length;start+=batchSize){
+    await waitAttachmentComposerReady(tabId);
+    const part=ids.slice(start,start+batchSize),batchNo=batches.length+1,totalBatches=Math.ceil(ids.length/batchSize),attached=[];
+    for(let i=0;i<part.length;i++){
+      const last=i===part.length-1;
+      const note=last?[customNote,`SOKNA Bridge artifact batch ${batchNo}/${totalBatches} — ${part.length} file(s).`].filter(Boolean).join("\n"):"";
+      const one=await streamOutboundArtifact(command,tabId,part[i],{append:i>0,submit:last,note});
+      attached.push({id:one.artifact_ref.id,name:one.artifact_ref.name,bytes:one.artifact_ref.bytes,sha256:one.artifact_ref.sha256,status:one.status});
+    }
+    batches.push({batch:batchNo,count:attached.length,artifacts:attached});
+  }
+  return {ok:true,schema:"sokna-outbound-attachment-batch-v1",requested:ids.length,attached_count:batches.reduce((n,b)=>n+b.count,0),batch_count:batches.length,batch_size:batchSize,batches};
 }
 async function deliverOutboundAttachmentLedgered(command,tabId){
   const begun=await externalLedger("ledger.external.begin",command);
   if(begun?.duplicate)return externalRecoveredResult(begun);
   try{
-    const result=await deliverOutboundAttachment(command,tabId);
+    const result=command?.action==="artifact.out.attach_many"?await deliverOutboundAttachmentMany(command,tabId):await deliverOutboundAttachment(command,tabId);
     await externalLedger("ledger.external.complete",command,result);
     return result;
   }catch(e){
@@ -128,7 +166,7 @@ function installOutboundNativeInterceptor(){
   try{
     chrome.runtime.sendNativeMessage=function(host,msg,callback){
       const command=host===HOST&&msg?.type==="agent.exec"?msg?.command:null;
-      if(command?.action!=="artifact.out.attach")return rawNativeSend(host,msg,callback);
+      if(command?.action!=="artifact.out.attach"&&command?.action!=="artifact.out.attach_many")return rawNativeSend(host,msg,callback);
       const id=String(command?.id||""),entry=commandTabs.get(id),p=deliverOutboundAttachmentLedgered(command,entry?.tabId).finally(()=>commandTabs.delete(id));
       if(typeof callback==="function"){
         p.then(result=>callback({ok:true,type:"agent.result",request_id:msg?.request_id||"",version:(chrome.runtime.getManifest?.().version||"3.13.0"),result}),e=>callback({ok:false,type:"error",request_id:msg?.request_id||"",error:String(e?.message||e)}));
@@ -148,7 +186,7 @@ function wrapListener(listener){return function(m,sender,reply){
     if(!g?.ok)return listener(rejection(m,`${g?.code||"CAPABILITY_PREFLIGHT_FAILED"}:${g?.error||m.command.action}`),sender,reply);
     const gate=await ensureSessionGate(m,sender);
     if(!gate.ok)return listener(rejection(m,`${gate.code}:${gate.error}`,"session_gate_rejected",true,gate.code,gate.code==="BOOTSTRAP_REQUIRED"?"bridge.bootstrap":(gate.code==="SESSION_NOT_READY"?"session.resume":"bridge.diagnostics.get")),sender,reply);
-    if(m.command.action==="artifact.out.attach")rememberCommandTab(String(m.command.id||""),sender);
+    if(m.command.action==="artifact.out.attach"||m.command.action==="artifact.out.attach_many")rememberCommandTab(String(m.command.id||""),sender);
     return listener(m,sender,reply);
   }).catch(e=>listener(rejection(m,"PREFLIGHT_FAILED:"+String(e),"session_gate_rejected",true,"PREFLIGHT_FAILED","bridge.diagnostics.get"),sender,reply));
   return true
