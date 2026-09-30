@@ -51,15 +51,20 @@ function Get-SoknaBrowserRecipeScenario([string]$RecipePath){
   $id=[string]$r.scenario_id;if(-not(Test-SoknaBrowserSafeId $id)){throw 'BROWSER_SCENARIO_ID_INVALID'};return $id
 }
 function Register-SoknaBrowserArtifacts([string]$RunId,[string]$RunPath,[string]$Workspace,[string]$JobId,$Summary){
-  $registered=@();foreach($a in @($Summary.artifacts)){
+  $registered=@();$artifactsProp=$Summary.PSObject.Properties['artifacts'];if($null-eq$artifactsProp){throw 'BROWSER_ARTIFACT_SCHEMA_INVALID: missing artifacts'}
+  $items=@($artifactsProp.Value);if($items.Count-eq0){return @()}
+  [int]$index=0;foreach($a in $items){
+    if($null-eq$a){throw('BROWSER_ARTIFACT_SCHEMA_INVALID: index='+$index+' null item')}
+    foreach($required in @('artifact_id','path','sha256','bytes','content_type','kind')){if($null-eq$a.PSObject.Properties[$required]){throw('BROWSER_ARTIFACT_SCHEMA_INVALID: index='+$index+' missing='+$required)}}
     $id=[string]$a.artifact_id;if(-not(Test-SoknaBrowserSafeId $id)){throw 'BROWSER_ARTIFACT_ID_INVALID'};$rel=[string]$a.path
     $full=[IO.Path]::GetFullPath((Join-Path $RunPath $rel));$root=[IO.Path]::GetFullPath($RunPath);if(-not($full-eq$root-or$full.StartsWith($root.TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase))){throw 'BROWSER_ARTIFACT_PATH_ESCAPE'}
     if(-not(Test-Path -LiteralPath $full -PathType Leaf)){throw('BROWSER_ARTIFACT_MISSING: '+$rel)};if(Test-SoknaBrowserReparse $full){throw 'BROWSER_ARTIFACT_REPARSE_BLOCKED'}
     $sha=(Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant();if($sha-ne([string]$a.sha256).ToLowerInvariant()){throw('BROWSER_ARTIFACT_HASH_MISMATCH: '+$rel)}
     $item=Get-Item -LiteralPath $full -Force;if([int64]$item.Length-ne[int64]$a.bytes){throw('BROWSER_ARTIFACT_SIZE_MISMATCH: '+$rel)}
     $artifactRoot=[IO.Path]::GetFullPath((Get-SoknaArtifactRoot));$managedRel=$full.Substring($artifactRoot.TrimEnd('\','/').Length).TrimStart('\','/').Replace('\','/')
-    $m=[ordered]@{schema='sokna-artifact-metadata-v1';artifact_id=$id;provider='browser_qa';source_ref=('browser-run:'+ $RunId);local_path=$managedRel;size=[int64]$item.Length;sha256=$sha;content_type=[string]$a.content_type;created_at=(Get-Date).ToUniversalTime().ToString('o');updated_at=(Get-Date).ToUniversalTime().ToString('o');state='browser';workspace=$Workspace;job_id=$JobId;cleanup_state='active';browser_run_id=$RunId;browser_kind=[string]$a.kind;viewport_id=[string]$a.viewport_id}
-    $null=Set-SoknaArtifactMetadata -ArtifactId $id -Metadata $m;$registered+=@([ordered]@{artifact_id=$id;path=$managedRel;sha256=$sha;bytes=[int64]$item.Length;kind=[string]$a.kind;viewport_id=[string]$a.viewport_id})
+    $viewport='';if($null-ne$a.PSObject.Properties['viewport_id']){$viewport=[string]$a.viewport_id}
+    $m=[ordered]@{schema='sokna-artifact-metadata-v1';artifact_id=$id;provider='browser_qa';source_ref=('browser-run:'+ $RunId);local_path=$managedRel;size=[int64]$item.Length;sha256=$sha;content_type=[string]$a.content_type;created_at=(Get-Date).ToUniversalTime().ToString('o');updated_at=(Get-Date).ToUniversalTime().ToString('o');state='browser';workspace=$Workspace;job_id=$JobId;cleanup_state='active';browser_run_id=$RunId;browser_kind=[string]$a.kind;viewport_id=$viewport}
+    $null=Set-SoknaArtifactMetadata -ArtifactId $id -Metadata $m;$registered+=@([ordered]@{artifact_id=$id;path=$managedRel;sha256=$sha;bytes=[int64]$item.Length;kind=[string]$a.kind;viewport_id=$viewport});$index++
   };return $registered
 }
 function Invoke-SoknaBrowserRecipe{
