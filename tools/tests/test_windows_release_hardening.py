@@ -15,8 +15,8 @@ wf=(ROOT/'.github/workflows/windows-agent-validation.yml').read_text(encoding='u
 helper=(ROOT/'tools/ci/Invoke-GitHubWindowsCI.ps1').read_text(encoding='utf-8')
 preflight=(ROOT/'tools/ci/Test-WindowsAgentEnvironment.ps1').read_text(encoding='utf-8')
 adv=(ROOT/'tools/ci/Test-WindowsAdversarialPreflight.ps1').read_text(encoding='utf-8')
-ws=(ROOT/'tools/runtime/releases/2.6.0/Test-Workspace260.ps1').read_text(encoding='utf-8')
-br=(ROOT/'tools/runtime/releases/2.6.0/Test-BrowserQA260.ps1').read_text(encoding='utf-8')
+ws=(ROOT/'tools/runtime/releases/2.7.1/Test-Workspace271.ps1').read_text(encoding='utf-8')
+br=(ROOT/'tools/runtime/releases/2.7.1/Test-BrowserQA271.ps1').read_text(encoding='utf-8')
 gate=(ROOT/'docs/BRIDGE_SESSION_EXECUTION_GATE_V1_FA.md').read_text(encoding='utf-8')
 
 assert '@($lw.tools).Count' in ws and '$lw.tools.Count' not in ws
@@ -31,9 +31,9 @@ for x in ["[string]$ExpectedCommit = ''",'expected_commit=$ExpectedCommit','CI_E
 for x in ['gh run view $runId --log','continue-on-error hides the original failing steps','Windows diagnostic gate','$rootFailures',r'##\[error\]']:
     assert x in helper,x
 assert "ls-files '*.ps1' '*.psm1'" in preflight
-assert "[string]$RuntimeVersion = '2.6.0'" in preflight
+assert "[string]$RuntimeVersion = '2.7.1'" in preflight
 assert "Copy-Item (Join-Path $runtime '*') $root -Recurse -Force" in preflight
-for x in ['WIN_ADV_PROVIDER_OPTIONAL_DIRECT_ACCESS','WIN_ADV_PROVIDER_HELPER_SEMANTICS','Test-AdvancedWorkspace260.ps1']:
+for x in ['WIN_ADV_PROVIDER_OPTIONAL_DIRECT_ACCESS','WIN_ADV_PROVIDER_HELPER_SEMANTICS','Test-AdvancedWorkspace271.ps1']:
     assert x in adv,x
 for x in ['polling دستی chat-by-chat','job.submit','diagnostic gate','patch-one-line','Windows Adversarial Preflight','RC tag قبل از exact-commit Windows full PASS ممنوع است']:
     assert x in gate,x
@@ -41,7 +41,7 @@ critical=[ROOT/'tools/ci/Invoke-GitHubWindowsCI.ps1',ROOT/'tools/ci/Write-ExactR
 pat=re.compile(r'=\s*\(&\s*(?:git|gh)\b[^\r\n]*\)\.Trim\(',re.I)
 for f in critical:
     assert not pat.search(f.read_text(encoding='utf-8')),f
-runtime=ROOT/'native'/'runtime'/'v2.6.0'
+runtime=ROOT/'native'/'runtime'/'v2.7.1'
 for ps in [*runtime.glob('*.ps1'),*runtime.glob('*.psm1')]:
     text=ps.read_text(encoding='utf-8')
     assert 'return[ordered]@' not in text,f'PS5_RETURN_ORDERED_SPACING:{ps}'
