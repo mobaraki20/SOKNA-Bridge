@@ -1,0 +1,37 @@
+name: Publish r9 3.12.8 UAT installer
+on:
+  push:
+    branches: [uat/r9-3.12.8-download]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download validated Windows artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/${{ github.repository }}/actions/artifacts/11069049220/zip > artifact.zip
+          unzip -q artifact.zip -d artifact
+          src=$(find artifact -type f -name 'SOKNA-Bridge-Setup-2.7.1-x64.exe' -print -quit)
+          test -n "$src"
+          cp "$src" SOKNA-Bridge-Setup-2.7.1-r9-UAT-3.12.8-x64.exe
+          echo "977ca2fbec2678a69bf49a6943e7e24730fbb8ea9806412ef564acb134b0b68d  SOKNA-Bridge-Setup-2.7.1-r9-UAT-3.12.8-x64.exe" > expected.sha256
+          sha256sum -c expected.sha256
+
+      - name: Publish UAT prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='sokna-agent-2.7.1-r9-uat-3.12.8'
+          asset='SOKNA-Bridge-Setup-2.7.1-r9-UAT-3.12.8-x64.exe'
+          notes='UAT-only prerelease. Agent 2.7.1 / Extension 3.12.8. Built from Windows full validation artifact 11069049220. Not the final r9 release.'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$asset" expected.sha256 --clobber
+          else
+            gh release create "$tag" "$asset" expected.sha256 --target "${{ github.sha }}" --title 'SOKNA Bridge r9 UAT — Extension 3.12.8' --notes "$notes" --prerelease
+          fi
