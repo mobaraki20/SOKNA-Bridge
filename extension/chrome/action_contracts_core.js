@@ -11,7 +11,7 @@ const contract=(owner,description,input_schema,{mutating=false,idempotency="safe
  schema:"sokna-action-contract-v1",owner,description,input_schema,output_schema,mutating,idempotency,required_capabilities:capabilities,errors
 });
 const C={
- "bridge.actions.list":contract("chat-adapter","List effective Bridge actions and contract migration status.",obj({},{},false),{output_schema:okOut}),
+ "bridge.actions.list":contract("chat-adapter","List effective Bridge actions and contract migration status.",obj(),{output_schema:okOut}),
  "bridge.action.describe":contract("chat-adapter","Return the machine-readable contract for one Bridge action.",obj({action:S},["action"]),{output_schema:okOut}),
  "bridge.command.get":contract("broker","Recover one durable command outcome in the current conversation scope.",obj({id:S},["id"]),{output_schema:okOut,errors:["invalid command id","not found"]}),
  "bridge.command.list":contract("broker","List durable command outcomes for the current conversation using a monotonic cursor.",obj({since_sequence:{type:"integer",minimum:0},limit:{type:"integer",minimum:1,maximum:200}},[]),{output_schema:okOut}),
