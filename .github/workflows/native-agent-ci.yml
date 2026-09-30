@@ -22,3 +22,15 @@ jobs:
       - name: Native Host build
         working-directory: native/host
         run: go build .
+      - name: Browser helper unit tests
+        working-directory: native/browser
+        run: go test ./...
+      - name: Browser helper build
+        working-directory: native/browser
+        run: go build .
+      - name: Provider unit tests
+        working-directory: native/provider
+        run: go test ./...
+      - name: Provider build
+        working-directory: native/provider
+        run: go build .
