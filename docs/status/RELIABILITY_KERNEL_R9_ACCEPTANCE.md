@@ -4,7 +4,7 @@ Baseline: `sokna-agent-2.7.1-r8` / `2d2ca6e91be76297f8a3aed2d5910b627230880c`.
 
 Candidate:
 - Agent: 2.7.1 (core preserved)
-- Extension: 3.12.7
+- Extension: 3.12.8
 - Semantic adapter: 2.1.1
 - Working branch: `refactor/reliability-kernel-r9`
 - Planned immutable tag after promotion: `sokna-agent-2.7.1-r9`
@@ -14,6 +14,8 @@ Candidate:
 The candidate implements the report's R0-R6 reliability freeze/refactor. Automated gates cover:
 - terminal rejection -> correlated visible NACK contract;
 - semantic `rejected` vs `dispatched`;
+- successful command dispatch remains successful while RESULT conversation ACK is pending;
+- current ChatGPT user-message shell recognition for delivery ACK without enabling body fallback;
 - conversation-scoped idempotency;
 - execution/delivery state separation;
 - Delivery ACK v3 including large/virtualized results;

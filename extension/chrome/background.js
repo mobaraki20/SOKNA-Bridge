@@ -8,7 +8,7 @@ const RUNTIME=globalThis.__SOKNA_RUNTIME_STATE_CORE_V1__;
 const ORIGIN=globalThis.__SOKNA_CHAT_ORIGIN_REGISTRY_V1__;
 const SESSION_GATE=globalThis.__SOKNA_SESSION_GATE_RUNTIME_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.12.7";
+const VERSION="3.12.8";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -984,7 +984,8 @@ async function handleCommandInner(tabId,command,meta={}){
   seen=await seenAll();seen[commandKey]={...(seen[commandKey]||{}),state:"done",commandId:command.id,completedAt:now(),result,posted:false};await saveSeen(seen);
   await appendTrace(tabId,"result.received",{command_id:command.id,action:command.action,ok:result?.ok!==false});
   await setExecutionFinish(tabId,command.id,result?.ok!==false,String(result?.error||""));
-  return await postPending(tabId,commandKey,seen[commandKey]);
+  const delivery=await postPending(tabId,commandKey,seen[commandKey]);
+  return {ok:true,executed:true,result_ok:result?.ok!==false,delivery};
 }
 function classifyPending(seen,registered,t=now(),force=false){
   const retryEligible=[],deferred=[],stale=[],suppressed=[],uncertain=[];
