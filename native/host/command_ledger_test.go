@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 )
 
@@ -86,8 +85,5 @@ func TestChildCommandsAreNotLedgerAuthorities(t *testing.T) {
 	c := CommandEnvelope{ID: "child-1", ParentID: "parent-1", Action: "artifact.out.get", Params: json.RawMessage(`{"id":"x"}`)}
 	if shouldLedgerCommand(c) {
 		t.Fatal("child command must not become an authoritative top-level ledger entry")
-	}
-	if _, err := os.Stat(""); err == nil {
-		t.Fatal("unexpected empty path stat success")
 	}
 }
