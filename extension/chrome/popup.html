@@ -40,6 +40,14 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-word;bac
   <div id="igMsg" class="msg"></div>
 </div>
 
+<div id="browserCard" class="card hidden">
+  <div class="title">Browser Automation</div>
+  <div id="browserState" class="muted">برای کار روی این سایت، دسترسی فقط به همین origin باید با تأیید شما فعال شود.</div>
+  <div class="muted" style="margin-top:6px">Origin: <span id="browserOrigin" class="pill">—</span></div>
+  <div class="actions"><button id="approveBrowserOrigin" class="primary">فعال‌سازی Browser برای همین سایت</button></div>
+  <div id="browserMsg" class="msg"></div>
+</div>
+
 <div id="otherCard" class="card hidden"><div class="title">این origin هنوز برای ChatGPT Adapter فعال نیست</div><div class="muted">SOKNA Bridge دامنه‌های ناشناس را خودکار فعال نمی‌کند. اگر این صفحه واقعاً رابط ChatGPT شماست، می‌توانی فقط همین HTTPS origin را تأیید کنی.</div><div class="muted" style="margin-top:6px">Origin: <span id="otherOrigin" class="pill">—</span></div><div class="actions"><button id="approveChatOrigin" class="primary hidden">فعال‌سازی همین ChatGPT origin</button></div><div id="otherMsg" class="msg"></div></div>
 
 <details>
