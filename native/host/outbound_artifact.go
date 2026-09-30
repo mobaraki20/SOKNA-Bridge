@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const maxArtifactChunk = 512 * 1024
@@ -43,6 +44,23 @@ func artifactList(params map[string]any)(map[string]any,error){root,err:=configu
 
 const maxExtensionArtifactBytes = 32 * 1024 * 1024
 
+func validateIngestPayload(contentType string,data []byte) error {
+	switch contentType{
+	case "image/png":
+		if len(data)<8||!bytes.Equal(data[:8],[]byte{0x89,'P','N','G',0x0d,0x0a,0x1a,0x0a}){return errors.New("ARTIFACT_INGEST_CONTENT_MISMATCH")}
+	case "image/jpeg":
+		if len(data)<3||data[0]!=0xff||data[1]!=0xd8||data[2]!=0xff{return errors.New("ARTIFACT_INGEST_CONTENT_MISMATCH")}
+	case "image/webp":
+		if len(data)<12||string(data[:4])!="RIFF"||string(data[8:12])!="WEBP"{return errors.New("ARTIFACT_INGEST_CONTENT_MISMATCH")}
+	case "application/json":
+		if !json.Valid(data){return errors.New("ARTIFACT_INGEST_CONTENT_MISMATCH")}
+	case "text/plain":
+		if !utf8.Valid(data){return errors.New("ARTIFACT_INGEST_CONTENT_MISMATCH")}
+	default:return errors.New("ARTIFACT_INGEST_CONTENT_TYPE_NOT_ALLOWED")
+	}
+	return nil
+}
+
 func ingestOutboundArtifact(params map[string]any)(map[string]any,error){
 	root,err:=configuredArtifactRoot();if err!=nil{return nil,err}
 	name:=safeArtifactName(fmt.Sprint(params["name"]));if name=="artifact.bin"{return nil,errors.New("artifact.out.ingest requires name")}
@@ -55,6 +73,7 @@ func ingestOutboundArtifact(params map[string]any)(map[string]any,error){
 	if len(dataB64)>((maxExtensionArtifactBytes+2)/3)*4+16{return nil,errors.New("ARTIFACT_INGEST_TOO_LARGE")}
 	data,err:=base64.StdEncoding.DecodeString(dataB64);if err!=nil{return nil,errors.New("ARTIFACT_INGEST_BASE64_INVALID")}
 	if len(data)==0||len(data)>maxExtensionArtifactBytes{return nil,errors.New("ARTIFACT_INGEST_SIZE_INVALID")}
+	if err:=validateIngestPayload(contentType,data);err!=nil{return nil,err}
 	ext:=strings.ToLower(filepath.Ext(name))
 	expectedExt:=map[string][]string{"image/png":{".png"},"image/jpeg":{".jpg",".jpeg"},"image/webp":{".webp"},"application/json":{".json"},"text/plain":{".txt",".log"}}[contentType]
 	okExt:=false;for _,x:=range expectedExt{if ext==x{okExt=true;break}};if !okExt{return nil,errors.New("ARTIFACT_INGEST_EXTENSION_MISMATCH")}
