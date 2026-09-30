@@ -10,11 +10,26 @@ function composerText(){try{return String(DOM.textOf?.(composer())||"").trim()}c
 function assistantGenerating(){try{return [...document.querySelectorAll('[data-testid="stop-button"],button[aria-label*="stop" i],button[title*="stop" i]')].some(x=>{const r=x.getBoundingClientRect();return r.width>0&&r.height>0})}catch{return false}}
 function fileInput(){
   const all=[...document.querySelectorAll('input[type="file"]')].filter(x=>!x.disabled&&x.getAttribute("aria-disabled")!=="true");
-  if(!all.length)throw Object.assign(new Error("No file input is available in the active composer"),{code:"ATTACHMENT_INPUT_MISSING"});
   const c=composer(),f=c?.closest?.("form");
-  if(f){const inside=all.filter(x=>f.contains(x));if(inside.length===1)return inside[0];if(inside.length>1)throw Object.assign(new Error("Multiple file inputs exist in the active composer"),{code:"ATTACHMENT_INPUT_AMBIGUOUS"})}
-  if(all.length===1)return all[0];
-  throw Object.assign(new Error("Multiple file inputs exist and none can be uniquely tied to the active composer"),{code:"ATTACHMENT_INPUT_AMBIGUOUS"});
+  const candidates=all.map((x,index)=>({
+    index,
+    inComposerForm:!!f&&f.contains(x),
+    accept:String(x.getAttribute("accept")||""),
+    capture:String(x.getAttribute("capture")||""),
+    multiple:!!x.multiple,
+    name:String(x.getAttribute("name")||""),
+    id:String(x.id||""),
+    testid:String(x.getAttribute("data-testid")||""),
+    ariaLabel:String(x.getAttribute("aria-label")||"")
+  }));
+  try{
+    const index=Core.selectInputCandidate(candidates);
+    const chosen=all[index];if(chosen)return chosen;
+    throw Object.assign(new Error("Selected attachment input disappeared"),{code:"ATTACHMENT_INPUT_RACE"});
+  }catch(e){
+    if(e?.code)throw e;
+    throw Object.assign(new Error(String(e?.message||e)),{code:"ATTACHMENT_INPUT_AMBIGUOUS"});
+  }
 }
 function setFiles(input,file,append=false){
   if(typeof DataTransfer!=="function")throw Object.assign(new Error("DataTransfer is unavailable"),{code:"ATTACHMENT_DATATRANSFER_UNAVAILABLE"});
