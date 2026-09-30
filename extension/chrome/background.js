@@ -248,6 +248,16 @@ function recoveredLedgerResult(x){
   if(state==="succeeded")return x?.result??{ok:true};
   return {ok:false,error:String(x?.error||("COMMAND_"+state.toUpperCase()))};
 }
+async function recoverBrokerCommand(conversationKey,id){
+  const q=unifiedLocalCommand("bridge.command.get",{id},id);q.conversationKey=String(conversationKey||"");
+  const r=await agentExec(q);return r?.command||null;
+}
+function durableRecordResult(rec){
+  const state=String(rec?.state||"");
+  if(state==="succeeded")return rec?.result??{ok:true};
+  if(state==="failed"||state==="outcome_unknown")return {ok:false,error:String(rec?.error||("COMMAND_"+state.toUpperCase()))};
+  return null;
+}
 async function isArmed(tabId,conversationKey=""){
   const a=await armedAll(),r=a[String(tabId)];return {armed:!!r&&(!conversationKey||r.conversationKey===conversationKey),registered:r||null};
 }
@@ -983,6 +993,15 @@ async function handleCommandInner(tabId,command,meta={}){
   const original=seen[commandKey]||legacy;
   if(original){
     await appendTrace(tabId,"semantic.duplicate",{command_id:command.id,action:command.action,original_state:String(original?.state||""),trigger:String(meta?.trigger||"")});
+    try{
+      const durable=await recoverBrokerCommand(a.registered.conversationKey,command.id),recovered=durableRecordResult(durable);
+      if(recovered){
+        seen[commandKey]={...original,state:"done",commandId:command.id,completedAt:Number(durable?.completed_at||now()),result:recovered,posted:!!original?.posted,brokerRecovered:true};
+        await saveSeen(seen);await appendTrace(tabId,"semantic.duplicate_recovered",{command_id:command.id,action:command.action,durable_state:String(durable?.state||"")});
+        if(!seen[commandKey].posted){const delivery=await postPending(tabId,commandKey,seen[commandKey]);return {ok:true,duplicate:true,recovered:true,state:String(durable?.state||""),delivery}}
+        return {ok:true,duplicate:true,recovered:true,state:String(durable?.state||""),already_posted:true};
+      }
+    }catch(e){await appendTrace(tabId,"semantic.duplicate_recovery_miss",{command_id:command.id,action:command.action,error:String(e)})}
     if(String(meta?.trigger||"")==="reconcile")return {ok:true,duplicate:true,state:original.state,reconcile_duplicate:true};
     const result={kind:"duplicate",status:"duplicate",commandId:command.id,correlationId:command.correlationId||command.id,action:command.action,executed:false,original_command_id:command.id,original_state:String(original?.state||""),original_result_ref:resultRefOf(original,command.id)};
     const key="duplicate:"+command.id+":"+(String(meta?.attemptKey||"")||now());
