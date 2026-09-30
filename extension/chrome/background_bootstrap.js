@@ -14,6 +14,7 @@ const SHA=/^[a-f0-9]{64}$/i;
 const MAX_CHAT_ATTACHMENT_BYTES=64*1024*1024;
 const OUT_CHUNK_BYTES=192*1024;
 const BOOTSTRAP_GATE_KEY="bootstrap_gate_v1";
+const ATTACH_MANY_PROGRESS_KEY="outbound_attach_many_progress_v1";
 const commandTabs=new Map();
 function idOf(m){const id=String(m?.command?.id||m?.command?.correlationId||"");return ID.test(id)?id:""}
 function uid(prefix="cap"){return crypto.randomUUID?.()||(`${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`)}
@@ -131,24 +132,52 @@ async function deliverOutboundAttachment(command,tabId){
   const one=await streamOutboundArtifact(command,tabId,artifactId,{append:false,submit:true});
   return {ok:true,artifact_ref:one.artifact_ref,transfer_id:one.transfer_id,delivery:{user:"chat_attachment",status:one.status||"submitted_to_conversation",method:one.method||"",public_url:false,local_path_is_delivery:false}};
 }
+async function bootstrapSha256Text(text){
+  const bytes=new TextEncoder().encode(String(text||"")),digest=await crypto.subtle.digest("SHA-256",bytes);
+  return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+async function attachManyProgressAll(){const d=await chrome.storage.local.get([ATTACH_MANY_PROGRESS_KEY]);return d[ATTACH_MANY_PROGRESS_KEY]||{}}
+async function saveAttachManyProgress(all){
+  const entries=Object.entries(all||{}).sort((a,b)=>Number(a[1]?.updated_at||0)-Number(b[1]?.updated_at||0));
+  const trimmed=entries.length>40?Object.fromEntries(entries.slice(entries.length-40)):Object.fromEntries(entries);
+  await chrome.storage.local.set({[ATTACH_MANY_PROGRESS_KEY]:trimmed});
+}
 async function deliverOutboundAttachmentMany(command,tabId){
+  const deliveryId=String(command?.params?.delivery_id||"").trim();
   const ids=[...new Set((Array.isArray(command?.params?.ids)?command.params.ids:[]).map(x=>String(x||"").trim().toLowerCase()))];
+  if(!/^[A-Za-z0-9._-]{1,96}$/.test(deliveryId))throw new Error("OUTBOUND_ATTACHMENT_DELIVERY_ID_INVALID");
   if(!ids.length||ids.length>100||ids.some(x=>!SHA.test(x)))throw new Error("OUTBOUND_ATTACHMENT_MANY_IDS_INVALID");
-  const batchSize=Math.min(10,Math.max(1,Number(command?.params?.batch_size)||5));
-  const customNote=String(command?.params?.note||"").trim();
-  const batches=[];
-  for(let start=0;start<ids.length;start+=batchSize){
+  const batchSize=Math.min(10,Math.max(1,Number(command?.params?.batch_size)||5)),customNote=String(command?.params?.note||"").trim();
+  const planSha=await bootstrapSha256Text(JSON.stringify({ids,batch_size:batchSize,note:customNote}));
+  const all=await attachManyProgressAll(),old=all[deliveryId];
+  if(old&&String(old.plan_sha256||"")!==planSha)throw new Error("ATTACHMENT_BATCH_PLAN_MISMATCH");
+  if(old?.state==="completed")return {ok:true,schema:"sokna-outbound-attachment-batch-v1",delivery_id:deliveryId,resumed:true,requested:ids.length,attached_count:Number(old.attached_count||ids.length),batch_count:Number(old.batch_count||Math.ceil(ids.length/batchSize)),batch_size:batchSize};
+  const previous=Array.isArray(old?.batches)?old.batches.slice():[];
+  const uncertain=previous.find(x=>x?.state==="executing");
+  if(uncertain)throw new Error("ATTACHMENT_BATCH_OUTCOME_UNKNOWN: batch "+String(uncertain.batch));
+  all[deliveryId]={schema:"sokna-outbound-attachment-progress-v1",delivery_id:deliveryId,plan_sha256:planSha,created_at:Number(old?.created_at||Date.now()),updated_at:Date.now(),state:"running",requested:ids.length,batch_size:batchSize,batches:previous};
+  await saveAttachManyProgress(all);
+  const totalBatches=Math.ceil(ids.length/batchSize);
+  for(let batchIndex=0;batchIndex<totalBatches;batchIndex++){
+    if(previous[batchIndex]?.state==="submitted")continue;
+    const start=batchIndex*batchSize,part=ids.slice(start,start+batchSize),batchNo=batchIndex+1;
+    previous[batchIndex]={batch:batchNo,state:"executing",count:part.length,started_at:Date.now()};
+    all[deliveryId]={...all[deliveryId],updated_at:Date.now(),batches:previous};
+    await saveAttachManyProgress(all);
     await waitAttachmentComposerReady(tabId);
-    const part=ids.slice(start,start+batchSize),batchNo=batches.length+1,totalBatches=Math.ceil(ids.length/batchSize),attached=[];
     for(let i=0;i<part.length;i++){
       const last=i===part.length-1;
       const note=last?[customNote,`SOKNA Bridge artifact batch ${batchNo}/${totalBatches} — ${part.length} file(s).`].filter(Boolean).join("\n"):"";
-      const one=await streamOutboundArtifact(command,tabId,part[i],{append:i>0,submit:last,note});
-      attached.push({id:one.artifact_ref.id,name:one.artifact_ref.name,bytes:one.artifact_ref.bytes,sha256:one.artifact_ref.sha256,status:one.status});
+      await streamOutboundArtifact(command,tabId,part[i],{append:i>0,submit:last,note});
     }
-    batches.push({batch:batchNo,count:attached.length,status:"submitted"});
+    previous[batchIndex]={batch:batchNo,state:"submitted",count:part.length,completed_at:Date.now()};
+    all[deliveryId]={...all[deliveryId],updated_at:Date.now(),batches:previous};
+    await saveAttachManyProgress(all);
   }
-  return {ok:true,schema:"sokna-outbound-attachment-batch-v1",requested:ids.length,attached_count:batches.reduce((n,b)=>n+b.count,0),batch_count:batches.length,batch_size:batchSize,batches};
+  const attachedCount=previous.filter(x=>x?.state==="submitted").reduce((n,b)=>n+Number(b.count||0),0);
+  all[deliveryId]={...all[deliveryId],updated_at:Date.now(),state:"completed",attached_count:attachedCount,batch_count:totalBatches,batches:previous};
+  await saveAttachManyProgress(all);
+  return {ok:true,schema:"sokna-outbound-attachment-batch-v1",delivery_id:deliveryId,resumed:!!old,requested:ids.length,attached_count:attachedCount,batch_count:totalBatches,batch_size:batchSize,batches:previous.map(x=>({batch:x.batch,count:x.count,status:x.state}))};
 }
 async function deliverOutboundAttachmentLedgered(command,tabId){
   const begun=await externalLedger("ledger.external.begin",command);
