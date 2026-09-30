@@ -131,10 +131,10 @@ function installOutboundNativeInterceptor(){
       if(command?.action!=="artifact.out.attach")return rawNativeSend(host,msg,callback);
       const id=String(command?.id||""),entry=commandTabs.get(id),p=deliverOutboundAttachmentLedgered(command,entry?.tabId).finally(()=>commandTabs.delete(id));
       if(typeof callback==="function"){
-        p.then(result=>callback({ok:true,type:"agent.result",request_id:msg?.request_id||"",version:"3.1.0-r2c",result}),e=>callback({ok:false,type:"error",request_id:msg?.request_id||"",error:String(e?.message||e)}));
+        p.then(result=>callback({ok:true,type:"agent.result",request_id:msg?.request_id||"",version:(chrome.runtime.getManifest?.().version||"3.13.0"),result}),e=>callback({ok:false,type:"error",request_id:msg?.request_id||"",error:String(e?.message||e)}));
         return;
       }
-      return p.then(result=>({ok:true,type:"agent.result",request_id:msg?.request_id||"",version:"3.1.0-r2c",result}),e=>({ok:false,type:"error",request_id:msg?.request_id||"",error:String(e?.message||e)}));
+      return p.then(result=>({ok:true,type:"agent.result",request_id:msg?.request_id||"",version:(chrome.runtime.getManifest?.().version||"3.13.0"),result}),e=>({ok:false,type:"error",request_id:msg?.request_id||"",error:String(e?.message||e)}));
     };
   }catch(e){throw new Error("OUTBOUND_ATTACHMENT_NATIVE_INTERCEPTOR_INSTALL_FAILED:"+String(e))}
 }
