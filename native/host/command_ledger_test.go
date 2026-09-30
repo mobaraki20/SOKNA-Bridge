@@ -26,7 +26,8 @@ func TestCommandLedgerCompletesAndReplays(t *testing.T) {
 		t.Fatalf("duplicate replay lookup failed: rec=%+v dup=%v err=%v", rec, dup, err)
 	}
 	out := replayCommandRecord(rec, "req-1")
-	if !out.OK || string(out.Result) != string(result) {
+	var got map[string]any
+	if !out.OK || json.Unmarshal(out.Result, &got) != nil || got["ok"] != true || got["value"] != "done" {
 		t.Fatalf("replay failed: %+v", out)
 	}
 }
