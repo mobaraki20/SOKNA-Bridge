@@ -7,13 +7,24 @@ const end=source.indexOf('async function waitForResultVisible',start);
 if(start<0||end<0)throw new Error('type-aware visibility helpers not found');
 const fnSource=source.slice(start,end)+'\nglobalThis.__testResultVisible=resultVisibleInUserTurn;';
 
-function run(pageText,payload,composerText=''){
+function shell(text,role='user'){
+  return {
+    innerText:text,textContent:text,
+    getAttribute(k){if(k==='data-message-author-role')return role;if(k==='data-testid')return role==='user'?'conversation-turn-user-1':'conversation-turn-assistant-1';return''},
+    querySelector(){return null}
+  };
+}
+function run(pageText,payload,composerText='',authoritative=true){
+  const user=authoritative?shell(pageText,'user'):null;
   const ctx={
-    Date,
-    JSON,
+    Date,JSON,RegExp,String,
     document:{
       body:{innerText:pageText,textContent:pageText},
-      querySelectorAll:()=>[]
+      querySelectorAll(sel){
+        if(!authoritative)return [];
+        if(sel.includes('data-message-author-role="user"')||sel.includes('conversation-turn'))return [user];
+        return [];
+      }
     },
     composer:()=>({value:composerText}),
     textOf:e=>String(e?.value||e?.innerText||e?.textContent||''),
@@ -34,6 +45,7 @@ if(!run(ack+'\n'+terminal,terminal))throw new Error('terminal event bubble not r
 
 const normal='[SOKNA-V2-RESULT]{"id":"normal-1","ok":true}[/SOKNA-V2-RESULT]';
 if(!run(normal,normal))throw new Error('normal result existing-bubble regression');
+if(run(normal,normal,'',false))throw new Error('body fallback must never provide a positive ACK');
 
 const acceptedId='workspace-list-test-20260928-014';
 const acceptedStatus=`[SOKNA-V2-STATUS]{"eventId":"__event__:accepted:${acceptedId}","kind":"command-accepted","commandId":"${acceptedId}","status":"accepted"}[/SOKNA-V2-STATUS]`;
@@ -50,5 +62,16 @@ if(!run(errorStatus+'\n'+errorResult,errorResult))throw new Error('real error RE
 const strayText='debug text says "commandId":"'+acceptedId+'" and "id":"'+acceptedId+'" but has no RESULT envelope';
 if(run(strayText,successResult))throw new Error('free-text id substring falsely satisfied RESULT visibility');
 
+const longId='long-result-ack-001';
+const longResult=`[SOKNA-V2-RESULT]{"id":"${longId}","ok":true,"data":"${'x'.repeat(50000)}"}[/SOKNA-V2-RESULT]`;
+const truncatedVisible=longResult.slice(0,700);
+if(!run(truncatedVisible,longResult))throw new Error('truncated/virtualized large RESULT must ACK from authoritative type+id header');
+const prefixedVisible=('Open message actions '.repeat(24))+truncatedVisible;
+if(!run(prefixedVisible,longResult))throw new Error('large RESULT must ACK even when the authoritative user shell has a long accessibility prefix');
+const wrongIdVisible=`[SOKNA-V2-RESULT]{"id":"other-long-result","ok":true,"data":"partial"}[/SOKNA-V2-RESULT]`;
+if(run(wrongIdVisible,longResult))throw new Error('RESULT with a different id must not ACK the expected RESULT');
+const wrongType=`[SOKNA-V2-STATUS]{"eventId":"${longId}","status":"ok"}[/SOKNA-V2-STATUS]`;
+if(run(wrongType,longResult))throw new Error('STATUS with same-looking id must not ACK RESULT');
+if(run(truncatedVisible,longResult,longResult))throw new Error('payload still present in composer must not count as delivered');
 
-console.log(JSON.stringify({ok:true,tests:8}));
+console.log(JSON.stringify({ok:true,tests:14}));

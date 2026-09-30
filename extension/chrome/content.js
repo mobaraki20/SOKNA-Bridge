@@ -5,7 +5,7 @@ try{globalThis[G]?.dispose?.()}catch{}
 
 const Core=globalThis.__SOKNA_V33_DOM_CORE__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
-const VERSION="3.12.5",DETECTOR="semantic-delivery-v2";
+const VERSION="3.12.8",DETECTOR="semantic-delivery-v2";
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 let armed=false,disposed=false,observer=null,deliveryStateTimer=0;
 let lastPostMethod="",lastPostError="",lastDeliveryGate="",lastDeliveryReadySignalAt=0,lastActivityAt=0,lastVisibilityDecision=null;
@@ -119,37 +119,52 @@ function setInput(el,text){
   fireInput(el,text);
 }
 async function sent(payload){return await waitForResultVisible(payload,1500)}
+function submitAttemptState(method,attempted,acknowledged=false){return {method:String(method||""),attempted:!!attempted,acknowledged:!!acknowledged}}
+function settleSubmitAttempt(attempt,payload){
+  if(!attempt?.attempted)return null;
+  if(attempt.acknowledged)return {ok:true,method:(attempt.method||"submit")+"-ack"};
+  const cur=composer(),retained=!!cur&&samePayload(textOf(cur),payload);
+  return {ok:false,waiting:true,submitted:true,reason:"awaiting_conversation_ack",method:attempt.method||"submit-attempt",bridgeDraftRetained:retained,error:"Submission was attempted once; waiting for conversation ACK. Automatic fallback submit is disabled to prevent duplicate delivery."};
+}
 async function clickAttempt(el,payload){
   const b=sendButton(el,payload);
-  if(!b||b.disabled||b.getAttribute("aria-disabled")==="true")return false;
+  if(!b||b.disabled||b.getAttribute("aria-disabled")==="true")return submitAttemptState("rbt-click",false);
+  let fired=false;
   try{
     b.scrollIntoView?.({block:"nearest"});b.focus?.({preventScroll:true});
     b.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true,cancelable:true,pointerType:"mouse",isPrimary:true}));
     b.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0}));
     b.dispatchEvent(new PointerEvent("pointerup",{bubbles:true,cancelable:true,pointerType:"mouse",isPrimary:true}));
     b.dispatchEvent(new MouseEvent("mouseup",{bubbles:true,cancelable:true,button:0}));
-    b.click();
-  }catch{try{HTMLElement.prototype.click.call(b)}catch{}}
-  return await sent(payload);
+    b.click();fired=true;
+  }catch{try{HTMLElement.prototype.click.call(b);fired=true}catch{}}
+  if(!fired)return submitAttemptState("rbt-click",false);
+  return submitAttemptState("rbt-click",true,await sent(payload));
 }
 async function submitAttempt(el,payload){
-  const f=nearestForm(el);if(!f)return false;
+  const f=nearestForm(el);if(!f)return submitAttemptState("rbt-requestSubmit",false);
+  let fired=false;
   try{
     const b=sendButton(el,payload);
     if(f.requestSubmit)f.requestSubmit(b&&b.form===f?b:undefined);
     else f.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}));
-  }catch{return false}
-  return await sent(payload);
+    fired=true;
+  }catch{}
+  if(!fired)return submitAttemptState("rbt-requestSubmit",false);
+  return submitAttemptState("rbt-requestSubmit",true,await sent(payload));
 }
 async function enterAttempt(el,payload){
+  let fired=false;
   try{
     el.focus();
     const opts={key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true,cancelable:true};
     el.dispatchEvent(new KeyboardEvent("keydown",opts));
     el.dispatchEvent(new KeyboardEvent("keypress",opts));
     el.dispatchEvent(new KeyboardEvent("keyup",opts));
-  }catch{return false}
-  return await sent(payload);
+    fired=true;
+  }catch{}
+  if(!fired)return submitAttemptState("rbt-enter",false);
+  return submitAttemptState("rbt-enter",true,await sent(payload));
 }
 function parseBridgeEnvelope(text){
   const t=String(text||"").trim();
@@ -160,21 +175,55 @@ function parseBridgeEnvelope(text){
     return {kind:m[1]==="SOKNA-V2-RESULT"?"result":"status",tag:m[1],payload,raw:t};
   }catch{return null}
 }
+function roleOfVisibilityRoot(el){
+  try{
+    const direct=String(el?.getAttribute?.("data-message-author-role")||"").trim().toLowerCase();
+    if(direct==="user")return "user";
+    if(direct==="assistant")return "assistant";
+
+    const nested=el?.querySelector?.('[data-message-author-role="assistant"],[data-message-author-role="user"]');
+    const nestedRole=String(nested?.getAttribute?.("data-message-author-role")||"").trim().toLowerCase();
+    if(nestedRole==="user"||nestedRole==="assistant")return nestedRole;
+
+    const cls=String(el?.className||"");
+    if(/(^|\s)user-turn(\s|$)/i.test(cls))return "user";
+    if(/(^|\s)(agent-turn|assistant-turn)(\s|$)/i.test(cls))return "assistant";
+
+    const attrs=["data-author","data-role","data-turn","aria-label","data-testid"]
+      .map(a=>String(el?.getAttribute?.(a)||"")).join(" | ");
+    if(/(^|\b)(user message|user said|you said|you wrote|you sent)(\b|$)/i.test(attrs))return "user";
+    if(/(^|\b)(assistant message|assistant response|assistant said|chatgpt said|chatgpt wrote)(\b|$)/i.test(attrs))return "assistant";
+
+    const userChild=el?.querySelector?.('[data-testid*="user-message" i],.user-turn');
+    if(userChild)return "user";
+    const assistantChild=el?.querySelector?.('[data-testid*="assistant-message" i],.agent-turn,.assistant-turn');
+    if(assistantChild)return "assistant";
+
+    if(el?.querySelector?.('[data-testid*="good-response" i],[data-testid*="bad-response" i],[data-testid*="regenerate" i],button[aria-label*="good response" i],button[aria-label*="bad response" i],button[aria-label*="regenerate" i]'))return "assistant";
+  }catch{}
+  return "unknown";
+}
 function conversationTextsForVisibility(){
   const roots=[];
+  const add=el=>{if(el&&roleOfVisibilityRoot(el)==="user"&&!roots.includes(el))roots.push(el)};
   try{
     for(const q of [
       '[data-message-author-role="user"]',
       '[data-testid*="user-message" i]',
-      '[data-testid*="conversation-turn" i][data-message-author-role="user"]'
+      '[data-testid^="conversation-turn-"]',
+      '[data-testid*="conversation-turn" i]',
+      '[data-message-id]',
+      'article',
+      '.user-turn',
+      '.agent-turn',
+      '.assistant-turn'
     ]){
-      const found=[...document.querySelectorAll(q)];
-      for(const el of found)if(!roots.includes(el))roots.push(el);
+      for(const el of [...document.querySelectorAll(q)])add(el);
     }
   }catch{}
-  if(roots.length)return {scope:"user-turns",texts:roots.map(el=>String(el.innerText||el.textContent||""))};
+  if(roots.length)return {scope:"user-message-shells",authoritative:true,texts:roots.map(el=>String(el.innerText||el.textContent||""))};
   const b=document.body;
-  return {scope:"body-fallback",texts:b?[String(b.innerText||b.textContent||"")]:[]};
+  return {scope:"body-fallback",authoritative:false,texts:b?[String(b.innerText||b.textContent||"")]:[]};
 }
 function extractBridgeEnvelopes(text){
   const out=[],re=/\[(SOKNA-V2-(?:RESULT|STATUS))\]([\s\S]*?)\[\/\1\]/g;
@@ -182,11 +231,23 @@ function extractBridgeEnvelopes(text){
   while((m=re.exec(String(text||"")))!==null){
     try{
       const payload=JSON.parse(m[2]);
-      out.push({kind:m[1]==="SOKNA-V2-RESULT"?"result":"status",tag:m[1],payload,raw:m[0]});
+      out.push({kind:m[1]==="SOKNA-V2-RESULT"?"result":"status",tag:m[1],payload,raw:m[0],match:"full-envelope"});
     }catch{}
     if(m.index===re.lastIndex)re.lastIndex++;
   }
   return out;
+}
+function escapeRegex(s){return String(s||"").replace(/[|\\{}()[\]^$+*?.-]/g,"\\$&")}
+function normalizeVisibilityText(text){return String(text||"").replace(/[\u200B-\u200D\uFEFF]/g,"").replace(/\u00A0/g," ")}
+function visibleIdentityHeader(text,kind,id){
+  id=String(id||"");if(!id)return false;
+  const tag=kind==="result"?"SOKNA-V2-RESULT":"SOKNA-V2-STATUS",field=kind==="result"?"id":"eventId",marker="["+tag+"]";
+  const t=normalizeVisibilityText(text),start=t.indexOf(marker);
+  if(start<0)return false;
+  const head=t.slice(start,Math.min(t.length,start+32768));
+  if(new RegExp('"'+field+'"\\s*:\\s*"'+escapeRegex(id)+'"').test(head))return true;
+  const idPos=head.indexOf(id);
+  return idPos>=0&&idPos<4096;
 }
 function resultVisibleInUserTurn(payload){
   try{
@@ -195,32 +256,39 @@ function resultVisibleInUserTurn(payload){
       lastVisibilityDecision={expectedKind:"unknown",expectedId:"",matchedKind:"",matchedId:"",decision:"not-visible",reason:"invalid-expected-envelope",scope:"none",ts:Date.now()};
       return false;
     }
-    const expectedId=expected.kind==="result"
-      ?String(expected.payload?.id||"")
-      :String(expected.payload?.eventId||"");
+    const expectedId=expected.kind==="result"?String(expected.payload?.id||""):String(expected.payload?.eventId||"");
     const conv=conversationTextsForVisibility();
-    let matched=null;
+    let matched=null,matchReason="";
     for(const text of conv.texts){
       for(const env of extractBridgeEnvelopes(text)){
         if(env.kind!==expected.kind)continue;
         if(expected.kind==="result"){
-          if(expectedId&&String(env.payload?.id||"")===expectedId){matched=env;break}
+          if(expectedId&&String(env.payload?.id||"")===expectedId){matched=env;matchReason="exact-envelope-match";break}
         }else if(expectedId){
-          if(String(env.payload?.eventId||"")===expectedId){matched=env;break}
+          if(String(env.payload?.eventId||"")===expectedId){matched=env;matchReason="exact-envelope-match";break}
         }else if(JSON.stringify(env.payload)===JSON.stringify(expected.payload)){
-          matched=env;break;
+          matched=env;matchReason="exact-envelope-match";break;
         }
       }
       if(matched)break;
+      if(visibleIdentityHeader(text,expected.kind,expectedId)){
+        matched={kind:expected.kind,payload:expected.kind==="result"?{id:expectedId}:{eventId:expectedId},match:"type-id-header"};
+        matchReason="type-id-header-match";
+        break;
+      }
     }
     const matchedId=matched?(matched.kind==="result"?String(matched.payload?.id||""):String(matched.payload?.eventId||"")):"";
+    if(!conv.authoritative){
+      lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched?.kind||"",matchedId,decision:"not-visible",reason:"body-fallback-diagnostic-only",scope:conv.scope,observedIdentity:!!matched,ts:Date.now()};
+      return false;
+    }
     if(!matched){
       lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:"",matchedId:"",decision:"not-visible",reason:"no-type-aware-envelope-match",scope:conv.scope,ts:Date.now()};
       return false;
     }
     const el=composer();
     const stillDraft=!!el&&samePayload(textOf(el),String(payload||""));
-    lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched.kind,matchedId,decision:stillDraft?"not-visible":"existing-bubble",reason:stillDraft?"payload-still-in-composer":"exact-envelope-match",scope:conv.scope,ts:Date.now()};
+    lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched.kind,matchedId,decision:stillDraft?"not-visible":"existing-bubble",reason:stillDraft?"payload-still-in-composer":matchReason,scope:conv.scope,ts:Date.now()};
     return !stillDraft;
   }catch(e){
     lastVisibilityDecision={expectedKind:"unknown",expectedId:"",matchedKind:"",matchedId:"",decision:"not-visible",reason:"visibility-exception:"+String(e),scope:"unknown",ts:Date.now()};
@@ -295,28 +363,39 @@ async function postUserText(text){
     let el=composer();if(!el){await wait(400);continue}
     if(textOf(el).trim())return {ok:false,waiting:true,reason:"user_draft",error:"Composer contains user text."};
     setInput(el,text);await wait(80);el=composer()||el;
+
+    const observe=async method=>{
+      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method}}
+      const cur=composer(),retained=!!cur&&samePayload(textOf(cur),text);
+      return {ok:false,waiting:true,submitted:true,reason:"handshake_submit_unconfirmed",method,bridgeDraftRetained:retained,error:"Handshake submission was attempted once; automatic fallback submit is disabled to prevent duplicate delivery."};
+    };
+
     const b=sendButton(el,text);
     if(b){
-      try{b.click()}catch{}
-      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method:"user-click"}}
+      let fired=false;try{b.click();fired=true}catch{}
+      if(fired)return await observe("user-click");
     }
+
     el=composer()||el;
-    const f=nearestForm(el);if(f&&samePayload(textOf(el),text)){
-      try{if(typeof f.requestSubmit==="function")f.requestSubmit();else f.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}))}catch{}
-      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method:"user-requestSubmit"}}
+    if(!samePayload(textOf(el),text))return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed before handshake fallback submit."};
+    const f=nearestForm(el);
+    if(f){
+      let fired=false;
+      try{if(typeof f.requestSubmit==="function")f.requestSubmit();else f.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}));fired=true}catch{}
+      if(fired)return await observe("user-requestSubmit");
     }
+
     el=composer()||el;
-    if(samePayload(textOf(el),text)){
-      try{
-        const opts={key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true,cancelable:true};
-        el.dispatchEvent(new KeyboardEvent("keydown",opts));el.dispatchEvent(new KeyboardEvent("keypress",opts));el.dispatchEvent(new KeyboardEvent("keyup",opts));
-      }catch{}
-      for(let i=0;i<24;i++){await wait(125);const cur=composer();if(!cur||!samePayload(textOf(cur),text))return {ok:true,method:"user-enter"}}
-    }
+    if(!samePayload(textOf(el),text))return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed before handshake Enter fallback."};
+    let fired=false;
+    try{
+      const opts={key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true,cancelable:true};
+      el.dispatchEvent(new KeyboardEvent("keydown",opts));el.dispatchEvent(new KeyboardEvent("keypress",opts));el.dispatchEvent(new KeyboardEvent("keyup",opts));fired=true;
+    }catch{}
+    if(fired)return await observe("user-enter");
   }
   return {ok:false,waiting:true,reason:"submit_blocked",error:"Handshake text remains in the composer."};
 }
-
 async function post(payload){
   if(window.top!==window)return {ok:false,error:"POST_RESULT must target top frame"};
   if(resultVisibleInUserTurn(payload))return {ok:true,method:"existing-bubble"};
@@ -341,18 +420,16 @@ async function post(payload){
       el=composer()||el;if(sendButton(el,payload))break;await wait(125);
     }
     el=composer()||el;
-    if(await clickAttempt(el,payload))return {ok:true,method:"rbt-click-ack"};
+    const click=await clickAttempt(el,payload),clickOutcome=settleSubmitAttempt(click,payload);
+    if(clickOutcome)return clickOutcome;
     el=composer()||el;
-    if(!textOf(el).trim())return {ok:false,waiting:true,submitted:true,reason:"awaiting_conversation_ack",error:"Result submitted; waiting for conversation ACK."};
-    if(!samePayload(textOf(el),payload))return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed after submit attempt; Bridge stopped to protect user text."};
-    if(await submitAttempt(el,payload))return {ok:true,method:"rbt-requestSubmit-ack"};
+    if(!samePayload(textOf(el),payload))return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed before fallback submit; Bridge stopped to protect user text."};
+    const formSubmit=await submitAttempt(el,payload),formOutcome=settleSubmitAttempt(formSubmit,payload);
+    if(formOutcome)return formOutcome;
     el=composer()||el;
-    if(!textOf(el).trim())return {ok:false,waiting:true,submitted:true,reason:"awaiting_conversation_ack",error:"Result submitted; waiting for conversation ACK."};
-    if(!samePayload(textOf(el),payload))return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed after submit attempt; Bridge stopped to protect user text."};
-    if(await enterAttempt(el,payload))return {ok:true,method:"rbt-enter-ack"};
-    el=composer()||el;
-    if(!textOf(el).trim())return {ok:false,waiting:true,submitted:true,reason:"awaiting_conversation_ack",error:"Result submitted; waiting for conversation ACK."};
-    if(!samePayload(textOf(el),payload))return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed after submit attempt; Bridge stopped to protect user text."};
+    if(!samePayload(textOf(el),payload))return {ok:false,waiting:true,reason:"user_draft",error:"Composer changed before Enter fallback; Bridge stopped to protect user text."};
+    const enter=await enterAttempt(el,payload),enterOutcome=settleSubmitAttempt(enter,payload);
+    if(enterOutcome)return enterOutcome;
     await wait(750);
   }
   const cur=composer(),retained=!!cur&&samePayload(textOf(cur),payload);

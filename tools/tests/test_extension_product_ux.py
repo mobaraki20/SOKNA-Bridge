@@ -9,7 +9,7 @@ def read(path):
     return p.read_text(encoding="utf-8")
 
 manifest=json.loads(read(Path("extension/chrome/manifest.json")))
-assert manifest["version"]=="3.12.5"
+assert manifest["version"]=="3.12.8"
 matches=set()
 for cs in manifest.get("content_scripts",[]):
     matches.update(cs.get("matches",[]))
@@ -18,7 +18,7 @@ assert "https://www.instagram.com/*" in matches, "Instagram origin missing"
 assert "downloads" in manifest.get("permissions",[]), "Instagram media download permission missing"
 
 popup=read(Path("extension/chrome/popup.html"))
-for marker in ["Connect this Chat","Instagram Assistant","Advanced diagnostics","باز کردن Control Center"]:
+for marker in ["Connect this Chat","Instagram Research Assistant","Advanced diagnostics","باز کردن Control Center"]:
     assert marker in popup, f"popup UX missing {marker}"
 assert "Test Credentials" not in popup, "developer credential UI must not be in primary popup"
 
@@ -28,8 +28,11 @@ for marker in ["CONNECT_CHAT","IG_POPUP_DOWNLOAD","IG_POPUP_SCAN","OPEN_CONTROL_
 assert "setInterval" not in popup_js, "popup must not poll Activity continuously"
 
 background=read(Path("extension/chrome/background.js"))
+origin_registry=read(Path("extension/chrome/origin_registry_core.js"))
+for marker in ["https://chatgpt.com","https://gpt.arzanai.com","normalizeOrigin","conversationKey"]:
+    assert marker in origin_registry, f"origin registry missing {marker}"
 for marker in [
-    "chatgpt.com","CONNECT_CHAT","instagram.profile.scan","instagram.scan.search",
+    "CONNECT_CHAT","REGISTER_CHAT_ORIGIN","instagram.profile.scan","instagram.scan.search",
     "instagram.scan.get","instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.selection.confirm","bridge.diagnostics.get","POST_USER_TEXT",
     "delivery_state_core.js","CHECK_RESULT_VISIBLE","chat.delivery_uncertain","SEMANTIC_RESTORE_PROOF"
 ]:

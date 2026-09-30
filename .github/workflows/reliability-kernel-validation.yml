@@ -1,0 +1,34 @@
+name: Reliability Kernel Validation
+on:
+  push:
+    branches: [refactor/reliability-kernel-r9]
+  pull_request:
+    branches: [release/2.7.1]
+permissions:
+  contents: read
+jobs:
+  reliability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: JavaScript syntax
+        run: |
+          for f in extension/chrome/*.js; do node --check "$f"; done
+          for f in tools/tests/*.mjs; do node --check "$f"; done
+      - name: Reliability regression suite
+        run: |
+          set -euo pipefail
+          for f in tools/tests/*.mjs; do
+            echo "=== $f ==="
+            node "$f"
+          done
+      - name: Reliability stress and fault injection
+        run: node tools/tests/test_reliability_stress.mjs
+      - name: Contract Python tests
+        run: |
+          python tools/tests/test_r2_contract_reliability.py
+          python tools/tests/test_r2_session_continuity.py
+          python tools/tests/test_extension_product_ux.py
+          python tools/tests/test_autonomy_bootstrap.py
+          python tools/tests/test_chat_artifact_autopull.py

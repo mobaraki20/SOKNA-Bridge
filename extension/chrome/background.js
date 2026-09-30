@@ -1,10 +1,14 @@
-importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js","delivery_state_core.js");
+importScripts("protocol.js","agent_job_core.js","chat_artifact_core.js","delivery_state_core.js","terminal_outcome_core.js","runtime_state_core.js","origin_registry_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const JOBCORE=globalThis.__SOKNA_AGENT_JOB_CORE_V1__;
 const CHATART=globalThis.__SOKNA_CHAT_ARTIFACT_CORE_V1__;
 const DELIVERY=globalThis.__SOKNA_DELIVERY_STATE_CORE_V1__;
+const TERMINAL=globalThis.__SOKNA_TERMINAL_OUTCOME_CORE_V1__;
+const RUNTIME=globalThis.__SOKNA_RUNTIME_STATE_CORE_V1__;
+const ORIGIN=globalThis.__SOKNA_CHAT_ORIGIN_REGISTRY_V1__;
+const SESSION_GATE=globalThis.__SOKNA_SESSION_GATE_RUNTIME_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.12.5";
+const VERSION="3.12.8";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -28,6 +32,8 @@ const IG_MAX_APPROVALS=20;
 const TRANSPORT_TRACE_KEY="transport_trace_v2";
 const SEMANTIC_FALLBACK_KEY="semantic_fallback_diagnostics_v2";
 const CONTENT_FALLBACK_KEY="content_fallback_diagnostics_v1";
+const CHAT_ORIGINS_KEY="approved_chat_origins_v1";
+const CHAT_SCRIPT_FILES=["protocol.js","semantic_gate.js","semantic_core.js","semantic_intent.js","chat_artifact_core.js","outbound_attachment_core.js","dom_core.js","outbound_attachment.js","content.js"];
 const TRACE_MAX=300;
 const V391_MIGRATION_CUTOFF=1789892342550;
 const RETRY_BASE_MS=3000,RETRY_MAX_MS=60000,MAX_POST_ATTEMPTS=8;
@@ -60,6 +66,11 @@ async function setStatus(tabId,patch){
   a[String(tabId)]=next;await sset("session",{[STATUS_KEY]:a});await paint(tabId,next);return next;
 }
 async function clearStatus(tabId){const a=await statusAll();delete a[String(tabId)];await sset("session",{[STATUS_KEY]:a})}
+async function setExecutionStart(tabId,id,action){const prev=await getStatus(tabId)||{};return await setStatus(tabId,RUNTIME.executionStart(prev,id,action,now()))}
+async function setExecutionFinish(tabId,id,ok,error=""){const prev=await getStatus(tabId)||{};return await setStatus(tabId,RUNTIME.executionFinish(prev,id,ok,error,now()))}
+async function setDeliveryStatus(tabId,recordId,rec,uiState,detail,patch={}){const prev=await getStatus(tabId)||{};return await setStatus(tabId,RUNTIME.deliveryUpdate(prev,{recordId,commandId:deliveryCommandId(recordId,rec),deliveryState:String(rec?.deliveryState||patch.deliveryState||""),uiState,detail,lastError:String(patch.lastError||""),actionRequired:!!patch.actionRequired,transportVerified:patch.transportVerified}))}
+async function clearDeliveryStatus(tabId,recordId,patch={}){const prev=await getStatus(tabId)||{};return await setStatus(tabId,RUNTIME.deliveryClear(prev,recordId,patch))}
+async function setConnectionStatus(tabId,patch={}){const prev=await getStatus(tabId)||{};return await setStatus(tabId,RUNTIME.connectionUpdate(prev,patch))}
 async function jobWatchesAll(){const d=await sget("local",[JOB_WATCH_KEY]);return d[JOB_WATCH_KEY]||{}}
 async function saveJobWatches(v){await sset("local",{[JOB_WATCH_KEY]:v})}
 async function jobWatchDiag(){const d=await sget("local",[JOB_WATCH_DIAG_KEY]);return d[JOB_WATCH_DIAG_KEY]||{}}
@@ -92,10 +103,30 @@ function agentActionsFromBootstrap(b){
   const a=b?.agent_capabilities?.capabilities?.actions||b?.agent_capabilities?.actions||[];
   return Array.isArray(a)?a.map(String).filter(Boolean):[];
 }
-async function extensionBootstrap(command){
+function bootstrapNextAction(b){
+  if(b?.ready===true)return {action:null,reason:"active_session_ready",params:{}};
+  const sessions=Array.isArray(b?.recent_sessions)?b.recent_sessions:[];
+  const resumable=sessions.find(x=>String(x?.state||"").toLowerCase()!=="closed");
+  if(resumable?.id)return {action:"session.resume",reason:"resumable_session_available",params:{id:String(resumable.id)}};
+  return {action:"session.open",reason:"no_ready_session",params:{project:"SOKNA Bridge",phase:"connected"}};
+}
+async function extensionBootstrap(command,tabId=null){
   const b=await agentExec(command),agent_actions=agentActionsFromBootstrap(b),extension_actions=extensionActions();
-  const effective_actions=[...new Set([...agent_actions,...extension_actions])].sort();
-  return {...b,capabilities:{agent_actions,extension_actions,effective_actions},effective_actions};
+  const effective_actions=[...new Set([...agent_actions,...extension_actions])].sort(),recovery_actions=[...(globalThis.__SOKNA_RECOVERY_ACTIONS_V1__||[])].map(String).sort();
+  const armed=Number.isInteger(tabId)?await isArmed(tabId):{armed:false,registered:null},challenge=String(armed?.registered?.intakeChallenge||"");
+  const origins=await approvedChatOrigins();
+  const extension_policy={
+    schema:"sokna-extension-bootstrap-policy-v1",
+    protocol:{version:String(PROTO?.protocolVersion||"2"),schema_version:String(PROTO?.schemaVersion||"2"),max_control_bytes:Number(PROTO?.maxControlBytes||800),max_expanded_command_bytes:Number(PROTO?.maxExpandedCommandBytes||4096)},
+    command:{idempotency_scope:"conversation+command_id",terminal_outcome_required:true,rejection_requires_visible_nack:true},
+    semantic:{transport:"SOKNA-INTENT",nonce_required:!!challenge,nonce_source:challenge?"connection-handshake":"none",route_policy:"semantic-compiler"},
+    delivery:{ack_contract:"user-message-shell+envelope-type+id-v3",body_fallback_positive_ack:false,uncertain_auto_resubmit:false},
+    artifact:{control_payload_max_bytes:Number(b?.control_plane_max_bytes||PROTO?.maxControlBytes||800),artifact_chunk_max_bytes:Number(b?.artifact_chunk_max_bytes||0),large_bytes_route:"Artifact Plane by ref/hash"},
+    recovery_actions,
+    origins:{policy:"explicit-https-user-approval",approved:origins,current:armed?.registered?.url?ORIGIN.normalizeOrigin(armed.registered.url):""},
+    next_action:bootstrapNextAction(b)
+  };
+  return {...b,capabilities:{agent_actions,extension_actions,effective_actions},effective_actions,extension_policy};
 }
 async function connectionProbe(tabId){
   const out={semantic:{ok:false},message_intake:{ready:false},background:true,agent:{ok:false},session:{ready:false},delivery:{ready:false},verified:false};
@@ -119,7 +150,7 @@ async function fullDiagnostics(tabId,conversationKey="",mode="full"){
   let host={ok:false},agent={ok:false},bootstrap={ok:false};
   try{host=await hostPing()}catch(e){host={ok:false,error:String(e)}}
   try{agent=await agentExec(unifiedLocalCommand("ping",{}))}catch(e){agent={ok:false,error:String(e)}}
-  try{bootstrap=await extensionBootstrap(unifiedLocalCommand("bridge.bootstrap",{}))}catch(e){bootstrap={ok:false,error:String(e)}}
+  try{bootstrap=await extensionBootstrap(unifiedLocalCommand("bridge.bootstrap",{}),tabId)}catch(e){bootstrap={ok:false,error:String(e)}}
   const traces=(await transportTraceAll()).filter(x=>!Number.isInteger(tabId)||x.tabId===tabId).slice(bounded?-24:-80);
   const fallback=(await semanticFallbackAll()).slice(bounded?-12:-40),contentFallback=(await contentFallbackAll()).slice(bounded?-12:-40);
   const extensionVersion=chrome.runtime.getManifest?.().version||VERSION;
@@ -147,12 +178,33 @@ async function paint(tabId,st){
   try{await chrome.action.setBadgeText({tabId,text:b.t});await chrome.action.setBadgeBackgroundColor({tabId,color:b.c});await chrome.action.setTitle({tabId,title:`SOKNA Bridge V${VERSION} — ${st?.state||"Ready"}${st?.detail?" — "+st.detail:""}`})}catch{}
 }
 async function clearBadge(tabId){try{await chrome.action.setBadgeText({tabId,text:""});await chrome.action.setTitle({tabId,title:`SOKNA Bridge V${VERSION} — disabled`})}catch{}}
-function conv(url){try{const u=new URL(url);return u.origin+u.pathname}catch{return ""}}
+function conv(url){return ORIGIN?.conversationKey?.(url)||""}
+async function approvedChatOrigins(){const d=await sget("local",[CHAT_ORIGINS_KEY]);return ORIGIN.normalizeList(d[CHAT_ORIGINS_KEY]||[])}
+async function saveApprovedChatOrigins(values){const list=ORIGIN.normalizeList(values);await sset("local",{[CHAT_ORIGINS_KEY]:list});return list}
+async function isSupportedChatUrl(url){const origin=ORIGIN.normalizeOrigin(url);if(!origin)return false;return (await approvedChatOrigins()).includes(origin)}
+async function registerChatOrigin(tabId,url){
+  const origin=ORIGIN.normalizeOrigin(url);if(!origin)return {ok:false,code:"CHAT_ORIGIN_INVALID",error:"Only an explicit HTTPS origin can be enabled."};
+  const pattern=ORIGIN.originPattern(origin),permitted=await chrome.permissions.contains({origins:[pattern]});
+  if(!permitted)return {ok:false,code:"CHAT_ORIGIN_PERMISSION_REQUIRED",origin,pattern,error:"Approve this HTTPS origin from the extension popup first."};
+  const list=await approvedChatOrigins();if(!list.includes(origin)){list.push(origin);await saveApprovedChatOrigins(list)}
+  if(!ORIGIN.isBuiltin(origin)){
+    const id=ORIGIN.scriptId(origin);try{const old=await chrome.scripting.getRegisteredContentScripts({ids:[id]});if(old?.length)await chrome.scripting.unregisterContentScripts({ids:[id]})}catch{}
+    await chrome.scripting.registerContentScripts([{id,matches:[pattern],js:CHAT_SCRIPT_FILES,runAt:"document_start",allFrames:true,matchOriginAsFallback:true,persistAcrossSessions:true}]);
+    if(Number.isInteger(tabId)){try{await chrome.scripting.executeScript({target:{tabId,allFrames:true},files:CHAT_SCRIPT_FILES})}catch(e){return {ok:false,code:"CHAT_ORIGIN_INJECTION_FAILED",origin,error:String(e)}}}
+  }
+  return {ok:true,origin,approved:true,builtin:ORIGIN.isBuiltin(origin),conversationKey:conv(url)};
+}
+async function chatOriginStatus(url){const origin=ORIGIN.normalizeOrigin(url),approved=await approvedChatOrigins();return {ok:true,origin,secure:!!origin,approved:!!origin&&approved.includes(origin),builtin:ORIGIN.isBuiltin(origin),approved_origins:approved,conversationKey:conv(url)}}
+async function rehydrateApprovedChatOrigins(){for(const origin of await approvedChatOrigins()){if(ORIGIN.isBuiltin(origin))continue;const pattern=ORIGIN.originPattern(origin);if(!await chrome.permissions.contains({origins:[pattern]}))continue;const id=ORIGIN.scriptId(origin);try{const old=await chrome.scripting.getRegisteredContentScripts({ids:[id]});if(!old?.length)await chrome.scripting.registerContentScripts([{id,matches:[pattern],js:CHAT_SCRIPT_FILES,runAt:"document_start",allFrames:true,matchOriginAsFallback:true,persistAcrossSessions:true}])}catch{}}}
 function b64urlUtf8(s){
   const bytes=new TextEncoder().encode(String(s));let bin="";for(const b of bytes)bin+=String.fromCharCode(b);
   return btoa(bin).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
 }
 function resultEnvelope(obj){return `[SOKNA-V2-RESULT]${JSON.stringify(obj)}[/SOKNA-V2-RESULT]`}
+function stateHash(s){s=String(s||"");let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0).toString(16).padStart(8,"0")}
+function commandStorageKey(conversationKey,id){return `__cmd__:${stateHash(conversationKey)}:${String(id||"")}`}
+function resultIdOf(recordKey,rec){return String(rec?.commandId||recordKey||"")}
+function deliveryCommandId(recordKey,rec){return String(rec?.parentCommandId||rec?.commandId||recordKey||"")}
 function statusEnvelope(obj){return `[SOKNA-V2-STATUS]${JSON.stringify(obj)}[/SOKNA-V2-STATUS]`}
 const lastTransportDiagByTab=new Map();
 function nativeMessage(msg){return new Promise((resolve,reject)=>chrome.runtime.sendNativeMessage(HOST,msg,r=>{const e=chrome.runtime.lastError;if(e)reject(new Error(e.message));else resolve(r||{})}))}
@@ -195,8 +247,8 @@ async function reconcileAllFrames(tabId){
   for(const f of frames){
     try{
       const rr=await messageFrame(tabId,f.frameId,{type:"RECONCILE"});
-      const persisted=await seenAll();
-      const fresh=(rr?.commands||[]).filter(c=>c?.id&&!persisted[c.id]);
+      const persisted=await seenAll(),armed=await isArmed(tabId),conversationKey=String(armed?.registered?.conversationKey||"");
+      const fresh=(rr?.commands||[]).filter(c=>{if(!c?.id)return false;const k=commandStorageKey(conversationKey,c.id);return !persisted[k]&&!(persisted[c.id]?.conversationKey===conversationKey)});
       for(const c of fresh)await handleCommand(tabId,c);
     }catch{}
   }
@@ -213,12 +265,11 @@ async function diagAllFrames(tabId){
   }
   return out;
 }
-function isSupportedChatUrl(url){try{const u=new URL(String(url||""));return u.protocol==="https:"&&(u.hostname==="chatgpt.com"||u.hostname==="gpt.arzanai.com")}catch{return false}}
 function unifiedLocalCommand(action,params={}){
   const id=uid();return {protocolVersion:"2",messageId:id,correlationId:id,parentId:"",kind:"command",action,schemaVersion:"2",timestamp:now(),id,params}
 }
 async function arm(tabId){
-  const tab=await chrome.tabs.get(tabId);if(!isSupportedChatUrl(tab?.url))return {ok:false,error:"Open chatgpt.com in this tab first."};
+  const tab=await chrome.tabs.get(tabId);if(!await isSupportedChatUrl(tab?.url))return {ok:false,error:"This HTTPS ChatGPT origin is not approved for SOKNA Bridge."};
   await setStatus(tabId,{state:"Working",detail:"Preparing page adapters"});
   let base,sem;
   try{base=await baselineAllFrames(tabId);sem=await semanticTop(tabId,"SEMANTIC_BASELINE")}
@@ -230,16 +281,26 @@ async function arm(tabId){
   await appendTrace(tabId,"semantic.armed",{conversationKey:conv(tab.url),baselineCount:Number(sem?.baseline_count||0)});
   return {ok:true,armed:true,version:VERSION,conversationKey:conv(tab.url),baselineCount:Number(sem?.baseline_count||0),transport_verified:false};
 }
+async function migrateArmedConversationIfProvisional(tabId,url){
+  const all=await armedAll(),r=all[String(tabId)];if(!r)return null;
+  const oldUrl=String(r.url||""),oldOrigin=ORIGIN.normalizeOrigin(oldUrl),newOrigin=ORIGIN.normalizeOrigin(url),oldId=ORIGIN.conversationId(oldUrl),newId=ORIGIN.conversationId(url);
+  if(oldOrigin&&oldOrigin===newOrigin&&!oldId&&newId){
+    const oldKey=String(r.conversationKey||""),newKey=conv(url);r.url=url;r.conversationKey=newKey;
+    if(r.intakeProof&&String(r.intakeProof.conversationKey||"")===oldKey)r.intakeProof={...r.intakeProof,conversationKey:newKey};
+    all[String(tabId)]=r;await saveArmed(all);await SESSION_GATE?.markTab?.(tabId,url);await appendTrace(tabId,"conversation.identity_migrated",{from:oldKey,to:newKey});return r;
+  }
+  return r;
+}
 async function disarm(tabId){
   try{
     for(const f of await frameList(tabId)){try{await messageFrame(tabId,f.frameId,{type:"STOP"})}catch{}}
   }catch{}
   const a=await armedAll();delete a[String(tabId)];await saveArmed(a);
-  await clearRetryAlarm(tabId);await clearStatus(tabId);await clearBadge(tabId);return {ok:true,armed:false}
+  await SESSION_GATE?.clearTab?.(tabId);await clearRetryAlarm(tabId);await clearStatus(tabId);await clearBadge(tabId);return {ok:true,armed:false}
 }
 
 async function connectChat(tabId){
-  const tab=await chrome.tabs.get(tabId);if(!isSupportedChatUrl(tab?.url))return {ok:false,error:"Open ChatGPT first."};
+  const tab=await chrome.tabs.get(tabId);if(!await isSupportedChatUrl(tab?.url))return {ok:false,error:"This HTTPS ChatGPT origin is not approved for SOKNA Bridge."};
   const armed=await arm(tabId);if(!armed?.ok)return armed;
   let boot=await agentExec(unifiedLocalCommand("bridge.bootstrap",{}));
   let session=boot?.active_session||null;
@@ -249,6 +310,7 @@ async function connectChat(tabId){
     session=opened?.session||session;
     boot=await agentExec(unifiedLocalCommand("bridge.bootstrap",{}));
   }
+  await SESSION_GATE?.markTab?.(tabId,tab.url);
   const challenge=("probe-"+uid()).slice(0,96);
   try{
     const sc=await semanticTop(tabId,"SEMANTIC_SET_CHALLENGE",{challenge});
@@ -315,12 +377,12 @@ async function postPendingInner(tabId,id,rec,force=false){
     return {ok:false,waiting:true,reason:"backoff"};
   }
   if(mode==="uncertain"){
-    await setStatus(tabId,{state:"Needs Action",detail:`Delivery uncertain for ${id}`,currentCommandId:id,lastError:"Conversation ACK was not observed before the safety deadline. Result will not be re-submitted automatically.",actionRequired:true});
+    await setDeliveryStatus(tabId,id,rec,"Needs Action",`Delivery uncertain for ${id}`,{lastError:"Conversation ACK was not observed before the safety deadline. Result will not be re-submitted automatically.",actionRequired:true});
     return {ok:false,waiting:false,reason:"delivery_uncertain"};
   }
 
   const isStatusEvent=rec.kind==="transport-nack"||rec.kind==="status-event";
-  const env=isStatusEvent?statusEnvelope({eventId:id,...rec.result}):resultEnvelope({id,...rec.result});
+  const env=isStatusEvent?statusEnvelope({eventId:id,...rec.result}):resultEnvelope({id:resultIdOf(id,rec),...rec.result});
 
   if(mode==="ack_poll"){
     await appendTrace(tabId,"chat.delivery_ack_poll",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_poll:Number(rec.ackPolls||0)+1});
@@ -332,17 +394,18 @@ async function postPendingInner(tabId,id,rec,force=false){
     if(outcome.state==="acknowledged"){
       await clearRetryAlarm(tabId);
       await appendTrace(tabId,"chat.delivery_completed",{record_id:id,kind:rec.kind||"result",method:"conversation-ack"});
-      await setStatus(tabId,{state:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,...(isStatusEvent?{}:{lastCompletedCommandId:id}),lastPostMethod:"conversation-ack",currentCommandId:"",lastError:"",actionRequired:false});
+      await clearDeliveryStatus(tabId,id,{uiState:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,lastError:"",actionRequired:false});
+      await setStatus(tabId,{...(isStatusEvent?{}:{lastCompletedCommandId:resultIdOf(id,rec)}),lastPostMethod:"conversation-ack"});
       setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
       return {ok:true,method:"conversation-ack"};
     }
     if(outcome.state==="delivery_uncertain"){
       await appendTrace(tabId,"chat.delivery_uncertain",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_polls:Number(rec.ackPolls||0),submitted_at:Number(rec.submittedAt||0)});
-      await setStatus(tabId,{state:"Needs Action",detail:`Delivery uncertain for ${id}`,currentCommandId:id,lastError:"Conversation ACK was not observed before the safety deadline. Result was submitted once and will not be sent again automatically.",actionRequired:true});
+      await setDeliveryStatus(tabId,id,rec,"Needs Action",`Delivery uncertain for ${id}`,{lastError:"Conversation ACK was not observed before the safety deadline. Result was submitted once and will not be sent again automatically.",actionRequired:true});
       setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
       return {ok:false,waiting:false,reason:"delivery_uncertain"};
     }
-    await setStatus(tabId,{state:"Waiting",detail:`Submitted ${id}; waiting for conversation ACK`,currentCommandId:id,lastError:"",actionRequired:false});
+    await setDeliveryStatus(tabId,id,rec,"Waiting",`Submitted ${id}; waiting for conversation ACK`,{lastError:"",actionRequired:false});
     if(rec.nextPostAt)await scheduleRetryAlarm(tabId,rec.nextPostAt);
     const delay=Math.max(500,(rec.nextPostAt||now()+DELIVERY.ACK_POLL_MS)-now());
     setTimeout(()=>retryPending(tabId).catch(()=>{}),delay);
@@ -350,7 +413,7 @@ async function postPendingInner(tabId,id,rec,force=false){
   }
 
   await appendTrace(tabId,"chat.delivery_started",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id)});
-  await setStatus(tabId,{state:"Posting",detail:`Sending ${id}`,currentCommandId:id,actionRequired:false});
+  await setDeliveryStatus(tabId,id,rec,"Posting",`Sending ${id}`,{lastError:"",actionRequired:false,deliveryState:"queued"});
   let p;try{p=await chrome.tabs.sendMessage(tabId,{type:"POST_RESULT",envelope:env},{frameId:0})}catch(e){p={ok:false,waiting:true,reason:"page_unavailable",error:String(e)}}
 
   seen=await seenAll();
@@ -372,13 +435,14 @@ async function postPendingInner(tabId,id,rec,force=false){
 
   if(p?.ok){
     await appendTrace(tabId,"chat.delivery_completed",{record_id:id,kind:rec.kind||"result",method:String(p.method||"")});
-    await setStatus(tabId,{state:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,...(isStatusEvent?{}:{lastCompletedCommandId:id}),lastPostMethod:p.method||"",currentCommandId:"",lastError:"",actionRequired:false});
+    await clearDeliveryStatus(tabId,id,{uiState:"Ready",detail:"Connected — End-to-End Verified",transportVerified:true,lastError:"",actionRequired:false});
+    await setStatus(tabId,{...(isStatusEvent?{}:{lastCompletedCommandId:resultIdOf(id,rec)}),lastPostMethod:p.method||""});
     setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
     return {ok:true};
   }
   if(rec?.deliveryState==="submitted_awaiting_ack"){
     await appendTrace(tabId,"chat.delivery_submitted",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_deadline_at:Number(rec.ackDeadlineAt||0)});
-    await setStatus(tabId,{state:"Waiting",detail:`Submitted ${id}; waiting for conversation ACK`,currentCommandId:id,lastError:"",actionRequired:false});
+    await setDeliveryStatus(tabId,id,rec,"Waiting",`Submitted ${id}; waiting for conversation ACK`,{lastError:"",actionRequired:false});
     const delay=Math.max(500,(rec.nextPostAt||now()+DELIVERY.ACK_POLL_MS)-now());
     setTimeout(()=>retryPending(tabId).catch(()=>{}),delay);
     return {ok:false,waiting:true,submitted:true,reason:"awaiting_conversation_ack"};
@@ -387,9 +451,9 @@ async function postPendingInner(tabId,id,rec,force=false){
   await appendTrace(tabId,"chat.delivery_failed",{record_id:id,kind:rec.kind||"result",reason:String(p?.reason||"retry"),error:String(p?.error||"Submit failed")});
   const exhausted=(rec?.postAttempts||0)>=MAX_POST_ATTEMPTS&&!p?.waiting;
   if(exhausted){
-    await setStatus(tabId,{state:"Needs Action",detail:"Queued result needs attention",currentCommandId:id,lastError:p?.error||"Submit failed",actionRequired:true});
+    await setDeliveryStatus(tabId,id,rec,"Needs Action","Queued result needs attention",{lastError:p?.error||"Submit failed",actionRequired:true});
   }else{
-    await setStatus(tabId,{state:"Waiting",detail:`Queued ${id}: ${p?.reason||"retry"}`,currentCommandId:id,lastError:p?.error||"",actionRequired:false});
+    await setDeliveryStatus(tabId,id,rec,"Waiting",`Queued ${id}: ${p?.reason||"retry"}`,{lastError:p?.error||"",actionRequired:false});
     const delay=Math.max(1000,(rec?.nextPostAt||now()+RETRY_BASE_MS)-now());
     setTimeout(()=>retryPending(tabId).catch(()=>{}),delay);
   }
@@ -860,7 +924,7 @@ async function queueTransportNack(t,d){
   const ref=cid;
   const k=`__nack__:${ref}:${d.reason||"rejected"}`;
   let s=await seenAll();if(s[k]?.posted)return{ok:true,duplicate:true};
-  if(!s[k])s[k]={state:"done",kind:"transport-nack",ts:now(),conversationKey:a.registered.conversationKey,posted:false,result:{kind:"transport-nack",commandId:d.commandId||"",transportRef:d.transportRef||"",reason:d.reason||"rejected",executed:false,retryable:true,source:d.source||"",error:d.error||"",payloadBytes:d.payloadBytes??null,maxBytes:d.maxBytes??null}};
+  if(!s[k])s[k]={state:"done",kind:"transport-nack",ts:now(),conversationKey:a.registered.conversationKey,posted:false,result:{kind:"transport-nack",...TERMINAL.terminalEvent(d)}};
   await saveSeen(s);return await postPending(t,k,s[k]);
 }
 const commandTails=new Map();
@@ -879,8 +943,10 @@ async function handleCommandInner(tabId,command,meta={}){
   const a=await isArmed(tabId);if(!a.armed)return {ok:false,ignored:true};
   await appendTrace(tabId,"background.received",{command_id:String(command?.id||""),action:String(command?.action||""),trigger:String(meta?.trigger||""),attempt_key:String(meta?.attemptKey||"")});
   let seen=await seenAll();
-  if(seen[command.id]){
-    const original=seen[command.id];
+  const commandKey=commandStorageKey(a.registered.conversationKey,command.id);
+  const legacy=(seen[command.id]?.conversationKey===a.registered.conversationKey)?seen[command.id]:null;
+  const original=seen[commandKey]||legacy;
+  if(original){
     await appendTrace(tabId,"semantic.duplicate",{command_id:command.id,action:command.action,original_state:String(original?.state||""),trigger:String(meta?.trigger||"")});
     if(String(meta?.trigger||"")==="reconcile")return {ok:true,duplicate:true,state:original.state,reconcile_duplicate:true};
     const result={kind:"duplicate",status:"duplicate",commandId:command.id,correlationId:command.correlationId||command.id,action:command.action,executed:false,original_command_id:command.id,original_state:String(original?.state||""),original_result_ref:resultRefOf(original,command.id)};
@@ -888,14 +954,15 @@ async function handleCommandInner(tabId,command,meta={}){
     const q=await queueStatusEvent(tabId,a.registered.conversationKey,key,command.id,result);
     return {ok:true,duplicate:true,state:original.state,status_event:q};
   }
-  const acceptedAt=now();seen[command.id]={state:"running",ts:acceptedAt,acceptedAt,ackAt:acceptedAt,conversationKey:a.registered.conversationKey,sessionId:a.registered.conversationKey,sequence:acceptedAt,action:command.action,posted:false};await saveSeen(seen);
-  await setStatus(tabId,{state:"Working",detail:`Executing ${command.action}`,currentCommandId:command.id,etaMs:null,etaConfidence:"unknown"});
+  const acceptedAt=now();seen[commandKey]={state:"running",commandId:command.id,ts:acceptedAt,acceptedAt,ackAt:acceptedAt,conversationKey:a.registered.conversationKey,sessionId:a.registered.conversationKey,sequence:acceptedAt,action:command.action,posted:false};await saveSeen(seen);
+  await setExecutionStart(tabId,command.id,command.action);
+  await setStatus(tabId,{etaMs:null,etaConfidence:"unknown"});
   await appendTrace(tabId,"agent.forward_started",{command_id:command.id,action:command.action});
   await queueStatusEvent(tabId,a.registered.conversationKey,"accepted:"+command.id,command.id,{kind:"command-accepted",status:"accepted",commandId:command.id,correlationId:command.correlationId||command.id,action:command.action,accepted_at:acceptedAt});
   let result;
   try{
     if(command.action==="artifact.chat.apply")result=await registerChatArtifactApply(tabId,command,a.registered.conversationKey);
-    else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command);
+    else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command,tabId);
     else if(command.action==="bridge.diagnostics.get")result=await fullDiagnostics(tabId,a.registered.conversationKey,"bounded");
     else if(command.action==="instagram.adapter.status")result=await instagramAdapterStatus(command.params||{});
     else if(command.action==="instagram.profile.scan")result=await instagramProfileScan(command.params||{});
@@ -914,9 +981,11 @@ async function handleCommandInner(tabId,command,meta={}){
     await appendTrace(tabId,"agent.accepted",{command_id:command.id,action:command.action,ok:result?.ok!==false});
   }catch(e){result={ok:false,error:String(e)};await appendTrace(tabId,"agent.forward_failed",{command_id:command.id,action:command.action,error:String(e)})}
   for(const submitted of JOBCORE.findSubmittedJobs(command.action,result)){try{await registerJobWatch(tabId,command.id,submitted,a.registered.conversationKey)}catch{}}
-  seen=await seenAll();seen[command.id]={...(seen[command.id]||{}),state:"done",completedAt:now(),result,posted:false};await saveSeen(seen);
+  seen=await seenAll();seen[commandKey]={...(seen[commandKey]||{}),state:"done",commandId:command.id,completedAt:now(),result,posted:false};await saveSeen(seen);
   await appendTrace(tabId,"result.received",{command_id:command.id,action:command.action,ok:result?.ok!==false});
-  return await postPending(tabId,command.id,seen[command.id]);
+  await setExecutionFinish(tabId,command.id,result?.ok!==false,String(result?.error||""));
+  const delivery=await postPending(tabId,commandKey,seen[commandKey]);
+  return {ok:true,executed:true,result_ok:result?.ok!==false,delivery};
 }
 function classifyPending(seen,registered,t=now(),force=false){
   const retryEligible=[],deferred=[],stale=[],suppressed=[],uncertain=[];
@@ -958,6 +1027,8 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   (async()=>{
     try{
       const tabId=m.tabId??sender.tab?.id;
+      if(m.type==="CHAT_ORIGIN_STATUS")return reply(await chatOriginStatus(m.url||sender.tab?.url||""));
+      if(m.type==="REGISTER_CHAT_ORIGIN")return reply(await registerChatOrigin(tabId,m.url||sender.tab?.url||""));
       if(m.type==="CONNECT_CHAT")return reply(await connectChat(tabId));
       if(m.type==="ARM")return reply(await arm(tabId));
       if(m.type==="DISARM")return reply(await disarm(tabId));
@@ -984,10 +1055,13 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
       }
       if(m.type==="TRANSPORT_DIAG"){
         const d=m.diagnostic||{};await setStatus(tabId,{lastTransportDiagnostic:d});
-        const hard=new Set(["contract_budget_exceeded","contract_payload_budget_exceeded","invalid_base64url","invalid_json","invalid_compact_command","invalid_outer_id","outer_id_mismatch","carrier_parse_failed","carrier_incomplete"]);
         const correlated=VALID_COMMAND_ID.test(String(d.commandId||""));
-        if(d.final===true&&hard.has(d.reason)&&correlated)return reply(await queueTransportNack(tabId,d));
-        return reply({ok:true,recorded:true,uncorrelated:d.final===true&&hard.has(d.reason)&&!correlated});
+        if(TERMINAL?.isTerminalCommandRejection?.(d)){
+          const queued=await queueTransportNack(tabId,d);
+          await appendTrace(tabId,"command.terminal_rejected",{command_id:String(d.commandId||""),code:TERMINAL.code(d),reason:String(d.reason||""),retryable:!!d.retryable,recovery_action:TERMINAL.recoveryAction(d)});
+          return reply(TERMINAL.response(d,{nack_queued:queued?.ok!==false||!!queued?.duplicate,delivery:queued}));
+        }
+        return reply({ok:true,recorded:true,uncorrelated:d.final===true&&d.executed===false&&!correlated});
       }
       if(m.type==="RECHECK_DELIVERY"){
         const a=await isArmed(tabId,m.conversationKey||"");
@@ -1002,9 +1076,11 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
       }
       if(m.type==="DELIVERY_READY"){const a=await isArmed(tabId);if(a.armed)retryPending(tabId,!!m.force).catch(()=>{});return reply({ok:true,armed:a.armed})}
       if(m.type==="CONTENT_READY"){
+        const currentUrl=sender.tab?.url||m.url||"";
+        await migrateArmedConversationIfProvisional(tabId,currentUrl);
         const a=await isArmed(tabId);
         if(a.armed){
-          const currentKey=conv(sender.tab?.url||m.url||"");
+          const currentKey=conv(currentUrl);
           if(currentKey&&a.registered?.conversationKey&&currentKey!==a.registered.conversationKey)return reply({ok:true,armed:false,reason:"conversation changed"});
           const frameId=Number.isInteger(sender.frameId)?sender.frameId:0,isTop=frameId===0||m.topFrame===true;
           try{
@@ -1054,17 +1130,18 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
           const nextState=hasUncertain?"Needs Action":(probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action"));
           const detail=hasUncertain?"Delivery uncertain — review queued result":(probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable"))));
           const lastError=hasUncertain?"A submitted result was not acknowledged before the safety deadline; automatic re-send is disabled.":(probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||""));
-          status=await setStatus(tabId,{state:nextState,detail,transportVerified:!!probe.verified&&!hasUncertain,connectionProbe:probe,actionRequired:nextState==="Needs Action",lastError});
+          status=await setConnectionStatus(tabId,{state:nextState,detail,transportVerified:!!probe.verified&&!hasUncertain,connectionProbe:probe,actionRequired:nextState==="Needs Action",lastError});
         }
         const jobWatches=await jobWatchesAll(),jobWatchIds=Object.keys(jobWatches),jobWatchCount=jobWatchIds.length,jobDiag=await jobWatchDiag();
         const chatTransfers=await chatTransfersAll(),chatTransferIds=Object.keys(chatTransfers),chatDiag=await chatTransferDiag();
-        const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame),activePostCount=status?.state==="Posting"&&status?.currentCommandId?1:0;
-        const currentRec=(status?.currentCommandId&&seen[status.currentCommandId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||pending.uncertain[0]?.[1]||null;
+        const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame),activePostCount=status?.deliveryState==="queued"||status?.state==="Posting"?1:0;
+        const deliveryRecordId=String(status?.deliveryPendingRecordId||"");
+        const currentRec=(deliveryRecordId&&seen[deliveryRecordId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||pending.uncertain[0]?.[1]||null;
         const nextRetryAt=Number(currentRec?.nextPostAt||0),dprobe=top?.deliveryProbe||{};
         const child=pageDiagnostics.filter(x=>!x?.topFrame),childReady=child.filter(x=>x?.ok&&x.armed===a.armed).length,childFailed=child.length-childReady;
         const health={
           runtimeVersion:VERSION,armed:a.armed,transportVerified:status?.transportVerified===true,conversationKeySuffix:(registered?.conversationKey||"").slice(-12),
-          state:status?.state||"Ready",currentCommandId:status?.currentCommandId||"",
+          state:status?.state||"Ready",currentCommandId:status?.executionCurrentCommandId||status?.currentCommandId||"",executionState:status?.executionState||"idle",deliveryPendingRecordId:status?.deliveryPendingRecordId||"",deliveryPendingCommandId:status?.deliveryPendingCommandId||"",
           pendingRetryEligibleCount:pending.retryEligible.length,deferredPendingCount:pending.deferred.length,uncertainPendingCount:pending.uncertain.length,staleUnpostedCount:pending.stale.length,suppressedCount:pending.suppressed.length,activePostCount,
           waitReason:currentRec?.waitReason||"",deliveryState:currentRec?.deliveryState||"",submitted:!!currentRec?.submitted,ackPolls:Number(currentRec?.ackPolls||0),ackDeadlineAt:Number(currentRec?.ackDeadlineAt||0),postAttempts:Number(currentRec?.postAttempts||0),nextRetryAt,nextRetryInMs:nextRetryAt?Math.max(0,nextRetryAt-now()):0,
           sendControlReady:!!dprobe.chosenSend&&!dprobe.chosenSend.disabled&&dprobe.chosenSend.ariaDisabled!=="true",composerTextLen:Number(dprobe.composer?.textLen||0),composerKind:dprobe.composerKind||"",
@@ -1122,3 +1199,5 @@ ensureRetryAlarm().catch(()=>{});
 resumeJobWatches().catch(()=>{});
 resumeChatTransfers().catch(()=>{});
 chrome.tabs.onRemoved.addListener(tabId=>{disarm(tabId).catch(()=>{})});
+
+rehydrateApprovedChatOrigins().catch(()=>{});

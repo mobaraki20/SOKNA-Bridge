@@ -5,7 +5,7 @@ const log=document.getElementById("log"),status=document.getElementById("status"
 const native=m=>new Promise((resolve,reject)=>chrome.runtime.sendNativeMessage(HOST,m,r=>{const e=chrome.runtime.lastError;if(e)reject(new Error(e.message));else resolve(r||{})}));
 const command=(action,params={})=>PROTO.commandEnvelope({id:uid("selftest"),action,params});
 async function step(name,fn){say(name+"…");const r=await fn();say("  "+(r==="skip"?"SKIP":"PASS"))}
-async function chatTab(){const a=await chrome.tabs.query({url:["https://chatgpt.com/*","https://gpt.arzanai.com/*"]});return a.find(x=>x.active)||a[0]||null}
+async function chatTab(){const a=await chrome.tabs.query({});const approved=[];for(const t of a){if(!/^https:\/\//i.test(String(t.url||"")))continue;try{const s=await chrome.runtime.sendMessage({type:"CHAT_ORIGIN_STATUS",url:t.url});if(s?.approved)approved.push(t)}catch{}}return approved.find(x=>x.active)||approved[0]||null}
 (async()=>{try{
   if(!PROTO||!CORE)throw new Error("Current semantic protocol modules are unavailable");
   await step("1/8 Protocol v2 envelope validation",async()=>{const c=command("ping",{});if(!PROTO.validateEnvelope(c,{kind:"command"})?.ok)throw new Error("valid command rejected");if(PROTO.validateEnvelope({...c,protocolVersion:"1"},{kind:"command"})?.ok)throw new Error("unsupported protocol accepted");if(PROTO.bytes("سلام")<=4)throw new Error("UTF-8 byte accounting failed")});
