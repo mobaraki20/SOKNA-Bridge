@@ -81,6 +81,8 @@ def test_real_browser_fill_uses_opaque_ref_and_private_native_resolve():
     assert 'type:"credential.resolve"' in b
     assert 'delete args.credential_ref' in b
     assert 'delete args.credential_field' in b
+    assert 'finally{' in b
+    assert 'resolvedSecret&&args&&Object.prototype.hasOwnProperty.call(args,"value")' in b
     assert 'value=await resolveCredentialField' in b
     h = text(HOST)
     assert '"credential.resolve"' in h
