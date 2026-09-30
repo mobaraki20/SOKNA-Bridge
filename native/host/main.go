@@ -45,12 +45,13 @@ type InstallLocator struct {
 }
 
 type CommandEnvelope struct {
-	ID            string          `json:"id"`
-	Action        string          `json:"action"`
-	Params        json.RawMessage `json:"params"`
-	MessageID     string          `json:"messageId"`
-	CorrelationID string          `json:"correlationId"`
-	ParentID      string          `json:"parentId"`
+	ID              string          `json:"id"`
+	Action          string          `json:"action"`
+	Params          json.RawMessage `json:"params"`
+	MessageID       string          `json:"messageId"`
+	CorrelationID   string          `json:"correlationId"`
+	ParentID        string          `json:"parentId"`
+	ConversationKey string          `json:"conversationKey,omitempty"`
 }
 
 type JobRecord struct {
