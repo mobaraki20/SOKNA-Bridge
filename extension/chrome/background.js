@@ -565,16 +565,18 @@ async function postPendingInner(tabId,id,rec,force=false){
   }
 
   const mode=DELIVERY.mode(rec,now(),force);
-  if(mode==="none")return {ok:true,duplicate:true,reason:"already_acknowledged"};
+  if(mode==="none")return rec.deliveryState==="presentation_expired"?{ok:true,presentation_final:true,reason:"presentation_expired"}:{ok:true,duplicate:true,reason:"already_acknowledged"};
+  if(mode==="expire"){
+    rec=DELIVERY.markPresentationExpired(rec,now());seen[id]={...(seen[id]||{}),...rec};await saveSeen(seen);await clearRetryAlarm(tabId);
+    await appendTrace(tabId,"chat.presentation_expired",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_polls:Number(rec.ackPolls||0)});
+    await clearDeliveryStatus(tabId,id,{uiState:"Ready",detail:"Connected — durable result retained; presentation ACK not observed",transportVerified:true,lastError:"",actionRequired:false});
+    setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
+    return {ok:true,presentation_final:true,reason:"presentation_expired"};
+  }
   if(mode==="deferred"){
     if(rec.nextPostAt)await scheduleRetryAlarm(tabId,rec.nextPostAt);
     return {ok:false,waiting:true,reason:"backoff"};
   }
-  if(mode==="uncertain"){
-    await setDeliveryStatus(tabId,id,rec,"Needs Action",`Delivery uncertain for ${id}`,{lastError:"Conversation ACK was not observed before the safety deadline. Result will not be re-submitted automatically.",actionRequired:true});
-    return {ok:false,waiting:false,reason:"delivery_uncertain"};
-  }
-
   const isStatusEvent=rec.kind==="transport-nack"||rec.kind==="status-event";
   const env=isStatusEvent?statusEnvelope({eventId:id,...rec.result}):resultEnvelope({id:resultIdOf(id,rec),...rec.result});
 
@@ -593,11 +595,12 @@ async function postPendingInner(tabId,id,rec,force=false){
       setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
       return {ok:true,method:"conversation-ack"};
     }
-    if(outcome.state==="delivery_uncertain"){
-      await appendTrace(tabId,"chat.delivery_uncertain",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_polls:Number(rec.ackPolls||0),submitted_at:Number(rec.submittedAt||0)});
-      await setDeliveryStatus(tabId,id,rec,"Needs Action",`Delivery uncertain for ${id}`,{lastError:"Conversation ACK was not observed before the safety deadline. Result was submitted once and will not be sent again automatically.",actionRequired:true});
+    if(outcome.state==="presentation_expired"){
+      await clearRetryAlarm(tabId);
+      await appendTrace(tabId,"chat.presentation_expired",{record_id:id,kind:rec.kind||"result",command_id:String(rec.parentCommandId||id),ack_polls:Number(rec.ackPolls||0),submitted_at:Number(rec.submittedAt||0),manual_visibility_checks:Number(rec.manualVisibilityChecks||0)});
+      await clearDeliveryStatus(tabId,id,{uiState:"Ready",detail:"Connected — durable result retained; presentation ACK not observed",transportVerified:true,lastError:"",actionRequired:false});
       setTimeout(()=>retryPending(tabId).catch(()=>{}),250);
-      return {ok:false,waiting:false,reason:"delivery_uncertain"};
+      return {ok:true,presentation_final:true,reason:"presentation_expired"};
     }
     await setDeliveryStatus(tabId,id,rec,"Waiting",`Submitted ${id}; waiting for conversation ACK`,{lastError:"",actionRequired:false});
     if(rec.nextPostAt)await scheduleRetryAlarm(tabId,rec.nextPostAt);
@@ -1223,7 +1226,7 @@ async function handleCommandInner(tabId,command,meta={}){
   return {ok:true,executed:true,result_ok:result?.ok!==false,delivery};
 }
 function classifyPending(seen,registered,t=now(),force=false){
-  const retryEligible=[],deferred=[],stale=[],suppressed=[],uncertain=[];
+  const retryEligible=[],deferred=[],stale=[],suppressed=[],expired=[];
   const conversationKey=registered?.conversationKey||"",armedAt=registered?.armedAt||0;
   for(const [id,raw] of Object.entries(seen||{})){
     if(raw?.state!=="done"||raw?.posted)continue;
@@ -1234,14 +1237,15 @@ function classifyPending(seen,registered,t=now(),force=false){
     if(r?.kind==="transport-nack"&&(r?.ts||0)<armedAt){stale.push([id,r,"pre_arm_nack"]);continue}
     if(JOBCORE.shouldBlockStatusEvent(id,r,seen,conversationKey)){deferred.push([id,r,"result_first_barrier"]);continue}
     const mode=DELIVERY.mode(r,t,force);
-    if(mode==="uncertain"){uncertain.push([id,r,"delivery_uncertain"]);continue}
+    if(r.deliveryState==="presentation_expired"){expired.push([id,r,"presentation_expired"]);continue}
+    if(mode==="expire"){retryEligible.push([id,r,"expire"]);continue}
     if(mode==="deferred"){deferred.push([id,r,"backoff"]);continue}
     if(mode==="none")continue;
     retryEligible.push([id,r,mode]);
   }
   const byAge=(x,y)=>(x[1].acceptedAt||x[1].ts||0)-(y[1].acceptedAt||y[1].ts||0);
-  retryEligible.sort(byAge);deferred.sort(byAge);stale.sort(byAge);suppressed.sort(byAge);uncertain.sort(byAge);
-  return {retryEligible,deferred,stale,suppressed,uncertain};
+  retryEligible.sort(byAge);deferred.sort(byAge);stale.sort(byAge);suppressed.sort(byAge);expired.sort(byAge);
+  return {retryEligible,deferred,stale,suppressed,expired,uncertain:[]};
 }
 async function retryPending(tabId,force=false){
   const a=await isArmed(tabId);if(!a.armed)return {ok:false,reason:"not_armed"};
@@ -1255,7 +1259,7 @@ async function retryPending(tabId,force=false){
   const c=classifyPending(seen,a.registered,now(),force);
   const p=c.retryEligible[0];
   if(p)return await postPending(tabId,p[0],p[1],force);
-  return {ok:false,reason:c.deferred.length?c.deferred[0][2]:(c.uncertain.length?"delivery_uncertain":"no_eligible")};
+  return {ok:false,reason:c.deferred.length?c.deferred[0][2]:"no_eligible"};
 }
 
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
@@ -1305,8 +1309,8 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         if(!a.armed)return reply({ok:false,error:"Chat is not armed"});
         const seen=await seenAll(),pending=classifyPending(seen,a.registered,now(),false);
         const wanted=String(m.recordId||"");
-        const target=wanted?pending.uncertain.find(x=>x[0]===wanted):pending.uncertain[0];
-        if(!target)return reply({ok:false,reason:"no_uncertain_delivery",error:"No delivery_uncertain record is pending for this conversation"});
+        const target=wanted?pending.expired.find(x=>x[0]===wanted):pending.expired[0];
+        if(!target)return reply({ok:false,reason:"no_expired_presentation",error:"No presentation-expired record is available for this conversation"});
         const result=await postPending(tabId,target[0],target[1],true);
         await appendTrace(tabId,"chat.delivery_manual_recheck",{record_id:target[0],ok:!!result?.ok,reason:String(result?.reason||"")});
         return reply({...result,record_id:target[0],visibility_only:true,resubmitted:false});
@@ -1363,23 +1367,22 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
         const probe=a.armed?await connectionProbe(tabId):{verified:false};
         let status=await getStatus(tabId);
         if(a.armed){
-          const hasUncertain=pending.uncertain.length>0;
-          const nextState=hasUncertain?"Needs Action":(probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action"));
-          const detail=hasUncertain?"Delivery uncertain — review queued result":(probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable"))));
-          const lastError=hasUncertain?"A submitted result was not acknowledged before the safety deadline; automatic re-send is disabled.":(probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||""));
-          status=await setConnectionStatus(tabId,{state:nextState,detail,transportVerified:!!probe.verified&&!hasUncertain,connectionProbe:probe,actionRequired:nextState==="Needs Action",lastError});
+          const nextState=probe.verified?"Ready":(probe.agent?.ok?"Waiting":"Needs Action");
+          const detail=probe.verified?"Connected — End-to-End Verified":(!probe.semantic?.ok?"Connected — Transport Unverified":(!probe.message_intake?.ready?"Connected — Message Intake Unverified":(!probe.agent?.ok?"Connected — Agent Unreachable":"Connected — Delivery Unavailable")));
+          const lastError=probe.verified?"":String(probe.semantic?.error||probe.agent?.error||probe.delivery?.error||"");
+          status=await setConnectionStatus(tabId,{state:nextState,detail,transportVerified:!!probe.verified,connectionProbe:probe,actionRequired:nextState==="Needs Action",lastError});
         }
         const jobWatches=await jobWatchesAll(),jobWatchIds=Object.keys(jobWatches),jobWatchCount=jobWatchIds.length,jobDiag=await jobWatchDiag();
         const chatTransfers=await chatTransfersAll(),chatTransferIds=Object.keys(chatTransfers),chatDiag=await chatTransferDiag();
         const top=pageDiagnostics.find(x=>x?.ok&&x.topFrame),activePostCount=status?.deliveryState==="queued"||status?.state==="Posting"?1:0;
         const deliveryRecordId=String(status?.deliveryPendingRecordId||"");
-        const currentRec=(deliveryRecordId&&seen[deliveryRecordId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||pending.uncertain[0]?.[1]||null;
+        const currentRec=(deliveryRecordId&&seen[deliveryRecordId])||pending.retryEligible[0]?.[1]||pending.deferred[0]?.[1]||null;
         const nextRetryAt=Number(currentRec?.nextPostAt||0),dprobe=top?.deliveryProbe||{};
         const child=pageDiagnostics.filter(x=>!x?.topFrame),childReady=child.filter(x=>x?.ok&&x.armed===a.armed).length,childFailed=child.length-childReady;
         const health={
           runtimeVersion:VERSION,armed:a.armed,transportVerified:status?.transportVerified===true,conversationKeySuffix:(registered?.conversationKey||"").slice(-12),
           state:status?.state||"Ready",currentCommandId:status?.executionCurrentCommandId||status?.currentCommandId||"",executionState:status?.executionState||"idle",deliveryPendingRecordId:status?.deliveryPendingRecordId||"",deliveryPendingCommandId:status?.deliveryPendingCommandId||"",
-          pendingRetryEligibleCount:pending.retryEligible.length,deferredPendingCount:pending.deferred.length,uncertainPendingCount:pending.uncertain.length,staleUnpostedCount:pending.stale.length,suppressedCount:pending.suppressed.length,activePostCount,
+          pendingRetryEligibleCount:pending.retryEligible.length,deferredPendingCount:pending.deferred.length,uncertainPendingCount:0,expiredPresentationCount:pending.expired.length,staleUnpostedCount:pending.stale.length,suppressedCount:pending.suppressed.length,activePostCount,
           waitReason:currentRec?.waitReason||"",deliveryState:currentRec?.deliveryState||"",submitted:!!currentRec?.submitted,ackPolls:Number(currentRec?.ackPolls||0),ackDeadlineAt:Number(currentRec?.ackDeadlineAt||0),postAttempts:Number(currentRec?.postAttempts||0),nextRetryAt,nextRetryInMs:nextRetryAt?Math.max(0,nextRetryAt-now()):0,
           sendControlReady:!!dprobe.chosenSend&&!dprobe.chosenSend.disabled&&dprobe.chosenSend.ariaDisabled!=="true",composerTextLen:Number(dprobe.composer?.textLen||0),composerKind:dprobe.composerKind||"",
           lastErrorCode:status?.lastError?"runtime_error":"",lastTransportDiagnosticCode:status?.lastTransportDiagnostic?.reason||status?.lastTransportDiagnostic?.kind||"",
