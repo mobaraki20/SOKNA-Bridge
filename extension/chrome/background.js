@@ -275,14 +275,16 @@ async function resolveCredentialField(ref,field){
 }
 async function sendClaimedBrowserPage(conversationKey,action,params={}){
   const target=await claimedBrowserTarget(conversationKey),pageAction=browserPageActionName(action);if(!pageAction)throw Object.assign(new Error("Unsupported Browser page action."),{code:"BROWSER_PAGE_ACTION_UNSUPPORTED"});
-  let args=params||{};
-  if(action==="browser.page.fill"&&args.credential_ref){
-    const field=String(args.credential_field||"secret"),value=await resolveCredentialField(args.credential_ref,field);
-    args={...args,value};delete args.credential_ref;delete args.credential_field;
+  let args=params||{},resolvedSecret=false,r;
+  try{
+    if(action==="browser.page.fill"&&args.credential_ref){
+      const field=String(args.credential_field||"secret"),value=await resolveCredentialField(args.credential_ref,field);
+      args={...args,value};delete args.credential_ref;delete args.credential_field;resolvedSecret=true;
+    }
+    r=await chrome.tabs.sendMessage(target.tab.id,{type:"SOKNA_BROWSER_PAGE",action:pageAction,args},{frameId:0});
+  }finally{
+    if(resolvedSecret&&args&&Object.prototype.hasOwnProperty.call(args,"value"))args.value="";
   }
-  const r=await chrome.tabs.sendMessage(target.tab.id,{type:"SOKNA_BROWSER_PAGE",action:pageAction,args},{frameId:0});
-  if(args!==params&&Object.prototype.hasOwnProperty.call(args,"value"))args.value="";
-
   if(!r?.ok)throw Object.assign(new Error(r?.error||"Browser page action failed."),{code:r?.code||"BROWSER_PAGE_FAILED"});
   return {ok:true,target:{tab_id:target.tab.id,origin:target.record.origin,url:String(target.tab.url||""),title:String(target.tab.title||"")},result:r.result}
 }
