@@ -75,10 +75,23 @@ async function commit(m){
   }catch(e){return {ok:false,code:e?.code||"ATTACHMENT_COMMIT_FAILED",error:String(e?.message||e)}}
 }
 function abort(m){const id=String(m?.transferId||"");const existed=transfers.delete(id);return {ok:true,transferId:id,aborted:existed}}
+function ready(){
+  if(!topOnly())return {ok:false,code:"ATTACHMENT_TOP_FRAME_REQUIRED"};
+  if(assistantGenerating())return {ok:false,code:"ATTACHMENT_ASSISTANT_BUSY",error:"assistant is still generating",retryable:true};
+  if(composerText())return {ok:false,code:"ATTACHMENT_USER_DRAFT_PRESENT",error:"composer contains user text"};
+  try{
+    const fileCount=[...document.querySelectorAll('input[type="file"]')].reduce((n,x)=>n+(x.files?.length||0),0);
+    if(fileCount>0)return {ok:false,code:"ATTACHMENT_EXISTING_FILES_PRESENT",error:"composer still contains file attachments",retryable:true,fileCount};
+    const busy=[...document.querySelectorAll('[aria-busy="true"],[role="progressbar"],[data-testid*="upload" i]')].some(x=>{const r=x.getBoundingClientRect();return r.width>0&&r.height>0});
+    if(busy)return {ok:false,code:"ATTACHMENT_UPLOAD_BUSY",error:"composer attachment upload is still active",retryable:true};
+  }catch{}
+  return {ok:true,status:"ready"};
+}
 chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m?.type==="OUTBOUND_ATTACHMENT_BEGIN"){reply(begin(m));return}
   if(m?.type==="OUTBOUND_ATTACHMENT_CHUNK"){reply(chunk(m));return}
   if(m?.type==="OUTBOUND_ATTACHMENT_COMMIT"){commit(m).then(reply,e=>reply({ok:false,code:"ATTACHMENT_COMMIT_FAILED",error:String(e)}));return true}
   if(m?.type==="OUTBOUND_ATTACHMENT_ABORT"){reply(abort(m));return}
+  if(m?.type==="OUTBOUND_ATTACHMENT_READY"){reply(ready());return}
 });
 })();
