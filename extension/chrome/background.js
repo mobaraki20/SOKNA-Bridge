@@ -97,8 +97,8 @@ async function semanticTop(tabId,type,extra={}){
 function extensionActions(){
   const x=globalThis.__SOKNA_EXTENSION_ACTIONS_V1__;
   return Array.isArray(x)?[...new Set(x.map(String).filter(Boolean))]:[
-    "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.actions.list","bridge.action.describe","bridge.doctor","bridge.command.get","bridge.command.list","credential.ref.list","artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach",
-    "browser.audit.run","browser.backend.status","browser.tabs.list","browser.tab.open","browser.tab.claim","browser.tab.release","browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot","bridge.bootstrap","bridge.diagnostics.get","session.open","session.resume","session.checkpoint","session.close","session.list",
+    "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.actions.list","bridge.action.describe","bridge.doctor","bridge.command.get","bridge.command.list","credential.ref.list","artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach","artifact.out.attach_many","artifact.collection.get",
+    "browser.audit.run","browser.backend.status","browser.tabs.list","browser.tab.open","browser.tab.claim","browser.tab.release","browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot","browser.capture.batch","bridge.bootstrap","bridge.diagnostics.get","session.open","session.resume","session.checkpoint","session.close","session.list",
     "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search","instagram.media.download","instagram.media.attach",
     "instagram.research.plan","instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm","instagram.selection.reject","instagram.export"
   ];
@@ -312,6 +312,100 @@ async function captureClaimedBrowserScreenshot(conversationKey,commandId,params=
     return {ok:true,target:{tab_id:target.tab.id,origin:target.record.origin,url:String(target.tab.url||""),title:String(target.tab.title||"")},capture:full?"full_page":"viewport",artifact_ref:artifact.artifact_ref}
   }finally{if(attached)await debugDetach(debugTarget)}
 }
+function utf8ToB64(text){
+  const bytes=new TextEncoder().encode(String(text||""));let bin="";
+  for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+async function waitBrowserTabComplete(tabId,timeoutMs=30000){
+  const deadline=now()+Math.max(1000,Math.min(60000,Number(timeoutMs)||30000));
+  for(;;){
+    const tab=await chrome.tabs.get(tabId);
+    if(String(tab?.status||"")==="complete")return tab;
+    if(now()>=deadline)throw Object.assign(new Error("Timed out waiting for claimed tab navigation."),{code:"BROWSER_NAVIGATION_TIMEOUT"});
+    await new Promise(resolve=>setTimeout(resolve,200));
+  }
+}
+async function prepareBatchCaptureItem(conversationKey,item){
+  const target=await claimedBrowserTarget(conversationKey),requestedUrl=String(item?.url||"").trim();
+  if(requestedUrl){
+    const origin=BROWSER_TARGET.normalizeOrigin(requestedUrl);
+    if(!origin)throw Object.assign(new Error("Batch capture URL must be HTTP/HTTPS."),{code:"BROWSER_URL_INVALID"});
+    if(origin!==target.record.origin)throw Object.assign(new Error("Batch capture navigation must stay on the claimed origin."),{code:"BROWSER_BATCH_ORIGIN_CHANGE_FORBIDDEN"});
+    await chrome.tabs.update(target.tab.id,{url:requestedUrl});
+    await waitBrowserTabComplete(target.tab.id,30000);
+    await ensureBrowserPage(target.tab.id);
+  }
+  const settle=Math.max(0,Math.min(10000,Number(item?.settle_ms)||0));
+  if(settle)await new Promise(resolve=>setTimeout(resolve,settle));
+  return await chrome.tabs.get(target.tab.id);
+}
+async function browserCaptureBatch(command,conversationKey,params={}){
+  const items=Array.isArray(params?.items)?params.items:[];
+  if(items.length<1||items.length>100)throw Object.assign(new Error("browser.capture.batch requires 1..100 items."),{code:"BROWSER_CAPTURE_BATCH_SIZE_INVALID"});
+  const stopOnError=params?.stop_on_error===true,records=[];let captured=0,failed=0;
+  const target=await claimedBrowserTarget(conversationKey),startedAt=now();
+  for(let i=0;i<items.length;i++){
+    const item=items[i]||{},itemId=String(item.id||String(i+1).padStart(3,"0")).replace(/[^A-Za-z0-9._-]/g,"_").slice(0,80)||String(i+1);
+    try{
+      await prepareBatchCaptureItem(conversationKey,item);
+      const shot=await captureClaimedBrowserScreenshot(conversationKey,command.id+"-"+itemId,{full_page:item.full_page===true});
+      records.push({index:i,id:itemId,ok:true,url:shot.target.url,title:shot.target.title,capture:shot.capture,artifact_ref:shot.artifact_ref});
+      captured++;
+    }catch(e){
+      records.push({index:i,id:itemId,ok:false,url:String(item?.url||""),error:String(e?.message||e),code:String(e?.code||"BROWSER_CAPTURE_ITEM_FAILED")});
+      failed++;
+      if(stopOnError)break;
+    }
+  }
+  const manifest={
+    schema:"sokna-browser-capture-collection-v1",
+    version:1,
+    command_id:String(command.id||""),
+    conversation_key:String(conversationKey||""),
+    claimed_origin:String(target.record.origin||""),
+    tab_id:Number(target.tab.id),
+    created_at:now(),
+    started_at:startedAt,
+    requested:items.length,
+    attempted:records.length,
+    captured,
+    failed,
+    items:records
+  };
+  const name=("browser-collection-"+String(command.id||uid()).replace(/[^A-Za-z0-9._-]/g,"_")+".json").slice(0,170);
+  const ingested=await ingestExtensionArtifact(name,"application/json",utf8ToB64(JSON.stringify(manifest)));
+  return {
+    ok:failed===0,
+    schema:"sokna-browser-capture-batch-result-v1",
+    requested:items.length,
+    attempted:records.length,
+    captured,
+    failed,
+    stopped_early:records.length<items.length,
+    collection_ref:ingested.artifact_ref
+  };
+}
+async function artifactCollectionGet(params={}){
+  const id=String(params?.id||"").trim().toLowerCase();
+  if(!/^[a-f0-9]{64}$/.test(id))throw Object.assign(new Error("artifact.collection.get requires a SHA-256 artifact id."),{code:"ARTIFACT_COLLECTION_ID_INVALID"});
+  const info=await agentExec(unifiedLocalCommand("artifact.out.info",{id})),ref=info?.artifact_ref||{},bytes=Number(ref?.bytes);
+  if(String(ref?.content_type||"").toLowerCase()!=="application/json")throw Object.assign(new Error("Artifact is not a JSON collection manifest."),{code:"ARTIFACT_COLLECTION_TYPE_INVALID"});
+  if(!Number.isSafeInteger(bytes)||bytes<2||bytes>4*1024*1024)throw Object.assign(new Error("Collection manifest size is outside the supported range."),{code:"ARTIFACT_COLLECTION_SIZE_INVALID"});
+  const chunks=[];let offset=0;
+  while(offset<bytes){
+    const part=await agentExec(unifiedLocalCommand("artifact.out.get",{id,offset,limit:524288}));
+    const next=Number(part?.next_offset),data=String(part?.data_b64||"");
+    if(!data||!Number.isSafeInteger(next)||next<=offset||next>bytes)throw Object.assign(new Error("Collection artifact chunk is invalid."),{code:"ARTIFACT_COLLECTION_CHUNK_INVALID"});
+    const bin=atob(data),u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);chunks.push(u8);offset=next;
+  }
+  const all=new Uint8Array(bytes);let pos=0;for(const chunk of chunks){all.set(chunk,pos);pos+=chunk.byteLength}
+  let manifest;try{manifest=JSON.parse(new TextDecoder().decode(all))}catch{throw Object.assign(new Error("Collection manifest JSON is invalid."),{code:"ARTIFACT_COLLECTION_JSON_INVALID"})}
+  if(String(manifest?.schema||"")!=="sokna-browser-capture-collection-v1"||!Array.isArray(manifest?.items))throw Object.assign(new Error("Unsupported artifact collection schema."),{code:"ARTIFACT_COLLECTION_SCHEMA_INVALID"});
+  const offsetItems=Math.max(0,Number(params?.offset)||0),limit=Math.max(1,Math.min(20,Number(params?.limit)||10)),total=manifest.items.length;
+  const page=manifest.items.slice(offsetItems,offsetItems+limit);
+  return {ok:true,schema:manifest.schema,collection_ref:ref,summary:{requested:Number(manifest.requested||total),attempted:Number(manifest.attempted||total),captured:Number(manifest.captured||0),failed:Number(manifest.failed||0),created_at:Number(manifest.created_at||0),claimed_origin:String(manifest.claimed_origin||"")},offset:offsetItems,limit,total,has_more:offsetItems+page.length<total,items:page};
+}
 async function browserSemanticAction(command,conversationKey){
   const action=String(command?.action||""),p=command?.params||{};
   if(action==="credential.ref.list")return await credentialRefList();
@@ -326,6 +420,7 @@ async function browserSemanticAction(command,conversationKey){
     const autoClaim=p.claim!==false,target=autoClaim?await claimBrowserTab(conversationKey,tab.id):null;return {ok:true,opened:tab.id,url,claimed:autoClaim,target}
   }
   if(action==="browser.page.screenshot")return await captureClaimedBrowserScreenshot(conversationKey,command.id,p);
+  if(action==="browser.capture.batch")return await browserCaptureBatch(command,conversationKey,p);
   if(BROWSER_TARGET.isPageAction(action))return await sendClaimedBrowserPage(conversationKey,action,p);
   throw Object.assign(new Error("Unknown Browser action."),{code:"BROWSER_ACTION_UNKNOWN"})
 }
@@ -381,10 +476,10 @@ function bridgeActionDescribe(params={}){
   return {ok:true,action,contracted:true,contract};
 }
 const extensionOwnedLedgerActions=new Set([
-  "artifact.chat.apply","bridge.actions.list","bridge.action.describe","bridge.doctor","bridge.diagnostics.get",
+  "artifact.chat.apply","artifact.collection.get","bridge.actions.list","bridge.action.describe","bridge.doctor","bridge.diagnostics.get",
   "credential.ref.list",
   "browser.backend.status","browser.tabs.list","browser.tab.open","browser.tab.claim","browser.tab.release",
-  "browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot",
+  "browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot","browser.capture.batch",
   "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search",
   "instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.candidates.get","instagram.candidates.attach",
   "instagram.selection.confirm","instagram.selection.reject","instagram.export"
@@ -1197,7 +1292,8 @@ async function handleCommandInner(tabId,command,meta={}){
     else if(command.action==="bridge.actions.list")result=await bridgeActionsList();
     else if(command.action==="bridge.action.describe")result=bridgeActionDescribe(command.params||{});
     else if(command.action==="bridge.doctor")result=await bridgeDoctor(a.registered.conversationKey);
-    else if(command.action==="credential.ref.list"||command.action==="browser.backend.status"||command.action==="browser.tabs.list"||command.action==="browser.tab.open"||command.action==="browser.tab.claim"||command.action==="browser.tab.release"||BROWSER_TARGET.isPageAction(command.action))result=await browserSemanticAction(command,a.registered.conversationKey);
+    else if(command.action==="artifact.collection.get")result=await artifactCollectionGet(command.params||{});
+    else if(command.action==="credential.ref.list"||command.action==="browser.backend.status"||command.action==="browser.tabs.list"||command.action==="browser.tab.open"||command.action==="browser.tab.claim"||command.action==="browser.tab.release"||command.action==="browser.capture.batch"||BROWSER_TARGET.isPageAction(command.action))result=await browserSemanticAction(command,a.registered.conversationKey);
     else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command,tabId);
     else if(command.action==="bridge.diagnostics.get")result=await fullDiagnostics(tabId,a.registered.conversationKey,"bounded");
     else if(command.action==="instagram.adapter.status")result=await instagramAdapterStatus(command.params||{});
