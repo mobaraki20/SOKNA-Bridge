@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -46,7 +47,7 @@ func commandParamsHash(c CommandEnvelope) string {
 	_, _ = h.Write([]byte(strings.TrimSpace(c.Action)))
 	_, _ = h.Write([]byte{0})
 	if len(c.Params) > 0 {
-		var compact strings.Builder
+		var compact bytes.Buffer
 		if json.Compact(&compact, c.Params) == nil {
 			_, _ = h.Write([]byte(compact.String()))
 		} else {
