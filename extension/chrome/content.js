@@ -124,7 +124,12 @@ function settleSubmitAttempt(attempt,payload){
   if(!attempt?.attempted)return null;
   if(attempt.acknowledged)return {ok:true,method:(attempt.method||"submit")+"-ack"};
   const cur=composer(),retained=!!cur&&samePayload(textOf(cur),payload);
-  return {ok:false,waiting:true,submitted:true,reason:"awaiting_conversation_ack",method:attempt.method||"submit-attempt",bridgeDraftRetained:retained,error:"Submission was attempted once; waiting for conversation ACK. Automatic fallback submit is disabled to prevent duplicate delivery."};
+  // If the exact Bridge payload is still in the composer and no matching
+  // conversation bubble exists, the submit did not leave the composer.
+  // It is therefore safe to try the next bounded submit method without
+  // risking a duplicate user message.
+  if(retained&&!resultVisibleInUserTurn(payload))return null;
+  return {ok:false,waiting:true,submitted:true,reason:"awaiting_conversation_ack",method:attempt.method||"submit-attempt",bridgeDraftRetained:retained,error:"Submission may have left the composer; waiting for conversation ACK before any retry."};
 }
 async function clickAttempt(el,payload){
   const b=sendButton(el,payload);
@@ -279,7 +284,15 @@ function resultVisibleInUserTurn(payload){
     }
     const matchedId=matched?(matched.kind==="result"?String(matched.payload?.id||""):String(matched.payload?.eventId||"")):"";
     if(!conv.authoritative){
-      lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched?.kind||"",matchedId,decision:"not-visible",reason:"body-fallback-diagnostic-only",scope:conv.scope,observedIdentity:!!matched,ts:Date.now()};
+      const el=composer(),stillDraft=!!el&&samePayload(textOf(el),String(payload||""));
+      // Current ChatGPT builds do not always expose stable author-role wrappers.
+      // A full envelope with the exact unique type+id in visible body text is
+      // authoritative enough once that exact payload is no longer in composer.
+      if(matched?.match==="full-envelope"&&!stillDraft){
+        lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched.kind,matchedId,decision:"existing-bubble",reason:"body-fallback-exact-envelope",scope:conv.scope,observedIdentity:true,ts:Date.now()};
+        return true;
+      }
+      lastVisibilityDecision={expectedKind:expected.kind,expectedId,matchedKind:matched?.kind||"",matchedId,decision:"not-visible",reason:stillDraft?"payload-still-in-composer":"body-fallback-no-exact-envelope",scope:conv.scope,observedIdentity:!!matched,ts:Date.now()};
       return false;
     }
     if(!matched){
