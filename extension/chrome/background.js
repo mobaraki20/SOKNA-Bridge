@@ -356,6 +356,7 @@ async function bridgeDoctor(conversationKey=""){
   await check("artifact.root",()=>agentExec(unifiedLocalCommand("artifact.root.status",{})));
   await check("workspace.registry",()=>agentExec(unifiedLocalCommand("workspace.registry.status",{})));
   await check("browser.qa",()=>agentExec(unifiedLocalCommand("browser.qa.status",{})));
+  await check("browser.backend",()=>browserSemanticAction({id:"doctor-browser",action:"browser.backend.status",params:{}},conversationKey));
   await check("credentials",()=>credentialRefList());
   const actions=await check("tool.registry",()=>bridgeActionsList());
   const approvedBrowser=await approvedBrowserOrigins(),targets=Object.values(await browserTargetsAll());
