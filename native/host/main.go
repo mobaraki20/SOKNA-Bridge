@@ -156,6 +156,7 @@ func parseParams(raw json.RawMessage)map[string]any{m:=map[string]any{};if len(r
 func intParam(m map[string]any,key string,def int)int{v,ok:=m[key];if !ok{return def};s:=fmt.Sprint(v);n,err:=strconv.Atoi(strings.Split(s,".")[0]);if err!=nil{return def};return n}
 
 func localObservability(c CommandEnvelope)(json.RawMessage,bool,error){
+	if r,handled,err:=localCommandLedger(c);handled{return r,true,err}
 	if r,handled,err:=localOutbound(c);handled{return r,true,err}
 	if c.Action!="job.list"&&c.Action!="job.events"&&c.Action!="bridge.activity"{return nil,false,nil}
 	jobs,err:=readJobs();if err!=nil{return nil,true,err};observeJobStates(jobs);p:=parseParams(c.Params);limit:=intParam(p,"limit",100);if limit<1{limit=1};if limit>500{limit=500};if len(jobs)>limit{jobs=jobs[:limit]};owned:=make([]map[string]any,0);for _,j:=range jobs{if j.WorkerPID>0&&(j.Status=="queued"||j.Status=="running"||j.Status=="waiting"){owned=append(owned,map[string]any{"job_id":j.ID,"pid":j.WorkerPID,"state":j.Status,"owned":true})}}
@@ -172,7 +173,71 @@ var quietActivityActions=map[string]bool{
 func shouldRecordCommandActivity(action string)bool{return !quietActivityActions[strings.ToLower(strings.TrimSpace(action))]}
 func recordCommandEvent(c CommandEnvelope,kind,errText string){if !shouldRecordCommandActivity(c.Action){return};ev:=newEvent(kind);ev.CommandID=c.ID;ev.CorrelationID=c.CorrelationID;ev.ParentID=c.ParentID;ev.Action=c.Action;ev.Error=trimError(errText);if kind=="command.accepted"{ev.State="accepted"};if kind=="command.completed"{ev.State="completed"};if kind=="command.failed"{ev.State="failed"};_ = appendActivity(ev)}
 
-func handle(m InMsg)OutMsg{if r,handled:=handleCredentialMessage(m);handled{return r};switch m.Type{case "host.ping":return OutMsg{OK:true,Type:"host.pong",RequestID:m.RequestID,Version:version};case "control.open":if err:=openControlCenter();err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};return OutMsg{OK:true,Type:"control.opened",RequestID:m.RequestID,Version:version};case "logs.open":if err:=openLogs();err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};return OutMsg{OK:true,Type:"logs.opened",RequestID:m.RequestID,Version:version};case "support.bundle.create":r,err:=createSupportBundle();if err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};return OutMsg{OK:true,Type:"support.bundle.created",RequestID:m.RequestID,Version:version,Result:r};case "agent.exec":c,err:=parseCommand(m.Command);if err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.accepted","");if r,handled,err:=localObservability(c);handled{if err!=nil{recordCommandEvent(c,"command.failed",err.Error());return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.completed","");return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r}};r,err:=proxy(m.Command);if err!=nil{recordCommandEvent(c,"command.failed",err.Error());return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}};recordCommandEvent(c,"command.completed","");if c.Action=="job.get"||c.Action=="job.submit"||c.Action=="job.batch"{if jobs,e:=readJobs();e==nil{observeJobStates(jobs)}};return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r};default:return OutMsg{OK:false,RequestID:m.RequestID,Error:"unknown native message type"}}}
+func handleAgentExec(m InMsg) OutMsg {
+	c, err := parseCommand(m.Command)
+	if err != nil {
+		return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}
+	}
+	ledgered := shouldLedgerCommand(c)
+	if ledgered {
+		rec, duplicate, beginErr := beginCommandRecord(c)
+		if beginErr != nil {
+			return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:beginErr.Error()}
+		}
+		if duplicate {
+			return replayCommandRecord(rec,m.RequestID)
+		}
+		if runErr := markCommandRunning(c); runErr != nil {
+			return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:"COMMAND_LEDGER_RUNNING_FAILED: "+runErr.Error()}
+		}
+	}
+	recordCommandEvent(c,"command.accepted","")
+	r, handled, execErr := localObservability(c)
+	if !handled && execErr == nil {
+		r, execErr = proxy(m.Command)
+	}
+	if execErr != nil {
+		recordCommandEvent(c,"command.failed",execErr.Error())
+		if ledgered {
+			if ledgerErr := failCommandRecord(c,execErr); ledgerErr != nil {
+				return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:"COMMAND_LEDGER_FAIL_WRITE_FAILED: "+ledgerErr.Error()+"; original="+execErr.Error()}
+			}
+		}
+		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:execErr.Error()}
+	}
+	if ledgered {
+		if ledgerErr := completeCommandRecord(c,r); ledgerErr != nil {
+			recordCommandEvent(c,"command.failed","COMMAND_LEDGER_COMMIT_FAILED: "+ledgerErr.Error())
+			return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:"COMMAND_LEDGER_COMMIT_FAILED: "+ledgerErr.Error()}
+		}
+	}
+	recordCommandEvent(c,"command.completed","")
+	if c.Action=="job.get"||c.Action=="job.submit"||c.Action=="job.batch" {
+		if jobs,e:=readJobs();e==nil{observeJobStates(jobs)}
+	}
+	return OutMsg{OK:true,Type:"agent.result",RequestID:m.RequestID,Version:version,Result:r}
+}
+
+func handle(m InMsg)OutMsg{
+	if r,handled:=handleCredentialMessage(m);handled{return r}
+	switch m.Type{
+	case "host.ping":
+		return OutMsg{OK:true,Type:"host.pong",RequestID:m.RequestID,Version:version}
+	case "control.open":
+		if err:=openControlCenter();err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}}
+		return OutMsg{OK:true,Type:"control.opened",RequestID:m.RequestID,Version:version}
+	case "logs.open":
+		if err:=openLogs();err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}}
+		return OutMsg{OK:true,Type:"logs.opened",RequestID:m.RequestID,Version:version}
+	case "support.bundle.create":
+		r,err:=createSupportBundle();if err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Error:err.Error()}}
+		return OutMsg{OK:true,Type:"support.bundle.created",RequestID:m.RequestID,Version:version,Result:r}
+	case "agent.exec":
+		return handleAgentExec(m)
+	default:
+		return OutMsg{OK:false,RequestID:m.RequestID,Error:"unknown native message type"}
+	}
+}
 
 func main(){_ = runtime.GOOS;for{b,err:=readMessage(os.Stdin);if err!=nil{if errors.Is(err,io.EOF){return};fmt.Fprintln(os.Stderr,"read:",err);return};var m InMsg;if err:=json.Unmarshal(b,&m);err!=nil{_ = writeMessage(os.Stdout,OutMsg{OK:false,Error:"invalid JSON"});continue};if err:=writeMessage(os.Stdout,handle(m));err!=nil{fmt.Fprintln(os.Stderr,"write:",err);return}}}
 
