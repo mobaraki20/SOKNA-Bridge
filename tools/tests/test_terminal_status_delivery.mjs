@@ -45,7 +45,8 @@ if(!run(ack+'\n'+terminal,terminal))throw new Error('terminal event bubble not r
 
 const normal='[SOKNA-V2-RESULT]{"id":"normal-1","ok":true}[/SOKNA-V2-RESULT]';
 if(!run(normal,normal))throw new Error('normal result existing-bubble regression');
-if(run(normal,normal,'',false))throw new Error('body fallback must never provide a positive ACK');
+if(!run(normal,normal,'',false))throw new Error('exact full envelope in visible body must ACK when role wrappers are unavailable');
+if(run(normal,normal,normal,false))throw new Error('body fallback must not ACK while the exact payload remains in composer');
 
 const acceptedId='workspace-list-test-20260928-014';
 const acceptedStatus=`[SOKNA-V2-STATUS]{"eventId":"__event__:accepted:${acceptedId}","kind":"command-accepted","commandId":"${acceptedId}","status":"accepted"}[/SOKNA-V2-STATUS]`;
