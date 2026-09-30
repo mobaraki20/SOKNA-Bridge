@@ -30,6 +30,11 @@ try {
   try{$null=Resolve-SoknaWorkspacePath $w '..\escape.txt' -Access read -AllowMissing;throw 'P2_TRAVERSAL_BYPASSED'}catch{if($_.Exception.Message-notmatch'WORKSPACE_PATH_'){throw}}
   $null=Assert-SoknaWorkspaceTool $w 'node'
   try{$null=Assert-SoknaWorkspaceTool $w 'git';throw 'P2_TOOL_BYPASSED'}catch{if($_.Exception.Message-notmatch'WORKSPACE_TOOL_NOT_ALLOWED'){throw}}
+  $w=Update-SoknaWorkspacePermissions -Id 'plain' -Scopes $scopes -Tools @()
+  if(@($w.tools).Count-ne0){throw 'P2_EMPTY_TOOL_REPLACEMENT_FAILED'}
+  try{$null=Update-SoknaWorkspacePermissions -Id 'plain' -Scopes $scopes -Tools @('');throw 'P2_BLANK_TOOL_ACCEPTED'}catch{if($_.Exception.Message-notmatch'WORKSPACE_TOOL_INVALID'){throw}}
+  $w=Update-SoknaWorkspacePermissions -Id 'plain' -Scopes $scopes -Tools @('node.exe')
+  $null=Assert-SoknaWorkspaceTool $w 'node'
   try{$null=Assert-SoknaWorkspaceFullAccess $w write;throw 'P2_BROAD_SCOPE_BYPASSED'}catch{if($_.Exception.Message-notmatch'WORKSPACE_BROAD_(WRITE_BLOCKED_BY_READ_SCOPE|ACCESS_BLOCKED_BY_DENY)'){throw}}
 
   $junction=Join-Path $src 'junction';$outside=Join-Path $root 'outside';New-Item -ItemType Directory -Path $outside -Force|Out-Null
