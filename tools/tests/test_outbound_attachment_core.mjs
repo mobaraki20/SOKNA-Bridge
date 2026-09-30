@@ -24,4 +24,9 @@ try{t.add(1,Buffer.from(payload).toString("base64"));throw new Error("out-of-ord
 t=Core.createTransfer("attach-hash",{...ref,id:"0".repeat(64),sha256:"0".repeat(64)});t.add(0,Buffer.from(payload).toString("base64"));
 try{await t.finalize(webcrypto);throw new Error("hash mismatch accepted")}catch(e){if(e.code!=="ATTACHMENT_SHA256_MISMATCH")throw e}
 
+const ui=fs.readFileSync(new URL("../../extension/chrome/outbound_attachment.js",import.meta.url),"utf8");
+if(!ui.includes('ATTACHMENT_ASSISTANT_BUSY')||!ui.includes('retryable:true'))throw new Error("assistant-busy attachment path must be retryable");
+const bootstrap=fs.readFileSync(new URL("../../extension/chrome/background_bootstrap.js",import.meta.url),"utf8");
+if(!bootstrap.includes("topMessageAfterAssistantIdle")||!bootstrap.includes('r?.code!=="ATTACHMENT_ASSISTANT_BUSY"'))throw new Error("background must defer outbound attach until assistant is idle");
+
 console.log("OUTBOUND_ATTACHMENT_CORE_PASS");
