@@ -24,6 +24,7 @@ type InMsg struct {
 	Type      string          `json:"type"`
 	RequestID string          `json:"request_id"`
 	Command   json.RawMessage `json:"command"`
+	Params    json.RawMessage `json:"params,omitempty"`
 	Result    json.RawMessage `json:"result,omitempty"`
 	Error     string          `json:"error,omitempty"`
 }
@@ -243,6 +244,8 @@ func handle(m InMsg)OutMsg{
 		return handleExternalLedgerComplete(m)
 	case "ledger.external.fail":
 		return handleExternalLedgerFail(m)
+	case "artifact.out.ingest":
+		return handleOutboundArtifactIngest(m)
 	default:
 		return OutMsg{OK:false,RequestID:m.RequestID,Error:"unknown native message type"}
 	}
