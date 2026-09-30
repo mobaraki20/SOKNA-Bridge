@@ -10,12 +10,17 @@ assert.ok(reg,"action contract registry missing");
 const batch=reg.describe("browser.capture.batch");
 assert.ok(batch,"browser.capture.batch contract missing");
 assert.equal(batch.inputSchema.properties.items.maxItems,100);
+assert.ok(batch.inputSchema.required.includes("capture_id"));
+assert.equal(batch.inputSchema.properties.items.items.properties.actions.maxItems,10);
+assert.equal(batch._meta["sokna/idempotency"],"id_guarded");
 assert.equal(batch._meta["sokna/owner"],"chat-adapter");
 
 const attachMany=reg.describe("artifact.out.attach_many");
 assert.ok(attachMany,"artifact.out.attach_many contract missing");
 assert.equal(attachMany.inputSchema.properties.ids.maxItems,100);
+assert.ok(attachMany.inputSchema.required.includes("delivery_id"));
 assert.equal(attachMany.inputSchema.properties.batch_size.maximum,10);
+assert.equal(attachMany._meta["sokna/idempotency"],"id_guarded");
 
 const collection=reg.describe("artifact.collection.get");
 assert.ok(collection,"artifact.collection.get contract missing");
@@ -24,6 +29,8 @@ assert.equal(collection.inputSchema.properties.limit.maximum,20);
 const bg=fs.readFileSync("extension/chrome/background.js","utf8");
 for(const token of [
   "async function browserCaptureBatch",
+  "BROWSER_CAPTURE_PROGRESS_KEY",
+  "BROWSER_CAPTURE_ITEM_OUTCOME_UNKNOWN",
   "sokna-browser-capture-collection-v1",
   "BROWSER_BATCH_ORIGIN_CHANGE_FORBIDDEN",
   "collection_ref:ingested.artifact_ref",
@@ -36,6 +43,8 @@ const boot=fs.readFileSync("extension/chrome/background_bootstrap.js","utf8");
 for(const token of [
   "artifact.out.attach_many",
   "async function deliverOutboundAttachmentMany",
+  "ATTACH_MANY_PROGRESS_KEY",
+  "ATTACHMENT_BATCH_OUTCOME_UNKNOWN",
   "async function waitAttachmentComposerReady",
   "OUTBOUND_ATTACHMENT_READY",
   "batchSize=Math.min(10"
