@@ -18,6 +18,15 @@ const fin=await t.finalize(webcrypto);
 if(fin.ref.name!=="evidence.txt"||Buffer.compare(Buffer.from(fin.bytes),Buffer.from(payload))!==0)throw new Error("verified round-trip failed");
 
 try{Core.createTransfer("bad/id",ref);throw new Error("unsafe transfer id accepted")}catch(e){if(e.code!=="ATTACHMENT_TRANSFER_ID_INVALID")throw e}
+const selected=Core.selectInputCandidate([
+  {index:0,inComposerForm:true,accept:"image/*",capture:"environment",multiple:false,name:"camera"},
+  {index:1,inComposerForm:true,accept:"",capture:"",multiple:true,name:"file-upload",testid:"composer-file-upload"}
+]);
+if(selected!==1)throw new Error("composer upload input ranking failed");
+try{
+  Core.selectInputCandidate([{index:0,inComposerForm:true},{index:1,inComposerForm:true}]);
+  throw new Error("ambiguous file inputs were accepted");
+}catch(e){if(e.code!=="ATTACHMENT_INPUT_AMBIGUOUS")throw e}
 try{Core.createTransfer("attach-big",{...ref,bytes:Core.maxAttachBytes+1});throw new Error("oversize attachment accepted")}catch(e){if(e.code!=="OUTBOUND_ATTACHMENT_TOO_LARGE")throw e}
 t=Core.createTransfer("attach-order",ref);
 try{t.add(1,Buffer.from(payload).toString("base64"));throw new Error("out-of-order chunk accepted")}catch(e){if(e.code!=="ATTACHMENT_CHUNK_ORDER_INVALID")throw e}
