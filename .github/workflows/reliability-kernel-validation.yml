@@ -25,10 +25,10 @@ jobs:
           done
       - name: Reliability stress and fault injection
         run: node tools/tests/test_reliability_stress.mjs
-      - name: Contract Python tests
+      - name: All Python source and product contracts
         run: |
-          python tools/tests/test_r2_contract_reliability.py
-          python tools/tests/test_r2_session_continuity.py
-          python tools/tests/test_extension_product_ux.py
-          python tools/tests/test_autonomy_bootstrap.py
-          python tools/tests/test_chat_artifact_autopull.py
+          set -euo pipefail
+          for f in tools/tests/test_*.py; do
+            echo "=== $f ==="
+            python "$f"
+          done
