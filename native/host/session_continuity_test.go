@@ -44,3 +44,17 @@ func TestBootstrapIsFailClosedWhenAgentUnavailable(t *testing.T){
 	routes:=b["route_policy"].(map[string]any);if routes["large_bytes"]==nil||routes["browser_inspection"]==nil{t.Fatalf("route policy incomplete: %#v",routes)}
 	files:=b["file_delivery_rules"].(map[string]any);if files["local_path_is_delivery"]!=false{t.Fatalf("unsafe file delivery rule: %#v",files)}
 }
+
+
+func TestSessionOpenRoutesThroughDurableHandleAgentExec(t *testing.T){
+	setupSessionFixture(t)
+	cmd:=CommandEnvelope{ID:"session-command-1",ConversationKey:"chatgpt:c:test-session",Action:"session.open",Params:json.RawMessage(`{"id":"session-command-open","project":"SOKNA Bridge","phase":"uat"}`)}
+	raw,err:=json.Marshal(cmd);if err!=nil{t.Fatal(err)}
+	out:=handleAgentExec(InMsg{Type:"agent.exec",RequestID:"req-session-1",Command:raw})
+	if !out.OK{t.Fatalf("session.open did not route locally: %+v",out)}
+	var result map[string]any;if err:=json.Unmarshal(out.Result,&result);err!=nil{t.Fatal(err)}
+	if result["ok"]!=true{t.Fatalf("session.open result invalid: %#v",result)}
+	rec,err:=readCommandRecord(commandScope(cmd),cmd.ID);if err!=nil{t.Fatal(err)}
+	if rec.State!="succeeded"{t.Fatalf("session command not durable: %#v",rec)}
+	if _,err:=activeSession();err!=nil{t.Fatalf("session was not persisted: %v",err)}
+}
