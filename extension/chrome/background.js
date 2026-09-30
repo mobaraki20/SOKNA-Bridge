@@ -200,6 +200,109 @@ async function registerChatOrigin(tabId,url){
 }
 async function chatOriginStatus(url){const origin=ORIGIN.normalizeOrigin(url),approved=await approvedChatOrigins();return {ok:true,origin,secure:!!origin,approved:!!origin&&approved.includes(origin),builtin:ORIGIN.isBuiltin(origin),approved_origins:approved,conversationKey:conv(url)}}
 async function rehydrateApprovedChatOrigins(){for(const origin of await approvedChatOrigins()){if(ORIGIN.isBuiltin(origin))continue;const pattern=ORIGIN.originPattern(origin);if(!await chrome.permissions.contains({origins:[pattern]}))continue;const id=ORIGIN.scriptId(origin);try{const old=await chrome.scripting.getRegisteredContentScripts({ids:[id]});if(!old?.length)await chrome.scripting.registerContentScripts([{id,matches:[pattern],js:CHAT_SCRIPT_FILES,runAt:"document_start",allFrames:true,matchOriginAsFallback:true,persistAcrossSessions:true}])}catch{}}}
+async function approvedBrowserOrigins(){const d=await sget("local",[BROWSER_ORIGINS_KEY]);return BROWSER_TARGET.normalizeApproved(d[BROWSER_ORIGINS_KEY]||[])}
+async function saveApprovedBrowserOrigins(values){const list=BROWSER_TARGET.normalizeApproved(values);await sset("local",{[BROWSER_ORIGINS_KEY]:list});return list}
+async function browserTargetsAll(){const d=await sget("local",[BROWSER_TARGETS_KEY]);return d[BROWSER_TARGETS_KEY]||{}}
+async function saveBrowserTargets(v){await sset("local",{[BROWSER_TARGETS_KEY]:v})}
+async function browserOriginStatus(url){
+  const origin=BROWSER_TARGET.normalizeOrigin(url),approved=await approvedBrowserOrigins(),pattern=BROWSER_TARGET.originPattern(origin);
+  const permitted=!!pattern&&await chrome.permissions.contains({origins:[pattern]});
+  return {ok:true,origin,web:!!origin,approved:!!origin&&approved.includes(origin)&&permitted,permission_granted:permitted,pattern,approved_origins:approved}
+}
+async function registerBrowserOrigin(tabId,url){
+  const origin=BROWSER_TARGET.normalizeOrigin(url);if(!origin)return {ok:false,code:"BROWSER_ORIGIN_INVALID",error:"Only explicit HTTP/HTTPS origins can be enabled for Browser tools."};
+  const pattern=BROWSER_TARGET.originPattern(origin),permitted=await chrome.permissions.contains({origins:[pattern]});
+  if(!permitted)return {ok:false,code:"BROWSER_ORIGIN_PERMISSION_REQUIRED",origin,pattern,error:"Approve this site from the extension popup first."};
+  const list=await approvedBrowserOrigins();if(!list.includes(origin)){list.push(origin);await saveApprovedBrowserOrigins(list)}
+  if(Number.isInteger(tabId)){try{await ensureBrowserPage(tabId)}catch(e){return {ok:false,code:"BROWSER_PAGE_INJECTION_FAILED",origin,error:String(e?.message||e)}}}
+  return {ok:true,origin,approved:true,tab_id:Number.isInteger(tabId)?tabId:null}
+}
+async function browserTabApproved(tab){
+  const origin=BROWSER_TARGET.normalizeOrigin(tab?.url||"");if(!origin)return false;
+  const approved=await approvedBrowserOrigins();if(!approved.includes(origin))return false;
+  return await chrome.permissions.contains({origins:[BROWSER_TARGET.originPattern(origin)]})
+}
+async function browserTabsList(){
+  const tabs=await chrome.tabs.query({}),out=[];
+  for(const t of tabs){if(!Number.isInteger(t?.id)||!await browserTabApproved(t))continue;out.push({id:t.id,title:String(t.title||""),url:String(t.url||""),active:!!t.active,window_id:Number.isInteger(t.windowId)?t.windowId:null})}
+  return {ok:true,tabs:out,scope:"approved_browser_origins_only"}
+}
+async function ensureBrowserPage(tabId){
+  const tab=await chrome.tabs.get(tabId);if(!await browserTabApproved(tab))throw Object.assign(new Error("Browser origin is not approved for this tab."),{code:"BROWSER_ORIGIN_PERMISSION_REQUIRED"});
+  try{const pong=await chrome.tabs.sendMessage(tabId,{type:"SOKNA_BROWSER_PAGE",action:"ping",args:{}},{frameId:0});if(pong?.ok)return tab}catch{}
+  await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},files:[BROWSER_PAGE_FILE]});
+  const pong=await chrome.tabs.sendMessage(tabId,{type:"SOKNA_BROWSER_PAGE",action:"ping",args:{}},{frameId:0});
+  if(!pong?.ok)throw Object.assign(new Error(pong?.error||"Browser page engine did not initialize."),{code:pong?.code||"BROWSER_PAGE_NOT_READY"});
+  return tab
+}
+async function claimBrowserTab(conversationKey,tabId){
+  if(!String(conversationKey||""))throw Object.assign(new Error("Connected Chat conversation is required."),{code:"BROWSER_CONVERSATION_REQUIRED"});
+  if(!Number.isInteger(Number(tabId))||Number(tabId)<=0)throw Object.assign(new Error("Positive tab_id required."),{code:"BROWSER_TARGET_TAB_INVALID"});
+  const tab=await ensureBrowserPage(Number(tabId)),rec=BROWSER_TARGET.targetRecord({conversationKey,tabId:Number(tabId),url:String(tab.url||""),title:String(tab.title||""),claimedAt:now()});
+  const all=await browserTargetsAll();all[String(conversationKey)]=rec;await saveBrowserTargets(all);return rec
+}
+async function releaseBrowserTab(conversationKey){
+  const all=await browserTargetsAll(),had=!!all[String(conversationKey)];delete all[String(conversationKey)];await saveBrowserTargets(all);return {ok:true,released:had}
+}
+async function claimedBrowserTarget(conversationKey){
+  const all=await browserTargetsAll(),rec=all[String(conversationKey)];if(!rec)throw Object.assign(new Error("Claim a browser tab first."),{code:"BROWSER_TARGET_REQUIRED"});
+  let tab;try{tab=await chrome.tabs.get(Number(rec.tab_id))}catch{delete all[String(conversationKey)];await saveBrowserTargets(all);throw Object.assign(new Error("Claimed browser tab no longer exists."),{code:"BROWSER_TARGET_STALE"})}
+  const check=BROWSER_TARGET.validateRecord(rec,String(conversationKey),tab);
+  if(!check.ok){delete all[String(conversationKey)];await saveBrowserTargets(all);throw Object.assign(new Error(check.code),{code:check.code})}
+  if(!await browserTabApproved(tab)){delete all[String(conversationKey)];await saveBrowserTargets(all);throw Object.assign(new Error("Browser origin permission is no longer available."),{code:"BROWSER_ORIGIN_PERMISSION_REQUIRED"})}
+  await ensureBrowserPage(tab.id);return {record:rec,tab}
+}
+function browserPageActionName(action){
+  const m={"browser.page.snapshot":"snapshot","browser.page.text":"text","browser.page.click":"click","browser.page.fill":"fill","browser.page.scroll":"scroll","browser.page.wait":"wait"};
+  return m[String(action||"")]||""
+}
+async function sendClaimedBrowserPage(conversationKey,action,params={}){
+  const target=await claimedBrowserTarget(conversationKey),pageAction=browserPageActionName(action);if(!pageAction)throw Object.assign(new Error("Unsupported Browser page action."),{code:"BROWSER_PAGE_ACTION_UNSUPPORTED"});
+  const r=await chrome.tabs.sendMessage(target.tab.id,{type:"SOKNA_BROWSER_PAGE",action:pageAction,args:params},{frameId:0});
+  if(!r?.ok)throw Object.assign(new Error(r?.error||"Browser page action failed."),{code:r?.code||"BROWSER_PAGE_FAILED"});
+  return {ok:true,target:{tab_id:target.tab.id,origin:target.record.origin,url:String(target.tab.url||""),title:String(target.tab.title||"")},result:r.result}
+}
+function debugAttach(target){return new Promise((resolve,reject)=>chrome.debugger.attach(target,"1.3",()=>{const e=chrome.runtime.lastError;e?reject(Object.assign(new Error(e.message),{code:"BROWSER_DEBUGGER_ATTACH_FAILED"})):resolve()}))}
+function debugDetach(target){return new Promise(resolve=>chrome.debugger.detach(target,()=>resolve()))}
+function debugSend(target,method,params={}){return new Promise((resolve,reject)=>chrome.debugger.sendCommand(target,method,params,r=>{const e=chrome.runtime.lastError;e?reject(Object.assign(new Error(e.message),{code:"BROWSER_CDP_FAILED"})):resolve(r||{})}))}
+async function ingestExtensionArtifact(name,contentType,dataB64){
+  const r=await nativeMessage({type:"artifact.out.ingest",request_id:uid(),params:{name,content_type:contentType,data_b64:dataB64}});
+  if(!r?.ok)throw Object.assign(new Error(r?.error||"Artifact ingest failed."),{code:"ARTIFACT_INGEST_FAILED"});
+  return r.result||{}
+}
+async function captureClaimedBrowserScreenshot(conversationKey,commandId,params={}){
+  const target=await claimedBrowserTarget(conversationKey),debugTarget={tabId:target.tab.id};let attached=false;
+  try{
+    await debugAttach(debugTarget);attached=true;await debugSend(debugTarget,"Page.enable",{});
+    const metrics=await debugSend(debugTarget,"Page.getLayoutMetrics",{}),full=params.full_page===true;
+    const box=full?(metrics.cssContentSize||metrics.contentSize||{}):(metrics.cssVisualViewport||metrics.visualViewport||{});
+    const x=full?0:Number(box.pageX)||0,y=full?0:Number(box.pageY)||0;
+    const width=full?Number(box.width):Number(box.clientWidth||box.width),height=full?Number(box.height):Number(box.clientHeight||box.height);
+    if(!(width>0&&height>0))throw Object.assign(new Error("Screenshot geometry is empty."),{code:"BROWSER_CAPTURE_GEOMETRY_INVALID"});
+    if(width>16384||height>16384||width*height>250000000)throw Object.assign(new Error("Screenshot dimensions exceed safety limits."),{code:"BROWSER_CAPTURE_TOO_LARGE"});
+    const shot=await debugSend(debugTarget,"Page.captureScreenshot",{format:"png",clip:{x:Math.max(0,x),y:Math.max(0,y),width,height,scale:1},captureBeyondViewport:true});
+    const data=String(shot?.data||"");if(!data)throw Object.assign(new Error("CDP returned empty screenshot."),{code:"BROWSER_CAPTURE_EMPTY"});
+    const name="browser-"+String(commandId||uid()).replace(/[^A-Za-z0-9._-]/g,"_")+".png",artifact=await ingestExtensionArtifact(name,"image/png",data);
+    return {ok:true,target:{tab_id:target.tab.id,origin:target.record.origin,url:String(target.tab.url||""),title:String(target.tab.title||"")},capture:full?"full_page":"viewport",artifact_ref:artifact.artifact_ref}
+  }finally{if(attached)await debugDetach(debugTarget)}
+}
+async function browserSemanticAction(command,conversationKey){
+  const action=String(command?.action||""),p=command?.params||{};
+  if(action==="browser.backend.status")return {ok:true,schema:"sokna-browser-backend-status-v1",backend:"sokna-extension-adapted",engine:"stable-ref-dom+cdp-screenshot",target_gate:"conversation+exact-tab+approved-origin",top_frame_only:true,high_risk_tools_exposed:false};
+  if(action==="browser.tabs.list")return await browserTabsList();
+  if(action==="browser.tab.claim")return {ok:true,claimed:true,target:await claimBrowserTab(conversationKey,Number(p.tab_id))};
+  if(action==="browser.tab.release")return await releaseBrowserTab(conversationKey);
+  if(action==="browser.tab.open"){
+    const url=String(p.url||""),origin=BROWSER_TARGET.normalizeOrigin(url);if(!origin)throw Object.assign(new Error("HTTP/HTTPS url required."),{code:"BROWSER_URL_INVALID"});
+    const approved=await approvedBrowserOrigins(),pattern=BROWSER_TARGET.originPattern(origin);if(!approved.includes(origin)||!await chrome.permissions.contains({origins:[pattern]}))throw Object.assign(new Error("Approve this Browser origin from the popup first."),{code:"BROWSER_ORIGIN_PERMISSION_REQUIRED"});
+    const tab=await chrome.tabs.create({url});if(!Number.isInteger(tab?.id))throw Object.assign(new Error("Chrome did not return a tab id."),{code:"BROWSER_TAB_OPEN_FAILED"});
+    const autoClaim=p.claim!==false,target=autoClaim?await claimBrowserTab(conversationKey,tab.id):null;return {ok:true,opened:tab.id,url,claimed:autoClaim,target}
+  }
+  if(action==="browser.page.screenshot")return await captureClaimedBrowserScreenshot(conversationKey,command.id,p);
+  if(BROWSER_TARGET.isPageAction(action))return await sendClaimedBrowserPage(conversationKey,action,p);
+  throw Object.assign(new Error("Unknown Browser action."),{code:"BROWSER_ACTION_UNKNOWN"})
+}
+
 function b64urlUtf8(s){
   const bytes=new TextEncoder().encode(String(s));let bin="";for(const b of bytes)bin+=String.fromCharCode(b);
   return btoa(bin).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
