@@ -1,0 +1,10 @@
+{
+  "schema": "sokna-r10-candidate-ready-v1",
+  "candidate_ref": "sokna-agent-2.7.1-r10",
+  "code_commit": "206ff0e55998063cac5ff37f5a878d37b4f98bdc",
+  "agent_version": "2.7.1",
+  "extension_version": "3.13.0",
+  "semantic_version": "2.1.1",
+  "qualification": "exact-commit-windows-integrated",
+  "manual_black_box_uat_required": true
+}
