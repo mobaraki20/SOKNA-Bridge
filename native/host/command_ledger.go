@@ -147,6 +147,15 @@ func beginCommandRecord(c CommandEnvelope) (commandLedgerRecord, bool, error) {
 	return rec, false, nil
 }
 
+func markCommandRunning(c CommandEnvelope) error {
+	rec, err := readCommandRecord(c.ID)
+	if err != nil {
+		return err
+	}
+	rec.State = "running"
+	return writeCommandRecord(rec)
+}
+
 func completeCommandRecord(c CommandEnvelope, result json.RawMessage) error {
 	rec, err := readCommandRecord(c.ID)
 	if err != nil {
