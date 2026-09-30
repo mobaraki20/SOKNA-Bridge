@@ -352,12 +352,12 @@ async function bridgeDoctor(conversationKey=""){
   const checks=[];
   async function check(name,fn){try{const data=await fn();checks.push({name,ok:true,data});return data}catch(e){checks.push({name,ok:false,error:String(e?.message||e)});return null}}
   const caps=await check("agent.capabilities",()=>agentExec(unifiedLocalCommand("agent.capabilities",{})));
-  await check("broker.ledger",()=>agentExec({...unifiedLocalCommand("bridge.command.list",{limit:1}),conversationKey:String(conversationKey||"")}));
+  await check("broker.ledger",async()=>{const x=await agentExec({...unifiedLocalCommand("bridge.command.list",{limit:1}),conversationKey:String(conversationKey||"")});return {ok:x?.ok!==false,count:Array.isArray(x?.commands)?x.commands.length:0,next_sequence:Number(x?.next_sequence||0)}});
   await check("artifact.root",()=>agentExec(unifiedLocalCommand("artifact.root.status",{})));
   await check("workspace.registry",()=>agentExec(unifiedLocalCommand("workspace.registry.status",{})));
   await check("browser.qa",()=>agentExec(unifiedLocalCommand("browser.qa.status",{})));
   await check("browser.backend",()=>browserSemanticAction({id:"doctor-browser",action:"browser.backend.status",params:{}},conversationKey));
-  await check("credentials",()=>credentialRefList());
+  await check("credentials",async()=>{const x=await credentialRefList();return {ok:true,store:x.store,count:Array.isArray(x.credentials)?x.credentials.length:0}});
   const actions=await check("tool.registry",()=>bridgeActionsList());
   const approvedBrowser=await approvedBrowserOrigins(),targets=Object.values(await browserTargetsAll());
   const uncontracted=Array.isArray(actions?.actions)?actions.actions.filter(x=>!x.contracted).map(x=>x.action||x.name):[];
