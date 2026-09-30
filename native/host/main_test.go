@@ -91,6 +91,24 @@ func TestOutboundArtifactPublishAndChunkRoundTrip(t *testing.T){
 	if !got2["eof"].(bool){t.Fatal("final chunk must be eof")}
 }
 
+func TestOutboundArtifactIngestRoundTrip(t *testing.T){
+	setupObservabilityFixture(t)
+	png:=[]byte{0x89,'P','N','G',0x0d,0x0a,0x1a,0x0a,1,2,3,4,5,6}
+	out,err:=ingestOutboundArtifact(map[string]any{"name":"browser-shot.png","content_type":"image/png","data_b64":base64.StdEncoding.EncodeToString(png)})
+	if err!=nil{t.Fatal(err)}
+	b,_:=json.Marshal(out["artifact_ref"]);var ref ArtifactRef;if err:=json.Unmarshal(b,&ref);err!=nil{t.Fatal(err)}
+	if ref.ID==""||ref.Bytes!=int64(len(png))||ref.Name!="browser-shot.png"||ref.ContentType!="image/png"{t.Fatalf("bad ingested ref: %#v",ref)}
+	got,err:=getArtifactChunk(map[string]any{"id":ref.ID,"offset":0,"limit":64});if err!=nil{t.Fatal(err)}
+	data,err:=base64.StdEncoding.DecodeString(got["data_b64"].(string));if err!=nil{t.Fatal(err)}
+	if string(data)!=string(png){t.Fatalf("ingested artifact mismatch")}
+}
+
+func TestOutboundArtifactIngestRejectsSpoofedContent(t *testing.T){
+	setupObservabilityFixture(t)
+	_,err:=ingestOutboundArtifact(map[string]any{"name":"fake.png","content_type":"image/png","data_b64":base64.StdEncoding.EncodeToString([]byte("not-png"))})
+	if err==nil||!contains(err.Error(),"CONTENT_MISMATCH"){t.Fatalf("expected content mismatch, got %v",err)}
+}
+
 func TestOutboundArtifactRejectsPathEscape(t *testing.T){
 	setupObservabilityFixture(t); if _,err:=publishArtifact(map[string]any{"path":"../secret.txt"});err==nil{t.Fatal("expected ArtifactRoot escape rejection")}
 }
