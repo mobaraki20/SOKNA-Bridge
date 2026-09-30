@@ -40,6 +40,41 @@ func getArtifactChunk(params map[string]any)(map[string]any,error){root,err:=con
 func artifactInfo(params map[string]any)(map[string]any,error){root,err:=configuredArtifactRoot();if err!=nil{return nil,err};id:=strings.TrimSpace(fmt.Sprint(params["id"]));m,err:=readArtifactMeta(root,id);if err!=nil{return nil,err};return map[string]any{"ok":true,"artifact_ref":m.Ref},nil}
 func artifactList(params map[string]any)(map[string]any,error){root,err:=configuredArtifactRoot();if err!=nil{return nil,err};refs,_:=outboundDirs(root);entries,err:=os.ReadDir(refs);if errors.Is(err,os.ErrNotExist){return map[string]any{"ok":true,"artifacts":[]ArtifactRef{}},nil};if err!=nil{return nil,err};items:=make([]ArtifactRef,0,len(entries));for _,e:=range entries{if e.IsDir()||!strings.HasSuffix(e.Name(),".json"){continue};id:=strings.TrimSuffix(e.Name(),".json");m,er:=readArtifactMeta(root,id);if er==nil{items=append(items,m.Ref)}};sort.Slice(items,func(i,j int)bool{return items[i].CreatedAt>items[j].CreatedAt});limit:=intParam(params,"limit",50);if limit<1{limit=1};if limit>200{limit=200};if len(items)>limit{items=items[:limit]};return map[string]any{"ok":true,"artifacts":items},nil}
 
+
+const maxExtensionArtifactBytes = 32 * 1024 * 1024
+
+func ingestOutboundArtifact(params map[string]any)(map[string]any,error){
+	root,err:=configuredArtifactRoot();if err!=nil{return nil,err}
+	name:=safeArtifactName(fmt.Sprint(params["name"]));if name=="artifact.bin"{return nil,errors.New("artifact.out.ingest requires name")}
+	contentType:=strings.ToLower(strings.TrimSpace(fmt.Sprint(params["content_type"])))
+	switch contentType{
+	case "image/png","image/jpeg","image/webp","application/json","text/plain":
+	default:return nil,errors.New("ARTIFACT_INGEST_CONTENT_TYPE_NOT_ALLOWED")
+	}
+	dataB64:=strings.TrimSpace(fmt.Sprint(params["data_b64"]));if dataB64==""{return nil,errors.New("artifact.out.ingest requires data_b64")}
+	if len(dataB64)>((maxExtensionArtifactBytes+2)/3)*4+16{return nil,errors.New("ARTIFACT_INGEST_TOO_LARGE")}
+	data,err:=base64.StdEncoding.DecodeString(dataB64);if err!=nil{return nil,errors.New("ARTIFACT_INGEST_BASE64_INVALID")}
+	if len(data)==0||len(data)>maxExtensionArtifactBytes{return nil,errors.New("ARTIFACT_INGEST_SIZE_INVALID")}
+	ext:=strings.ToLower(filepath.Ext(name))
+	expectedExt:=map[string][]string{"image/png":{".png"},"image/jpeg":{".jpg",".jpeg"},"image/webp":{".webp"},"application/json":{".json"},"text/plain":{".txt",".log"}}[contentType]
+	okExt:=false;for _,x:=range expectedExt{if ext==x{okExt=true;break}};if !okExt{return nil,errors.New("ARTIFACT_INGEST_EXTENSION_MISMATCH")}
+	stageDir:=filepath.Join(root,"staging","extension-ingest");if err:=os.MkdirAll(stageDir,0o700);err!=nil{return nil,err}
+	stage:=filepath.Join(stageDir,fmt.Sprintf("%d-%s",time.Now().UTC().UnixNano(),name))
+	if err:=os.WriteFile(stage,data,0o600);err!=nil{return nil,err};defer os.Remove(stage)
+	rel,err:=filepath.Rel(root,stage);if err!=nil{return nil,err}
+	out,err:=publishArtifact(map[string]any{"path":filepath.ToSlash(rel),"name":name});if err!=nil{return nil,err}
+	if ref,ok:=out["artifact_ref"].(ArtifactRef);ok{ref.ContentType=contentType;out["artifact_ref"]=ref}
+	return out,nil
+}
+
+func handleOutboundArtifactIngest(m InMsg) OutMsg {
+	var p map[string]any
+	if len(m.Params)==0||json.Unmarshal(m.Params,&p)!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:"ARTIFACT_INGEST_PARAMS_INVALID"}}
+	result,err:=ingestOutboundArtifact(p);if err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}}
+	b,err:=json.Marshal(result);if err!=nil{return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}}
+	return OutMsg{OK:true,Type:"artifact.out.ingested",RequestID:m.RequestID,Version:version,Result:b}
+}
+
 func localOutbound(c CommandEnvelope)(json.RawMessage,bool,error){
 	if r,handled,err:=localSession(c);handled{return r,true,err}
 	if r,handled,err:=localBrowserAudit(c);handled{return r,true,err}
