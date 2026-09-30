@@ -50,7 +50,23 @@ Important mismatch:
 - broad browser host access and no per-site approval by default.
 - Browser Bridge is an MCP/browser product, not a ChatGPT conversation adapter.
 
-Decision: **ADOPT/ADAPT for Browser backend; do not copy its broad trust policy.**
+Decision: **PRIMARY DEPLOYMENT/BACKEND PROTOTYPE because of Windows x64 single-binary packaging. ADAPT its browser transport/tool surface, but do not copy its broad trust policy. SOKNA must add target/window policy above it.**
+
+### koltyakov/browser-bridge (BBX) — MIT
+
+Strong reference for permission and operational UX:
+- real Chrome state;
+- one explicitly enabled browser window rather than ambient browser control;
+- modern MCP support including revision 2026-07-28;
+- `doctor` / `status` diagnostics that separate local bridge health from agent setup;
+- custom extension IDs supported for unpacked/forked builds;
+- Windows setup supported through the native host installer.
+
+Important mismatch:
+- requires Node.js 20+ and an npm-distributed runtime;
+- developer/debugging surface is broader than SOKNA needs.
+
+Decision: **ADAPT explicit-window/target-bound permission semantics and doctor-style diagnostics. Keep as a secondary backend candidate; do not add Node as a mandatory SOKNA runtime dependency unless the Rust/prebuilt candidate proves insufficient.**
 
 ### open-browser-use — MIT
 
@@ -206,12 +222,14 @@ Before importing third-party code into the distributed product:
 1. Convert SOKNA tool descriptors to MCP-compatible Tool objects.
 2. Finish one broker recovery path for Agent + Extension-owned actions.
 3. Add a Browser backend interface.
-4. Prototype browser-bridge-backed Windows real-Chrome adapter behind that interface.
-5. Implement snapshot/ref browser tools.
-6. Keep the existing browser recipe runner only as QA/compatibility backend.
-7. Add credential-ref semantic actions.
-8. Enforce cross-transport permission parity.
-9. Add protocol/DOM/browser real-E2E gates.
-10. Package one r10 candidate and run the short deterministic UAT.
+4. Pin and verify whg517/browser-bridge as the first Windows backend candidate; add a SOKNA target/window allow policy above it.
+5. Preserve BBX/koltyakov as the permission/doctor reference and fallback backend candidate if the Rust backend cannot meet policy needs.
+6. Prototype the selected real-Chrome adapter behind the backend interface.
+7. Implement snapshot/ref browser tools.
+8. Keep the existing browser recipe runner only as QA/compatibility backend.
+9. Add credential-ref semantic actions.
+10. Enforce cross-transport permission parity.
+11. Add protocol/DOM/browser real-E2E gates.
+12. Package one r10 candidate and run the short deterministic UAT.
 
 This audit supersedes any earlier r10 decision that treated custom implementation as preferred merely because it already existed.
