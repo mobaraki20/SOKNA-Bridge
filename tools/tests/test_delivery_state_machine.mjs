@@ -23,32 +23,42 @@ let cur=submitted;
 for(let i=0;i<D.MAX_ACK_POLLS-1;i++){
   const out=D.pollResult(cur,false,(cur.nextPostAt||t0)+1);
   cur=out.record;
-  assert.notEqual(out.state,"delivery_uncertain","ACK budget expired too early");
+  assert.notEqual(out.state,"presentation_expired","ACK budget expired too early");
   assert.equal(D.mode(cur,cur.nextPostAt,false),"ack_poll");
 }
 const exhausted=D.pollResult(cur,false,(cur.nextPostAt||t0)+1);
-assert.equal(exhausted.state,"delivery_uncertain","missing ACK must become bounded uncertain state");
+assert.equal(exhausted.state,"presentation_expired","missing ACK must terminalize presentation after bounded polling");
 assert.equal(exhausted.record.nextPostAt,0);
-assert.equal(D.mode(exhausted.record,t0+999999,false),"uncertain","uncertain delivery must not auto-resend");
-assert.equal(D.mode(exhausted.record,t0+999999,true),"ack_poll","manual recovery may visibility-check but must still not send");
+assert.equal(exhausted.record.presentationFinal,true);
+assert.equal(exhausted.record.actionRequired,false);
+assert.equal(D.mode(exhausted.record,t0+999999,false),"none","expired presentation must leave the active queue");
+assert.equal(D.mode(exhausted.record,t0+999999,true),"ack_poll","manual recovery may visibility-check without resubmission");
+
 const manualMiss=D.pollResult(exhausted.record,false,t0+1_000_000);
-assert.equal(manualMiss.state,"delivery_uncertain","failed manual visibility re-check must remain uncertain");
-assert.equal(D.mode(manualMiss.record,t0+1_000_001,false),"uncertain","failed manual re-check must not become sendable");
-assert.equal(manualMiss.record.submitted,true,"failed manual re-check must preserve submitted state");
+assert.equal(manualMiss.state,"presentation_expired","failed manual visibility check remains terminal");
+assert.equal(D.mode(manualMiss.record,t0+1_000_001,false),"none");
+assert.equal(manualMiss.record.submitted,true);
+assert.equal(manualMiss.record.manualVisibilityChecks,1);
 
 const visible=D.pollResult(submitted,true,t0+3000);
 assert.equal(visible.state,"acknowledged");
 assert.equal(visible.record.posted,true);
 assert.equal(visible.record.deliveryState,"acknowledged");
 
-const legacy=D.normalize({state:"done",posted:false,waitReason:"awaiting_conversation_ack",acceptedAt:t0,result:{ok:true}},t0+5000);
-assert.equal(legacy.deliveryState,"submitted_awaiting_ack","r6 pending records must migrate fail-safe to submitted state");
-assert.equal(D.mode(legacy,legacy.nextPostAt||t0+5000,true),"ack_poll","legacy awaiting ACK must never be treated as unsent");
+const legacyUncertain=D.normalize({state:"done",posted:false,submitted:true,deliveryState:"delivery_uncertain",ackPolls:65,acceptedAt:t0,result:{ok:true}},t0+5000);
+assert.equal(legacyUncertain.deliveryState,"presentation_expired","r9 delivery_uncertain records must migrate to terminal presentation history");
+assert.equal(legacyUncertain.actionRequired,false);
+assert.equal(D.mode(legacyUncertain,t0+5000,false),"none","legacy uncertain record must never poll automatically");
+
+const legacyAwaiting=D.normalize({state:"done",posted:false,waitReason:"awaiting_conversation_ack",acceptedAt:t0,result:{ok:true}},t0+D.ACK_DEADLINE_MS+100);
+assert.equal(legacyAwaiting.deliveryState,"presentation_expired","old awaiting-ACK records must expire during migration");
+assert.equal(D.mode(legacyAwaiting,t0+D.ACK_DEADLINE_MS+100,false),"none");
 
 const bg=fs.readFileSync("extension/chrome/background.js","utf8");
-for(const marker of ["CHECK_RESULT_VISIBLE","chat.delivery_ack_poll","chat.delivery_uncertain","delivery_uncertain","DELIVERY.markSubmitted","DELIVERY.pollResult"]){
+for(const marker of ["CHECK_RESULT_VISIBLE","chat.delivery_ack_poll","chat.presentation_expired","presentation_expired","DELIVERY.markSubmitted","DELIVERY.markPresentationExpired","DELIVERY.pollResult"]){
   assert.ok(bg.includes(marker),`background missing ${marker}`);
 }
-assert.ok(!bg.includes('p?.reason==="awaiting_conversation_ack"?0:1'),"legacy unbounded awaiting-ACK accounting must be removed");
+assert.ok(!bg.includes('setTimeout(()=>retryPending(tabId).catch(()=>{}),delay);\n      return {ok:false,waiting:false,reason:"delivery_uncertain"}'),"expired presentation must not remain in the automatic retry loop");
+assert.ok(bg.includes("expiredPresentationCount"),"health must expose historical presentation expiry without poisoning execution");
 
 console.log("DELIVERY_STATE_MACHINE_PASS");
