@@ -24,6 +24,8 @@ type InMsg struct {
 	Type      string          `json:"type"`
 	RequestID string          `json:"request_id"`
 	Command   json.RawMessage `json:"command"`
+	Result    json.RawMessage `json:"result,omitempty"`
+	Error     string          `json:"error,omitempty"`
 }
 
 type OutMsg struct {
@@ -235,6 +237,12 @@ func handle(m InMsg)OutMsg{
 		return OutMsg{OK:true,Type:"support.bundle.created",RequestID:m.RequestID,Version:version,Result:r}
 	case "agent.exec":
 		return handleAgentExec(m)
+	case "ledger.external.begin":
+		return handleExternalLedgerBegin(m)
+	case "ledger.external.complete":
+		return handleExternalLedgerComplete(m)
+	case "ledger.external.fail":
+		return handleExternalLedgerFail(m)
 	default:
 		return OutMsg{OK:false,RequestID:m.RequestID,Error:"unknown native message type"}
 	}
