@@ -9,7 +9,7 @@ def read(path):
     return p.read_text(encoding="utf-8")
 
 manifest=json.loads(read(Path("extension/chrome/manifest.json")))
-assert manifest["version"]=="3.13.0"
+assert manifest["version"]=="3.14.0"
 matches=set()
 for cs in manifest.get("content_scripts",[]):
     matches.update(cs.get("matches",[]))
@@ -34,7 +34,7 @@ for marker in ["https://chatgpt.com","https://gpt.arzanai.com","normalizeOrigin"
 for marker in [
     "CONNECT_CHAT","REGISTER_CHAT_ORIGIN","instagram.profile.scan","instagram.scan.search",
     "instagram.scan.get","instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.selection.confirm","bridge.diagnostics.get","POST_USER_TEXT",
-    "delivery_state_core.js","CHECK_RESULT_VISIBLE","chat.presentation_expired","SEMANTIC_RESTORE_PROOF"
+    "delivery_state_core.js","CHECK_RESULT_VISIBLE","chat.presentation_expired","SEMANTIC_RESTORE_PROOF","browser.capture.batch","artifact.collection.get"
 ]:
     assert marker in background, f"background product integration missing {marker}"
 delivery_core=read(Path("extension/chrome/delivery_state_core.js"))
@@ -42,7 +42,7 @@ for marker in ["submitted_awaiting_ack","presentation_expired","ACK_DEADLINE_MS"
     assert marker in delivery_core, f"delivery state core missing {marker}"
 
 bootstrap=read(Path("extension/chrome/background_bootstrap.js"))
-for marker in ["instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm","instagram.selection.reject","instagram.export","bridge.diagnostics.get"]:
+for marker in ["instagram.profile.scan","instagram.scan.search","instagram.scan.get","instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm","instagram.selection.reject","instagram.export","bridge.diagnostics.get","artifact.out.attach_many","browser.capture.batch"]:
     assert marker in bootstrap, f"extension capability gate missing {marker}"
 
 content=read(Path("extension/chrome/content.js"))
