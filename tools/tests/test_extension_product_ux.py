@@ -9,7 +9,7 @@ def read(path):
     return p.read_text(encoding="utf-8")
 
 manifest=json.loads(read(Path("extension/chrome/manifest.json")))
-assert manifest["version"]=="3.12.7"
+assert manifest["version"]=="3.12.8"
 matches=set()
 for cs in manifest.get("content_scripts",[]):
     matches.update(cs.get("matches",[]))
