@@ -233,3 +233,20 @@ Before importing third-party code into the distributed product:
 12. Package one r10 candidate and run the short deterministic UAT.
 
 This audit supersedes any earlier r10 decision that treated custom implementation as preferred merely because it already existed.
+
+
+## Final Browser adoption decision
+
+The initial binary-backend prototype was deliberately rejected after exact-tab review. The upstream CLI exposes active-tab page operations, which would require a focus-then-act sequence and creates an unacceptable target race.
+
+r10 therefore ships **no mandatory whg517/BBX runtime and no second Chrome extension**.
+
+Instead:
+- SOKNA retains its own Chat Adapter, Native Broker, target policy, Artifact lifecycle and permission UX.
+- Stable-ref / snapshot / DOM-action design is adapted from the pinned Apache-2.0 whg517/browser-bridge source with attribution in `extension/chrome/browser_page.js`.
+- BBX/koltyakov informed explicit target/window permission and exact-tab screenshot design.
+- SOKNA routes actions directly to the claimed Chrome `tabId`.
+- Screenshot uses `chrome.debugger` against that exact tab and is ingested into SOKNA ArtifactRoot.
+- The old custom headless recipe runner remains compatibility/QA only.
+
+This removes the extra Node/Rust runtime, second extension, second native-host registration and active-tab race while still reusing proven browser-agent design.
