@@ -38,6 +38,7 @@ function capabilityCommand(){return unifiedCommand("agent.capabilities",{})}
 const bridgeLocalActions=[
   "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.actions.list","bridge.action.describe","bridge.command.get","bridge.command.list","bridge.diagnostics.get",
   "artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach","browser.audit.run",
+  "credential.ref.list",
   "browser.backend.status","browser.tabs.list","browser.tab.open","browser.tab.claim","browser.tab.release",
   "browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot",
   "bridge.bootstrap","session.open","session.resume","session.checkpoint","session.close","session.list",
