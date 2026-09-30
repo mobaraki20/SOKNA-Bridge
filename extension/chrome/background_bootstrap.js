@@ -146,7 +146,7 @@ async function deliverOutboundAttachmentMany(command,tabId){
       const one=await streamOutboundArtifact(command,tabId,part[i],{append:i>0,submit:last,note});
       attached.push({id:one.artifact_ref.id,name:one.artifact_ref.name,bytes:one.artifact_ref.bytes,sha256:one.artifact_ref.sha256,status:one.status});
     }
-    batches.push({batch:batchNo,count:attached.length,artifacts:attached});
+    batches.push({batch:batchNo,count:attached.length,status:"submitted"});
   }
   return {ok:true,schema:"sokna-outbound-attachment-batch-v1",requested:ids.length,attached_count:batches.reduce((n,b)=>n+b.count,0),batch_count:batches.length,batch_size:batchSize,batches};
 }
