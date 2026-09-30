@@ -36,6 +36,7 @@ const CONTENT_FALLBACK_KEY="content_fallback_diagnostics_v1";
 const CHAT_ORIGINS_KEY="approved_chat_origins_v1";
 const BROWSER_ORIGINS_KEY="approved_browser_origins_v1";
 const BROWSER_TARGETS_KEY="browser_targets_v1";
+const BROWSER_CAPTURE_PROGRESS_KEY="browser_capture_progress_v1";
 const BROWSER_PAGE_FILE="browser_page.js";
 const CHAT_SCRIPT_FILES=["protocol.js","semantic_gate.js","semantic_core.js","semantic_intent.js","chat_artifact_core.js","outbound_attachment_core.js","dom_core.js","outbound_attachment.js","content.js"];
 const TRACE_MAX=300;
@@ -312,6 +313,16 @@ async function captureClaimedBrowserScreenshot(conversationKey,commandId,params=
     return {ok:true,target:{tab_id:target.tab.id,origin:target.record.origin,url:String(target.tab.url||""),title:String(target.tab.title||"")},capture:full?"full_page":"viewport",artifact_ref:artifact.artifact_ref}
   }finally{if(attached)await debugDetach(debugTarget)}
 }
+async function sha256Text(text){
+  const bytes=new TextEncoder().encode(String(text||"")),digest=await crypto.subtle.digest("SHA-256",bytes);
+  return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+async function captureProgressAll(){const d=await sget("local",[BROWSER_CAPTURE_PROGRESS_KEY]);return d[BROWSER_CAPTURE_PROGRESS_KEY]||{}}
+async function saveCaptureProgress(all){
+  const entries=Object.entries(all||{}).sort((a,b)=>Number(a[1]?.updated_at||0)-Number(b[1]?.updated_at||0));
+  const trimmed=entries.length>40?Object.fromEntries(entries.slice(entries.length-40)):Object.fromEntries(entries);
+  await sset("local",{[BROWSER_CAPTURE_PROGRESS_KEY]:trimmed});
+}
 function utf8ToB64(text){
   const bytes=new TextEncoder().encode(String(text||""));let bin="";
   for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
@@ -339,12 +350,31 @@ async function prepareBatchCaptureItem(conversationKey,item){
   return await chrome.tabs.get(target.tab.id);
 }
 async function browserCaptureBatch(command,conversationKey,params={}){
-  const items=Array.isArray(params?.items)?params.items:[];
+  const captureId=String(params?.capture_id||"").trim(),items=Array.isArray(params?.items)?params.items:[];
+  if(!/^[A-Za-z0-9._-]{1,96}$/.test(captureId))throw Object.assign(new Error("browser.capture.batch requires a safe capture_id."),{code:"BROWSER_CAPTURE_ID_INVALID"});
   if(items.length<1||items.length>100)throw Object.assign(new Error("browser.capture.batch requires 1..100 items."),{code:"BROWSER_CAPTURE_BATCH_SIZE_INVALID"});
-  const stopOnError=params?.stop_on_error===true,records=[];let captured=0,failed=0;
-  const target=await claimedBrowserTarget(conversationKey),startedAt=now();
+  const target=await claimedBrowserTarget(conversationKey),stopOnError=params?.stop_on_error===true;
+  const planSha=await sha256Text(JSON.stringify({items,stop_on_error:stopOnError,origin:String(target.record.origin||"")}));
+  const all=await captureProgressAll(),old=all[captureId];
+  if(old&&String(old.plan_sha256||"")!==planSha)throw Object.assign(new Error("capture_id already belongs to a different capture plan."),{code:"BROWSER_CAPTURE_PLAN_MISMATCH"});
+  if(old&&String(old.conversation_key||"")!==String(conversationKey||""))throw Object.assign(new Error("capture_id belongs to another conversation."),{code:"BROWSER_CAPTURE_SCOPE_MISMATCH"});
+  if(old?.collection_ref?.id){
+    return {ok:Number(old.failed||0)===0,schema:"sokna-browser-capture-batch-result-v1",capture_id:captureId,resumed:true,requested:items.length,attempted:Number(old.attempted||items.length),captured:Number(old.captured||0),failed:Number(old.failed||0),stopped_early:!!old.stopped_early,collection_ref:old.collection_ref};
+  }
+  const records=Array.isArray(old?.items)?old.items.slice():Array(items.length).fill(null);
+  const uncertain=records.find(x=>x?.state==="executing");
+  if(uncertain)throw Object.assign(new Error("A capture item was interrupted after execution began; Bridge will not replay its page actions blindly."),{code:"BROWSER_CAPTURE_ITEM_OUTCOME_UNKNOWN",item_id:String(uncertain.id||""),index:Number(uncertain.index)});
+  const startedAt=Number(old?.started_at||now());
+  let captured=records.filter(x=>x?.state==="succeeded").length,failed=records.filter(x=>x?.state==="failed").length;
+  all[captureId]={schema:"sokna-browser-capture-progress-v1",capture_id:captureId,plan_sha256:planSha,conversation_key:String(conversationKey||""),claimed_origin:String(target.record.origin||""),tab_id:Number(target.tab.id),started_at:startedAt,updated_at:now(),requested:items.length,items:records,captured,failed,state:"running"};
+  await saveCaptureProgress(all);
+  let stoppedEarly=false;
   for(let i=0;i<items.length;i++){
+    if(records[i]?.state==="succeeded"||records[i]?.state==="failed")continue;
     const item=items[i]||{},itemId=String(item.id||String(i+1).padStart(3,"0")).replace(/[^A-Za-z0-9._-]/g,"_").slice(0,80)||String(i+1);
+    records[i]={index:i,id:itemId,state:"executing",started_at:now(),url:String(item?.url||"")};
+    all[captureId]={...all[captureId],updated_at:now(),items:records,captured,failed,current_index:i};
+    await saveCaptureProgress(all);
     try{
       await prepareBatchCaptureItem(conversationKey,item);
       const actions=Array.isArray(item?.actions)?item.actions:[];
@@ -356,18 +386,24 @@ async function browserCaptureBatch(command,conversationKey,params={}){
       }
       const settle=Math.max(0,Math.min(10000,Number(item?.settle_ms)||0));
       if(settle)await new Promise(resolve=>setTimeout(resolve,settle));
-      const shot=await captureClaimedBrowserScreenshot(conversationKey,command.id+"-"+itemId,{full_page:item.full_page===true});
-      records.push({index:i,id:itemId,ok:true,url:shot.target.url,title:shot.target.title,capture:shot.capture,artifact_ref:shot.artifact_ref});
+      const shot=await captureClaimedBrowserScreenshot(conversationKey,captureId+"-"+itemId,{full_page:item.full_page===true});
+      records[i]={index:i,id:itemId,state:"succeeded",ok:true,completed_at:now(),url:shot.target.url,title:shot.target.title,capture:shot.capture,artifact_ref:shot.artifact_ref};
       captured++;
     }catch(e){
-      records.push({index:i,id:itemId,ok:false,url:String(item?.url||""),error:String(e?.message||e),code:String(e?.code||"BROWSER_CAPTURE_ITEM_FAILED")});
+      records[i]={index:i,id:itemId,state:"failed",ok:false,completed_at:now(),url:String(item?.url||""),error:String(e?.message||e),code:String(e?.code||"BROWSER_CAPTURE_ITEM_FAILED")};
       failed++;
-      if(stopOnError)break;
+      if(stopOnError)stoppedEarly=true;
     }
+    all[captureId]={...all[captureId],updated_at:now(),items:records,captured,failed,current_index:null};
+    await saveCaptureProgress(all);
+    if(stoppedEarly)break;
   }
+  const attempted=records.filter(Boolean).length;
   const manifest={
     schema:"sokna-browser-capture-collection-v1",
-    version:1,
+    version:2,
+    capture_id:captureId,
+    plan_sha256:planSha,
     command_id:String(command.id||""),
     conversation_key:String(conversationKey||""),
     claimed_origin:String(target.record.origin||""),
@@ -375,23 +411,17 @@ async function browserCaptureBatch(command,conversationKey,params={}){
     created_at:now(),
     started_at:startedAt,
     requested:items.length,
-    attempted:records.length,
+    attempted,
     captured,
     failed,
-    items:records
+    stopped_early:stoppedEarly,
+    items:records.filter(Boolean)
   };
-  const name=("browser-collection-"+String(command.id||uid()).replace(/[^A-Za-z0-9._-]/g,"_")+".json").slice(0,170);
+  const name=("browser-collection-"+captureId+".json").slice(0,170);
   const ingested=await ingestExtensionArtifact(name,"application/json",utf8ToB64(JSON.stringify(manifest)));
-  return {
-    ok:failed===0,
-    schema:"sokna-browser-capture-batch-result-v1",
-    requested:items.length,
-    attempted:records.length,
-    captured,
-    failed,
-    stopped_early:records.length<items.length,
-    collection_ref:ingested.artifact_ref
-  };
+  all[captureId]={...all[captureId],updated_at:now(),state:"completed",attempted,captured,failed,stopped_early:stoppedEarly,collection_ref:ingested.artifact_ref,current_index:null};
+  await saveCaptureProgress(all);
+  return {ok:failed===0,schema:"sokna-browser-capture-batch-result-v1",capture_id:captureId,resumed:!!old,requested:items.length,attempted,captured,failed,stopped_early:stoppedEarly,collection_ref:ingested.artifact_ref};
 }
 async function artifactCollectionGet(params={}){
   const id=String(params?.id||"").trim().toLowerCase();
