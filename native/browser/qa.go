@@ -186,6 +186,10 @@ func applySetup(c *cdpClient, r Recipe) error {
 	return nil
 }
 
+func viewportClip(v Viewport) map[string]any {
+	return map[string]any{"x": 0, "y": 0, "width": float64(v.Width), "height": float64(v.Height), "scale": 1}
+}
+
 func captureScreenshot(c *cdpClient, path string, full bool, clip map[string]any) error {
 	params := map[string]any{"format": "png", "fromSurface": true, "captureBeyondViewport": true}
 	if clip != nil {
@@ -204,12 +208,13 @@ func captureScreenshot(c *cdpClient, path string, full bool, clip map[string]any
 		if err := json.Unmarshal(res, &m); err != nil {
 			return err
 		}
-		if m.ContentSize.Width > 0 && m.ContentSize.Height > 0 {
-			if m.ContentSize.Width > 10000 || m.ContentSize.Height > 20000 || m.ContentSize.Width*m.ContentSize.Height > 80000000 {
-				return errors.New("full-page capture exceeds safety dimensions")
-			}
-			params["clip"] = map[string]any{"x": 0, "y": 0, "width": m.ContentSize.Width, "height": m.ContentSize.Height, "scale": 1}
+		if m.ContentSize.Width <= 0 || m.ContentSize.Height <= 0 {
+			return errors.New("BROWSER_CAPTURE_GEOMETRY_INVALID: layout metrics returned empty content size")
 		}
+		if m.ContentSize.Width > 10000 || m.ContentSize.Height > 20000 || m.ContentSize.Width*m.ContentSize.Height > 80000000 {
+			return errors.New("full-page capture exceeds safety dimensions")
+		}
+		params["clip"] = map[string]any{"x": 0, "y": 0, "width": m.ContentSize.Width, "height": m.ContentSize.Height, "scale": 1}
 	}
 	res, err := c.send("Page.captureScreenshot", params, true, 30*time.Second)
 	if err != nil {
@@ -489,7 +494,7 @@ func runViewport(r Recipe, rawHash, outRoot, baselineDir, browserPath string, v 
 	screenshotRel := ""
 	if r.Captures.Screenshot {
 		path := filepath.Join(vdir, "viewport.png")
-		if err := captureScreenshot(c, path, false, nil); err != nil {
+		if err := captureScreenshot(c, path, false, viewportClip(v)); err != nil {
 			return ViewportResult{}, err
 		}
 		if err := addArtifact(&arts, path, outRoot, r.ScenarioID, v.ID, "screenshot", "image/png"); err != nil {
