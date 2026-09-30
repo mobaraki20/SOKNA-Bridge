@@ -30,7 +30,7 @@ function setFiles(input,file,append=false){
 }
 function begin(m){
   if(!topOnly())return {ok:false,code:"ATTACHMENT_TOP_FRAME_REQUIRED"};
-  if(assistantGenerating())return {ok:false,code:"ATTACHMENT_ASSISTANT_BUSY",error:"assistant is still generating"};
+  if(assistantGenerating())return {ok:false,code:"ATTACHMENT_ASSISTANT_BUSY",error:"assistant is still generating",retryable:true};
   if(composerText())return {ok:false,code:"ATTACHMENT_USER_DRAFT_PRESENT",error:"composer contains user text"};
   const id=String(m?.transferId||"");if(transfers.has(id))return {ok:false,code:"ATTACHMENT_TRANSFER_EXISTS"};
   try{
@@ -46,9 +46,9 @@ function chunk(m){
 }
 async function commit(m){
   const id=String(m?.transferId||""),t=transfers.get(id);if(!t)return {ok:false,code:"ATTACHMENT_TRANSFER_NOT_FOUND"};
+  if(assistantGenerating())return {ok:false,code:"ATTACHMENT_ASSISTANT_BUSY",error:"assistant is still generating",retryable:true};
   transfers.delete(id);
   try{
-    if(assistantGenerating())throw Object.assign(new Error("assistant is still generating"),{code:"ATTACHMENT_ASSISTANT_BUSY"});
     if(composerText())throw Object.assign(new Error("composer contains user text"),{code:"ATTACHMENT_USER_DRAFT_PRESENT"});
     const fin=await t.finalize(),input=fileInput();
     const file=new File([fin.bytes],fin.ref.name,{type:fin.ref.content_type,lastModified:Date.now()});setFiles(input,file,m?.append===true);
