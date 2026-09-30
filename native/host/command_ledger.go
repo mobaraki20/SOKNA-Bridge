@@ -182,7 +182,8 @@ func beginCommandRecord(c CommandEnvelope) (commandLedgerRecord, bool, error) {
 			if werr := writeImmutableCommandPhase(unknown, "terminal"); werr != nil && !errors.Is(werr, os.ErrExist) {
 				return existing, true, werr
 			}
-			return readCommandRecord(scope, c.ID)
+			latest, rerr := readCommandRecord(scope, c.ID)
+			return latest, true, rerr
 		}
 		return existing, true, nil
 	}
