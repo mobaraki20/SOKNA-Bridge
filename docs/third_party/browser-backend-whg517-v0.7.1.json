@@ -1,0 +1,56 @@
+{
+  "schema": "sokna-third-party-pin-v1",
+  "id": "browser-backend-whg517-browser-bridge",
+  "role": "real-chrome-browser-backend-candidate",
+  "upstream": {
+    "repository": "whg517/browser-bridge",
+    "license": "Apache-2.0",
+    "release_tag": "v0.7.1",
+    "release_commit": "74e234bc50fc3733e8bab4edef100907942a7001",
+    "published_at": "2026-08-15T00:59:59Z",
+    "mcp_protocol": "2025-06-18",
+    "internal_protocol": "1"
+  },
+  "windows_x64": {
+    "asset": "browser-bridge-v0.7.1-windows-x64.zip",
+    "sha256": "46ac3c0935b569ca31f998491230c9c751b0879754779985d6bcec4788b3e832",
+    "bytes": 258937,
+    "provider": "github_release_asset",
+    "provider_source": {
+      "repository": "whg517/browser-bridge",
+      "tag": "v0.7.1",
+      "asset": "browser-bridge-v0.7.1-windows-x64.zip"
+    },
+    "expected_sha256": "46ac3c0935b569ca31f998491230c9c751b0879754779985d6bcec4788b3e832"
+  },
+  "extension": {
+    "store_asset": "browser-bridge-extension-v0.7.1-store.zip",
+    "unpacked_asset": "browser-bridge-extension-v0.7.1.zip",
+    "note": "Upstream extension grants broad host access. SOKNA must not treat upstream host access as the SOKNA permission boundary."
+  },
+  "sokna_policy": {
+    "mandatory_target_gate": true,
+    "allow_ambient_tab_access": false,
+    "disable_or_do_not_expose": [
+      "page_eval",
+      "cookie_get",
+      "storage_get"
+    ],
+    "public_ai_primitives": [
+      "tab_list",
+      "tab_focus",
+      "tab_open",
+      "page_snapshot",
+      "page_text",
+      "page_screenshot",
+      "page_click",
+      "page_fill",
+      "page_scroll",
+      "page_wait_for"
+    ],
+    "provenance_required": true,
+    "sbom_required": true,
+    "third_party_notices_required": true
+  },
+  "adoption_status": "pinned-for-prototype-not-yet-shipped"
+}
