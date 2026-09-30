@@ -97,7 +97,7 @@ async function semanticTop(tabId,type,extra={}){
 function extensionActions(){
   const x=globalThis.__SOKNA_EXTENSION_ACTIONS_V1__;
   return Array.isArray(x)?[...new Set(x.map(String).filter(Boolean))]:[
-    "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.actions.list","bridge.action.describe","bridge.command.get","bridge.command.list","artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach",
+    "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.actions.list","bridge.action.describe","bridge.command.get","bridge.command.list","credential.ref.list","artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach",
     "browser.audit.run","browser.backend.status","browser.tabs.list","browser.tab.open","browser.tab.claim","browser.tab.release","browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot","bridge.bootstrap","bridge.diagnostics.get","session.open","session.resume","session.checkpoint","session.close","session.list",
     "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search","instagram.media.download","instagram.media.attach",
     "instagram.research.plan","instagram.candidates.get","instagram.candidates.attach","instagram.selection.confirm","instagram.selection.reject","instagram.export"
@@ -257,9 +257,32 @@ function browserPageActionName(action){
   const m={"browser.page.snapshot":"snapshot","browser.page.text":"text","browser.page.click":"click","browser.page.fill":"fill","browser.page.scroll":"scroll","browser.page.wait":"wait"};
   return m[String(action||"")]||""
 }
+async function credentialRefList(){
+  const r=await nativeMessage({type:"credential.list",request_id:uid()});
+  if(!r?.ok)throw Object.assign(new Error(r?.error||"Credential list failed."),{code:"CREDENTIAL_LIST_FAILED"});
+  const data=r.result||{};
+  return {ok:true,store:String(data.store||"windows-dpapi"),credentials:Array.isArray(data.credentials)?data.credentials:[]};
+}
+async function resolveCredentialField(ref,field){
+  const id=String(ref||"").trim(),f=String(field||"").trim().toLowerCase();
+  if(!id)throw Object.assign(new Error("credential_ref required"),{code:"CREDENTIAL_REF_REQUIRED"});
+  if(!["username","secret","password"].includes(f))throw Object.assign(new Error("credential_field must be username or secret"),{code:"CREDENTIAL_FIELD_INVALID"});
+  const r=await nativeMessage({type:"credential.resolve",request_id:uid(),command:{id,field:f}});
+  if(!r?.ok)throw Object.assign(new Error(r?.error||"Credential resolve failed."),{code:"CREDENTIAL_RESOLVE_FAILED"});
+  const value=String(r?.result?.value??"");
+  if(!value&&f!=="username")throw Object.assign(new Error("Credential field is empty."),{code:"CREDENTIAL_VALUE_EMPTY"});
+  return value
+}
 async function sendClaimedBrowserPage(conversationKey,action,params={}){
   const target=await claimedBrowserTarget(conversationKey),pageAction=browserPageActionName(action);if(!pageAction)throw Object.assign(new Error("Unsupported Browser page action."),{code:"BROWSER_PAGE_ACTION_UNSUPPORTED"});
-  const r=await chrome.tabs.sendMessage(target.tab.id,{type:"SOKNA_BROWSER_PAGE",action:pageAction,args:params},{frameId:0});
+  let args=params||{};
+  if(action==="browser.page.fill"&&args.credential_ref){
+    const field=String(args.credential_field||"secret"),value=await resolveCredentialField(args.credential_ref,field);
+    args={...args,value};delete args.credential_ref;delete args.credential_field;
+  }
+  const r=await chrome.tabs.sendMessage(target.tab.id,{type:"SOKNA_BROWSER_PAGE",action:pageAction,args},{frameId:0});
+  if(args!==params&&Object.prototype.hasOwnProperty.call(args,"value"))args.value="";
+
   if(!r?.ok)throw Object.assign(new Error(r?.error||"Browser page action failed."),{code:r?.code||"BROWSER_PAGE_FAILED"});
   return {ok:true,target:{tab_id:target.tab.id,origin:target.record.origin,url:String(target.tab.url||""),title:String(target.tab.title||"")},result:r.result}
 }
@@ -289,6 +312,7 @@ async function captureClaimedBrowserScreenshot(conversationKey,commandId,params=
 }
 async function browserSemanticAction(command,conversationKey){
   const action=String(command?.action||""),p=command?.params||{};
+  if(action==="credential.ref.list")return await credentialRefList();
   if(action==="browser.backend.status")return {ok:true,schema:"sokna-browser-backend-status-v1",backend:"sokna-extension-adapted",engine:"stable-ref-dom+cdp-screenshot",target_gate:"conversation+exact-tab+approved-origin",top_frame_only:true,high_risk_tools_exposed:false};
   if(action==="browser.tabs.list")return await browserTabsList();
   if(action==="browser.tab.claim")return {ok:true,claimed:true,target:await claimBrowserTab(conversationKey,Number(p.tab_id))};
@@ -340,6 +364,7 @@ function bridgeActionDescribe(params={}){
 }
 const extensionOwnedLedgerActions=new Set([
   "artifact.chat.apply","bridge.actions.list","bridge.action.describe","bridge.diagnostics.get",
+  "credential.ref.list",
   "browser.backend.status","browser.tabs.list","browser.tab.open","browser.tab.claim","browser.tab.release",
   "browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot",
   "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search",
@@ -1150,7 +1175,7 @@ async function handleCommandInner(tabId,command,meta={}){
     if(command.action==="artifact.chat.apply")result=await registerChatArtifactApply(tabId,command,a.registered.conversationKey);
     else if(command.action==="bridge.actions.list")result=await bridgeActionsList();
     else if(command.action==="bridge.action.describe")result=bridgeActionDescribe(command.params||{});
-    else if(command.action==="browser.backend.status"||command.action==="browser.tabs.list"||command.action==="browser.tab.open"||command.action==="browser.tab.claim"||command.action==="browser.tab.release"||BROWSER_TARGET.isPageAction(command.action))result=await browserSemanticAction(command,a.registered.conversationKey);
+    else if(command.action==="credential.ref.list"||command.action==="browser.backend.status"||command.action==="browser.tabs.list"||command.action==="browser.tab.open"||command.action==="browser.tab.claim"||command.action==="browser.tab.release"||BROWSER_TARGET.isPageAction(command.action))result=await browserSemanticAction(command,a.registered.conversationKey);
     else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command,tabId);
     else if(command.action==="bridge.diagnostics.get")result=await fullDiagnostics(tabId,a.registered.conversationKey,"bounded");
     else if(command.action==="instagram.adapter.status")result=await instagramAdapterStatus(command.params||{});
