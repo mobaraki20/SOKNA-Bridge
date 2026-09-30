@@ -161,10 +161,10 @@ async function deliverOutboundAttachmentMany(command,tabId){
   for(let batchIndex=0;batchIndex<totalBatches;batchIndex++){
     if(previous[batchIndex]?.state==="submitted")continue;
     const start=batchIndex*batchSize,part=ids.slice(start,start+batchSize),batchNo=batchIndex+1;
+    await waitAttachmentComposerReady(tabId);
     previous[batchIndex]={batch:batchNo,state:"executing",count:part.length,started_at:Date.now()};
     all[deliveryId]={...all[deliveryId],updated_at:Date.now(),batches:previous};
     await saveAttachManyProgress(all);
-    await waitAttachmentComposerReady(tabId);
     for(let i=0;i<part.length;i++){
       const last=i===part.length-1;
       const note=last?[customNote,`SOKNA Bridge artifact batch ${batchNo}/${totalBatches} — ${part.length} file(s).`].filter(Boolean).join("\n"):"";
