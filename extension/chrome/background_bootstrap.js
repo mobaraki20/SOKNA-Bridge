@@ -1,6 +1,6 @@
 (()=>{
 "use strict";
-importScripts("protocol.js","capability_gate.js","terminal_outcome_core.js","origin_registry_core.js","session_gate_state_core.js","action_contracts_core.js");
+importScripts("protocol.js","capability_gate.js","terminal_outcome_core.js","origin_registry_core.js","browser_target_core.js","session_gate_state_core.js","action_contracts_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const CAP=globalThis.__SOKNA_CAPABILITY_GATE_V1__;
 const ORIGIN=globalThis.__SOKNA_CHAT_ORIGIN_REGISTRY_V1__;
