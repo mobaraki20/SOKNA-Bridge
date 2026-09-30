@@ -346,6 +346,20 @@ async function agentExec(command){
   if(!r.ok)throw new Error(r.error||"Native host execution failed");return r.result;
 }
 function actionContracts(){return globalThis.__SOKNA_ACTION_CONTRACTS_V1__}
+async function bridgeDoctor(){
+  const checks=[];
+  async function check(name,fn){try{const data=await fn();checks.push({name,ok:true,data});return data}catch(e){checks.push({name,ok:false,error:String(e?.message||e)});return null}}
+  const caps=await check("agent.capabilities",()=>agentExec(unifiedLocalCommand("agent.capabilities",{})));
+  await check("artifact.root",()=>agentExec(unifiedLocalCommand("artifact.root.status",{})));
+  await check("workspace.registry",()=>agentExec(unifiedLocalCommand("workspace.registry.status",{})));
+  await check("browser.qa",()=>agentExec(unifiedLocalCommand("browser.qa.status",{})));
+  await check("credentials",()=>credentialRefList());
+  const actions=await check("tool.registry",()=>bridgeActionsList());
+  const approvedBrowser=await approvedBrowserOrigins(),targets=Object.values(await browserTargetsAll());
+  const uncontracted=Array.isArray(actions?.actions)?actions.actions.filter(x=>!x.contracted).map(x=>x.action||x.name):[];
+  const ok=checks.every(x=>x.ok)&&uncontracted.length===0;
+  return {ok,schema:"sokna-bridge-doctor-v1",checks,uncontracted_actions:uncontracted,browser:{approved_origins:approvedBrowser,target_count:targets.length},agent_version:String(caps?.capabilities?.agent||caps?.agent||""),recommendation:ok?"ready_for_uat":"fix_failed_checks_before_uat"};
+}
 async function bridgeActionsList(){
   const reg=actionContracts();if(!reg)throw new Error("ACTION_CONTRACT_REGISTRY_UNAVAILABLE");
   const cap=await agentExec(unifiedLocalCommand("agent.capabilities",{}));
@@ -363,7 +377,7 @@ function bridgeActionDescribe(params={}){
   return {ok:true,action,contracted:true,contract};
 }
 const extensionOwnedLedgerActions=new Set([
-  "artifact.chat.apply","bridge.actions.list","bridge.action.describe","bridge.diagnostics.get",
+  "artifact.chat.apply","bridge.actions.list","bridge.action.describe","bridge.doctor","bridge.diagnostics.get",
   "credential.ref.list",
   "browser.backend.status","browser.tabs.list","browser.tab.open","browser.tab.claim","browser.tab.release",
   "browser.page.snapshot","browser.page.text","browser.page.click","browser.page.fill","browser.page.scroll","browser.page.wait","browser.page.screenshot",
@@ -1175,6 +1189,7 @@ async function handleCommandInner(tabId,command,meta={}){
     if(command.action==="artifact.chat.apply")result=await registerChatArtifactApply(tabId,command,a.registered.conversationKey);
     else if(command.action==="bridge.actions.list")result=await bridgeActionsList();
     else if(command.action==="bridge.action.describe")result=bridgeActionDescribe(command.params||{});
+    else if(command.action==="bridge.doctor")result=await bridgeDoctor();
     else if(command.action==="credential.ref.list"||command.action==="browser.backend.status"||command.action==="browser.tabs.list"||command.action==="browser.tab.open"||command.action==="browser.tab.claim"||command.action==="browser.tab.release"||BROWSER_TARGET.isPageAction(command.action))result=await browserSemanticAction(command,a.registered.conversationKey);
     else if(command.action==="bridge.bootstrap")result=await extensionBootstrap(command,tabId);
     else if(command.action==="bridge.diagnostics.get")result=await fullDiagnostics(tabId,a.registered.conversationKey,"bounded");
