@@ -31,7 +31,7 @@ function nativeMessage(msg){return new Promise((resolve,reject)=>rawNativeSend(H
 function unifiedCommand(action,params={},parentId=""){const id=uid("bridge"),ts=Date.now();return {protocolVersion:"2",messageId:id,correlationId:id,parentId:String(parentId||""),kind:"command",action,schemaVersion:"2",timestamp:ts,id,params}}
 function capabilityCommand(){return unifiedCommand("agent.capabilities",{})}
 const bridgeLocalActions=[
-  "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.diagnostics.get",
+  "artifact.chat.apply","job.list","job.events","bridge.activity","bridge.command.get","bridge.command.list","bridge.diagnostics.get",
   "artifact.out.publish","artifact.out.get","artifact.out.info","artifact.out.list","artifact.out.attach","browser.audit.run",
   "bridge.bootstrap","session.open","session.resume","session.checkpoint","session.close","session.list",
   "instagram.adapter.status","instagram.profile.scan","instagram.post.inspect","instagram.scan.get","instagram.scan.search",
@@ -39,7 +39,7 @@ const bridgeLocalActions=[
   "instagram.selection.confirm","instagram.selection.reject","instagram.export"
 ];
 globalThis.__SOKNA_EXTENSION_ACTIONS_V1__=Object.freeze([...bridgeLocalActions]);
-const recoveryActions=new Set(["ping","agent.capabilities","bridge.bootstrap","bridge.diagnostics.get","session.open","session.resume","session.list","session.close","job.list","job.events","bridge.activity","artifact.out.get","artifact.out.info","artifact.out.list","result.get","workspace.registry.status","workspace.list","workspace.inspect","browser.qa.status","artifact.root.status","artifact.provider.status","instagram.adapter.status"]);
+const recoveryActions=new Set(["ping","agent.capabilities","bridge.bootstrap","bridge.command.get","bridge.command.list","bridge.diagnostics.get","session.open","session.resume","session.list","session.close","job.list","job.events","bridge.activity","artifact.out.get","artifact.out.info","artifact.out.list","result.get","workspace.registry.status","workspace.list","workspace.inspect","browser.qa.status","artifact.root.status","artifact.provider.status","instagram.adapter.status"]);
 globalThis.__SOKNA_RECOVERY_ACTIONS_V1__=Object.freeze([...recoveryActions]);
 const capabilityGate=CAP?.create?.({ttlMs:60000,extensionActions:bridgeLocalActions,fetchCapabilities:async()=>{const command=capabilityCommand();const r=await nativeMessage({type:"agent.exec",request_id:uid("cap-request"),command});if(!r?.ok)throw new Error(r?.error||"CAPABILITY_NATIVE_REQUEST_FAILED");const result=r?.result||{};if(result?.ok===false)throw new Error(result?.error||"CAPABILITY_AGENT_REQUEST_FAILED");const actions=result?.capabilities?.actions;if(!Array.isArray(actions)||!actions.length)throw new Error("CAPABILITY_ACTIONS_MISSING");return actions}});
 if(!capabilityGate)throw new Error("BACKGROUND_CAPABILITY_GATE_UNAVAILABLE");
