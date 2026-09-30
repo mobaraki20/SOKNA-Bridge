@@ -80,8 +80,11 @@ function Normalize-SoknaWorkspaceScopes([string]$Root,$Scopes){
   return @($out|Sort-Object path,access)
 }
 function Normalize-SoknaWorkspaceTools($Tools){
+  if($null-eq$Tools){return @()}
+  $items=@($Tools);if($items.Count-eq0){return @()}
   $out=@();$seen=@{}
-  foreach($x in @($Tools)){
+  foreach($x in $items){
+    if($null-eq$x){throw 'WORKSPACE_TOOL_INVALID'}
     $raw=([string]$x).Trim()
     $t=[IO.Path]::GetFileName($raw).ToLowerInvariant()
     foreach($suffix in @('.exe','.cmd','.bat')){if($t.EndsWith($suffix)){$t=$t.Substring(0,$t.Length-$suffix.Length)}}
