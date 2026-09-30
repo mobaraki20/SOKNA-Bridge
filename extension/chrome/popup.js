@@ -1,7 +1,7 @@
 const ORIGIN=globalThis.__SOKNA_CHAT_ORIGIN_REGISTRY_V1__;
 const $=id=>document.getElementById(id);
 const msg=m=>new Promise(resolve=>chrome.runtime.sendMessage(m,r=>{const e=chrome.runtime.lastError;resolve(e?{ok:false,error:e.message,runtime_unavailable:true}:(r||{}))}));
-let lastDiagnostics=null,originStatus={approved:false,secure:false,origin:""};
+let lastDiagnostics=null,originStatus={approved:false,secure:false,origin:""},browserOriginStatus={approved:false,web:false,origin:"",pattern:""};
 const POPSTATE=globalThis.__SOKNA_POPUP_STATE_V1__;
 async function activeTab(){const a=await chrome.tabs.query({active:true,currentWindow:true});return a[0]}
 function isChat(url){const o=ORIGIN?.normalizeOrigin?.(url)||"";return !!o&&originStatus?.approved===true&&originStatus.origin===o}
@@ -17,7 +17,7 @@ function describeChat(s){return POPSTATE.describeChat(s)}
 function recoveryModel(s){return POPSTATE.recoveryModel(s)}
 async function paint(){
   $("extensionVersion").textContent="Extension "+String(chrome.runtime.getManifest().version||"");
-  const t=await activeTab(),url=t?.url||"";await agentHealth();originStatus=await msg({type:"CHAT_ORIGIN_STATUS",url});show("chatCard",false);show("igCard",false);show("otherCard",false);show("approveChatOrigin",false);
+  const t=await activeTab(),url=t?.url||"";await agentHealth();originStatus=await msg({type:"CHAT_ORIGIN_STATUS",url});browserOriginStatus=await msg({type:"BROWSER_ORIGIN_STATUS",url});show("chatCard",false);show("igCard",false);show("browserCard",false);show("otherCard",false);show("approveChatOrigin",false);
   if(isChat(url)){
     $("pageType").textContent="ChatGPT";show("chatCard");
     const s=await msg({type:"STATUS",tabId:t.id,conversationKey:conversationKey(url)}),d=describeChat(s),recovery=recoveryModel(s);
@@ -31,13 +31,19 @@ async function paint(){
     $("pageType").textContent="Instagram";show("igCard");show("igDownload",isIGPost(url));show("igScan",isIGProfile(url));show("igLimit",isIGProfile(url));
     $("igState").textContent=isIGPost(url)?"پست/Reel شناسایی شد.":isIGProfile(url)?"پروفایل شناسایی شد؛ آماده scan.":"Instagram باز است؛ یک پست یا پروفایل را باز کن.";return
   }
-  $("pageType").textContent="SOKNA Bridge";show("otherCard");
-  const candidate=originStatus?.secure&&!isIG(url);show("approveChatOrigin",candidate);$("otherOrigin").textContent=candidate?(originStatus.origin||"HTTPS origin"):"—";
+  $("pageType").textContent="SOKNA Bridge";
+  if(browserOriginStatus?.web){
+    show("browserCard");$("browserOrigin").textContent=browserOriginStatus.origin||"—";
+    show("approveBrowserOrigin",!browserOriginStatus.approved);
+    $("browserState").textContent=browserOriginStatus.approved?"این origin برای Browser تأیید شده؛ AI فقط بعد از claim کردن یک tab مشخص می‌تواند روی آن عمل کند.":"دسترسی Browser فقط با تأیید شما و فقط برای همین origin فعال می‌شود.";
+  }
+  const candidate=originStatus?.secure&&!isIG(url);show("otherCard",candidate);show("approveChatOrigin",candidate);$("otherOrigin").textContent=candidate?(originStatus.origin||"HTTPS origin"):"—";
 }
 async function getFullDiagnostics(){
   const t=await activeTab();if(!isChat(t?.url||""))return {ok:false,error:"برای Diagnostic مربوط به Chat، تب ChatGPT را فعال کن."};
   const r=await msg({type:"FULL_DIAGNOSTICS",tabId:t.id,conversationKey:conversationKey(t.url)});if(r?.ok)lastDiagnostics=r;$("diag").textContent=diagText(r);return r
 }
+$("approveBrowserOrigin").onclick=async()=>{const t=await activeTab(),status=await msg({type:"BROWSER_ORIGIN_STATUS",url:t?.url||""}),pattern=status?.pattern||"";if(!pattern)return setMsg("browserMsg","فقط originهای HTTP/HTTPS قابل فعال‌سازی هستند.","err");let granted=false;try{granted=await chrome.permissions.request({origins:[pattern]})}catch(e){return setMsg("browserMsg",String(e),"err")}if(!granted)return setMsg("browserMsg","مجوز این سایت تأیید نشد.","warn");const r=await msg({type:"REGISTER_BROWSER_ORIGIN",tabId:t.id,url:t.url});setMsg("browserMsg",r?.ok?"Browser برای همین origin فعال شد. حالا Chat می‌تواند این tab را claim کند.":r?.error||"فعال‌سازی Browser ناموفق",r?.ok?"ok":"err");await paint()};
 $("approveChatOrigin").onclick=async()=>{const t=await activeTab(),origin=ORIGIN?.normalizeOrigin?.(t?.url||"");if(!origin)return setMsg("otherMsg","فقط یک origin امن HTTPS قابل فعال‌سازی است.","err");const pattern=ORIGIN.originPattern(origin);let granted=false;try{granted=await chrome.permissions.request({origins:[pattern]})}catch(e){return setMsg("otherMsg",String(e),"err")}if(!granted)return setMsg("otherMsg","مجوز این origin تأیید نشد.","warn");const r=await msg({type:"REGISTER_CHAT_ORIGIN",tabId:t.id,url:t.url});setMsg("otherMsg",r?.ok?"این origin به‌عنوان ChatGPT Adapter تأیید شد.":r?.error||"فعال‌سازی ناموفق",r?.ok?"ok":"err");await paint()};
 $("connectChat").onclick=async()=>{const t=await activeTab();$("connectChat").disabled=true;setMsg("chatMsg","در حال اتصال، ساخت session و اجرای probe واقعی…");const r=await msg({type:"CONNECT_CHAT",tabId:t.id});const ok=!!r?.transport_verified;setMsg("chatMsg",ok?"اتصال end-to-end تأیید شد.":(r?.ok?"اتصال ثبت شد اما Transport هنوز کامل تأیید نشده؛ Diagnostics را ببین.":r?.error||"اتصال ناموفق"),ok?"ok":r?.ok?"warn":"err");$("diag").textContent=diagText(r);$("connectChat").disabled=false;await paint()};
 $("disconnectChat").onclick=async()=>{const t=await activeTab();const r=await msg({type:"DISARM",tabId:t.id});setMsg("chatMsg",r?.ok?"اتصال این گفتگو قطع شد.":r?.error||"",r?.ok?"ok":"err");await paint()};
