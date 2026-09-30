@@ -1,7 +1,7 @@
 {
   "schema": "sokna-r10-candidate-ready-v1",
   "candidate_ref": "sokna-agent-2.7.1-r10",
-  "code_commit": "ba66f7b41e5477b245d296df0e80d742e5ec411c",
+  "code_commit": "9bdd72d1854e9ddb42061fd0a48a7c91040e7d32",
   "agent_version": "2.7.1",
   "extension_version": "3.13.0",
   "semantic_version": "2.1.1",
