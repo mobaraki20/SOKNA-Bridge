@@ -18,12 +18,12 @@ assert "https://www.instagram.com/*" in matches, "Instagram origin missing"
 assert "downloads" in manifest.get("permissions",[]), "Instagram media download permission missing"
 
 popup=read(Path("extension/chrome/popup.html"))
-for marker in ["Connect this Chat","Instagram Research Assistant","Advanced diagnostics","باز کردن Control Center"]:
+for marker in ["Connect this Chat","Instagram Research Assistant","Browser Automation","Advanced diagnostics","باز کردن Control Center"]:
     assert marker in popup, f"popup UX missing {marker}"
 assert "Test Credentials" not in popup, "developer credential UI must not be in primary popup"
 
 popup_js=read(Path("extension/chrome/popup.js"))
-for marker in ["CONNECT_CHAT","IG_POPUP_DOWNLOAD","IG_POPUP_SCAN","OPEN_CONTROL_CENTER"]:
+for marker in ["CONNECT_CHAT","REGISTER_BROWSER_ORIGIN","IG_POPUP_DOWNLOAD","IG_POPUP_SCAN","OPEN_CONTROL_CENTER"]:
     assert marker in popup_js, f"popup integration missing {marker}"
 assert "setInterval" not in popup_js, "popup must not poll Activity continuously"
 
@@ -34,11 +34,11 @@ for marker in ["https://chatgpt.com","https://gpt.arzanai.com","normalizeOrigin"
 for marker in [
     "CONNECT_CHAT","REGISTER_CHAT_ORIGIN","instagram.profile.scan","instagram.scan.search",
     "instagram.scan.get","instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.selection.confirm","bridge.diagnostics.get","POST_USER_TEXT",
-    "delivery_state_core.js","CHECK_RESULT_VISIBLE","chat.delivery_uncertain","SEMANTIC_RESTORE_PROOF"
+    "delivery_state_core.js","CHECK_RESULT_VISIBLE","chat.presentation_expired","SEMANTIC_RESTORE_PROOF"
 ]:
     assert marker in background, f"background product integration missing {marker}"
 delivery_core=read(Path("extension/chrome/delivery_state_core.js"))
-for marker in ["submitted_awaiting_ack","delivery_uncertain","ACK_DEADLINE_MS","MAX_ACK_POLLS"]:
+for marker in ["submitted_awaiting_ack","presentation_expired","ACK_DEADLINE_MS","MAX_ACK_POLLS"]:
     assert marker in delivery_core, f"delivery state core missing {marker}"
 
 bootstrap=read(Path("extension/chrome/background_bootstrap.js"))
