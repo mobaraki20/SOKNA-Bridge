@@ -40,7 +40,7 @@ globalThis[G]=Object.freeze({schema:"sokna-browser-target-core-v1",normalizeOrig
 // R12 service-worker preload: keep the stable background_bootstrap.js manifest entry while
 // extending only the browser-task capability. In Node/tests this block is inert.
 if(typeof importScripts==="function"&&typeof chrome==="object"){
-  importScripts("browser_task_core.js");
+  importScripts("browser_task_core.js","browser_task_preset_core.js");
   const cap=globalThis.__SOKNA_CAPABILITY_GATE_V1__;
   if(cap?.create&&!globalThis.__SOKNA_R12_TASK_CAPABILITY_PATCHED__){
     globalThis.__SOKNA_R12_TASK_CAPABILITY_PATCHED__=true;
@@ -51,6 +51,7 @@ if(typeof importScripts==="function"&&typeof chrome==="object"){
   }
   if(typeof queueMicrotask==="function")queueMicrotask(()=>{
     if(!globalThis.__SOKNA_BROWSER_TASK_RUNTIME_V1__)importScripts("browser_task_runtime.js");
+    if(!globalThis.__SOKNA_BROWSER_TASK_PRESETS_V1__)importScripts("browser_task_presets.js");
   });
 }
 })();
