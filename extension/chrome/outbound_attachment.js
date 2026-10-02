@@ -38,10 +38,16 @@ function setFiles(input,file,append=false){
   dt.items.add(file);
   const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"files")?.set;
   if(setter)setter.call(input,dt.files);else input.files=dt.files;
-  input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));
-  const selected=[...(input.files||[])].find(x=>x.name===file.name&&x.size===file.size);
-  if(!selected)throw Object.assign(new Error("Composer did not accept the selected file"),{code:"ATTACHMENT_INPUT_REJECTED"});
-  return selected;
+  // Validate that the browser accepted the synthetic FileList before notifying
+  // the page. Current ChatGPT consumes/clears the input synchronously from the
+  // input/change handler after it stages the attachment, so checking files only
+  // after dispatch produces a false ATTACHMENT_INPUT_REJECTED even though the
+  // attachment is already present in the composer.
+  const selectedBeforeDispatch=[...(input.files||[])].find(x=>x.name===file.name&&x.size===file.size);
+  if(!selectedBeforeDispatch)throw Object.assign(new Error("Composer file input rejected the selected file before dispatch"),{code:"ATTACHMENT_INPUT_REJECTED"});
+  input.dispatchEvent(new Event("input",{bubbles:true}));
+  input.dispatchEvent(new Event("change",{bubbles:true}));
+  return selectedBeforeDispatch;
 }
 function begin(m){
   if(!topOnly())return {ok:false,code:"ATTACHMENT_TOP_FRAME_REQUIRED"};
