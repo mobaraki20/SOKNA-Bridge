@@ -114,10 +114,10 @@ Normal success may produce one accepted STATUS and one terminal RESULT. It must 
 
 R12 intentionally layers over the proven r11.1 runtime rather than rewriting it:
 
-- `background_r12.js` preloads narrow capability/target shims, then imports the unchanged r11.1 bootstrap.
-- `browser_task_runtime.js` installs `browser.task.run` after the proven background is loaded, adds it to the extension-owned durable ledger, and wraps the existing browser semantic dispatcher.
+- the manifest keeps the proven `background_bootstrap.js` service-worker entry so older reliability contracts remain valid.
+- `browser_target_core.js` exposes `browser.task.run` as a browser-routed action and preloads the task capability/core during service-worker startup; it schedules the task runtime only after the existing background has loaded.
+- `browser_task_runtime.js` installs `browser.task.run`, adds it to the extension-owned durable ledger, and wraps the existing browser semantic dispatcher.
 - `browser_task_core.js` contains pure plan validation, replay classification and link filtering so these rules can be tested outside Chrome.
-- the Extension manifest points at the R12 wrapper service worker.
 
 This keeps the attachment hotfix and r11 reliability work intact while making the new orchestration layer independently removable/testable.
 

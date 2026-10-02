@@ -61,7 +61,14 @@ async function executeStep(ctx,step,state){
       for(const f of step.fields){incOps(ctx);await sendClaimedBrowserPage(ctx.conversationKey,"browser.page.fill",f)}return {ok:true,filled:step.fields.length}
     }
     case "click":{
-      incOps(ctx);return await sendClaimedBrowserPage(ctx.conversationKey,"browser.page.click",{ref:step.ref,selector:step.selector})
+      const before=await claimedBrowserTarget(ctx.conversationKey),beforeUrl=String(before.tab.url||"");
+      incOps(ctx);const r=await sendClaimedBrowserPage(ctx.conversationKey,"browser.page.click",{ref:step.ref,selector:step.selector});
+      // Browser-Use-style page-change guard: give a click-triggered navigation a short window
+      // to start, then wait for the exact claimed tab to become complete before the next step.
+      const detectUntil=Date.now()+1500;let navigationObserved=false;
+      while(Date.now()<detectUntil){const tab=await chrome.tabs.get(before.tab.id);if(String(tab?.url||"")!==beforeUrl||String(tab?.status||"")==="loading"){navigationObserved=true;break}await new Promise(resolve=>setTimeout(resolve,100))}
+      if(navigationObserved)await waitBrowserTabComplete(before.tab.id,30000);
+      return r
     }
     case "wait":{
       incOps(ctx);return await sendClaimedBrowserPage(ctx.conversationKey,"browser.page.wait",{selector:step.selector,text:step.text,settled:step.settled===true,timeoutMs:step.timeout_ms})
@@ -85,6 +92,7 @@ async function executeStep(ctx,step,state){
         if(step.settle_ms>0){await new Promise(r=>setTimeout(r,step.settle_ms));incOps(ctx);await settlePage(ctx.conversationKey,step.timeout_ms)}
         const shot=await captureOne(ctx,{...step,id:step.id,settle_ms:0},`${step.id}-${String(i+1).padStart(2,"0")}`);
         const artifactItem={step_id:step.id,item_index:i,source_href:href,url:String(shot?.target?.url||tab?.url||""),title:String(shot?.target?.title||tab?.title||""),capture:String(shot?.capture||""),artifact_ref:shot.artifact_ref};
+        // captureOne already appended; enrich the matching last item instead of duplicating it.
         Object.assign(ctx.artifacts[ctx.artifacts.length-1],artifactItem);
         itemStates[i]={index:i,state:"completed",href,artifact_id:String(shot.artifact_ref.id),completed_at:Date.now()};state.items=itemStates;captured++;ctx.progress.updated_at=Date.now();ctx.progress.artifacts=ctx.artifacts;ctx.progress.op_count=ctx.opCount;await saveTaskProgress(ctx.all);
       }
@@ -109,9 +117,14 @@ async function runBrowserTask(command,conversationKey){
   for(let i=0;i<plan.steps.length;i++){
     const step=plan.steps[i];let state=progress.steps[i]||{id:step.id,op:step.op,state:"pending",attempts:0};progress.steps[i]=state;
     if(state.state==="completed")continue;
+    const maxAttemptsForStep=1+(CORE.replaySafe(step)?plan.max_retries_per_step:0);
+    if(state.state==="failed"&&(!CORE.replaySafe(step)||Number(state.attempts||0)>=maxAttemptsForStep)){
+      progress.state="failed";progress.updated_at=Date.now();await saveTaskProgress(all);
+      throw taskError(String(state.error_code||"BROWSER_TASK_STEP_FAILED"),String(state.error||`step ${step.id} previously failed`),{step_id:step.id});
+    }
     const decision=CORE.interruptedDecision(step,state.state);
     if(decision.resume==="unknown"){progress.state="blocked";progress.updated_at=Date.now();await saveTaskProgress(all);throw taskError(decision.code,`step ${step.id} was interrupted after a non-replay-safe action began`,{step_id:step.id})}
-    let lastError=null,maxAttempts=1+(CORE.replaySafe(step)?plan.max_retries_per_step:0);
+    let lastError=null,maxAttempts=maxAttemptsForStep;
     for(let attempt=Number(state.attempts||0);attempt<maxAttempts;attempt++){
       state={...state,state:"executing",attempts:attempt+1,started_at:Date.now()};if(state.items)state.items=progress.steps[i].items;progress.steps[i]=state;progress.updated_at=Date.now();progress.vars=ctx.vars;progress.artifacts=ctx.artifacts;progress.op_count=ctx.opCount;await saveTaskProgress(all);
       try{

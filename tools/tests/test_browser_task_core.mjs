@@ -47,12 +47,12 @@ assert.throws(()=>core.validatePlan({task_id:'bad id',steps:[{op:'snapshot'}]}),
 assert.throws(()=>core.validatePlan({task_id:'x',steps:[{op:'fill_many',fields:[]}]}),/1..20/);
 assert.throws(()=>core.validatePlan({task_id:'x',steps:[{op:'navigate',url:'http://a',from:'x'}]}),/exactly one/);
 
-const wrapper=fs.readFileSync(path.join(root,'extension/chrome/background_r12.js'),'utf8');
+const targetCore=fs.readFileSync(path.join(root,'extension/chrome/browser_target_core.js'),'utf8');
 const runtime=fs.readFileSync(path.join(root,'extension/chrome/browser_task_runtime.js'),'utf8');
 const manifest=JSON.parse(fs.readFileSync(path.join(root,'extension/chrome/manifest.json'),'utf8'));
-assert.equal(manifest.background.service_worker,'background_r12.js');
-assert.match(wrapper,/browser\.task\.run/);
-assert.match(wrapper,/background_bootstrap\.js/);
+assert.equal(manifest.background.service_worker,'background_bootstrap.js');
+assert.match(targetCore,/browser\.task\.run/);
+assert.match(targetCore,/browser_task_runtime\.js/);
 assert.match(runtime,/BROWSER_TASK_STEP_OUTCOME_UNKNOWN/);
 assert.match(runtime,/extensionOwnedLedgerActions\.add\(TASK_ACTION\)/);
 assert.match(runtime,/baseBrowserSemanticAction/);

@@ -70,7 +70,9 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $m=Get-Content extension/chrome/manifest.json -Raw | ConvertFrom-Json
-          if([string]$m.background.service_worker-ne'background_r12.js'){throw 'R12_SERVICE_WORKER_NOT_ACTIVE'}
+          if([string]$m.background.service_worker-ne'background_bootstrap.js'){throw 'R12_STABLE_BOOTSTRAP_ENTRY_CHANGED'}
+          $target=Get-Content extension/chrome/browser_target_core.js -Raw
+          if($target-notmatch'browser_task_runtime\.js'){throw 'R12_TASK_RUNTIME_PRELOAD_MISSING'}
           $runtime=Get-Content extension/chrome/browser_task_runtime.js -Raw
           if($runtime-notmatch'browser\.task\.run'){throw 'R12_TASK_ACTION_MISSING'}
           if($runtime-match'\beval\s*\('){throw 'R12_RAW_EVAL_FORBIDDEN'}
