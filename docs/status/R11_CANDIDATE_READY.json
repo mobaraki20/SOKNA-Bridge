@@ -1,0 +1,9 @@
+{
+  "schema": "sokna-r11-candidate-ready-v1",
+  "candidate_ref": "sokna-agent-2.7.1-r11",
+  "agent_version": "2.7.1",
+  "extension_version": "3.14.0",
+  "semantic_version": "2.1.1",
+  "code_commit": "f12742b9f87a0614d675a920b3bdc6b6d8c84f05",
+  "manual_black_box_uat_required": true
+}
