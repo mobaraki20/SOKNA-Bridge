@@ -1,0 +1,77 @@
+name: R12 Local Browser Task Validation
+
+on:
+  push:
+    branches:
+      - refactor/r12-local-browser-task-engine
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sokna-r12-browser-task-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - name: Extension syntax
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem extension/chrome -Filter '*.js' -File | ForEach-Object {
+            node --check $_.FullName
+            if($LASTEXITCODE-ne0){throw "JS_SYNTAX_FAILED: $($_.Name)"}
+          }
+      - name: JavaScript contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem tools/tests -Filter 'test_*.mjs' -File | Sort-Object Name | ForEach-Object {
+            Write-Host "=== $($_.Name) ==="
+            node $_.FullName
+            if($LASTEXITCODE-ne0){throw "JS_CONTRACT_FAILED: $($_.Name)"}
+          }
+      - name: Python contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem tools/tests -Filter 'test_*.py' -File | Sort-Object Name | ForEach-Object {
+            python $_.FullName
+            if($LASTEXITCODE-ne0){throw "PY_CONTRACT_FAILED: $($_.Name)"}
+          }
+      - name: Go tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($dir in @('native/agent','native/host','native/browser','native/provider')){
+            Push-Location $dir
+            try {
+              go test ./...
+              if($LASTEXITCODE-ne0){throw "GO_TEST_FAILED: $dir"}
+            } finally { Pop-Location }
+          }
+      - name: R12 task-engine static invariants
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $m=Get-Content extension/chrome/manifest.json -Raw | ConvertFrom-Json
+          if([string]$m.background.service_worker-ne'background_r12.js'){throw 'R12_SERVICE_WORKER_NOT_ACTIVE'}
+          $runtime=Get-Content extension/chrome/browser_task_runtime.js -Raw
+          if($runtime-notmatch'browser\.task\.run'){throw 'R12_TASK_ACTION_MISSING'}
+          if($runtime-match'\beval\s*\('){throw 'R12_RAW_EVAL_FORBIDDEN'}
+          if($runtime-notmatch'BROWSER_TASK_STEP_OUTCOME_UNKNOWN'){throw 'R12_OUTCOME_UNKNOWN_GUARD_MISSING'}
