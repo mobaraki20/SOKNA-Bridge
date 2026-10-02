@@ -15,7 +15,7 @@
     "debugger"
   ],
   "background": {
-    "service_worker": "background_bootstrap.js"
+    "service_worker": "background_r12.js"
   },
   "action": {
     "default_popup": "popup.html",
