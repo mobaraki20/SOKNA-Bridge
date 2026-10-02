@@ -53,6 +53,11 @@ for(const token of [
 const adapter=fs.readFileSync("extension/chrome/outbound_attachment.js","utf8");
 assert.ok(adapter.includes("Core.selectInputCandidate"),"attachment input resolver must use tested core ranking");
 assert.ok(adapter.includes('m?.type==="OUTBOUND_ATTACHMENT_READY"'),"attachment readiness probe missing");
+const beforeIndex=adapter.indexOf("selectedBeforeDispatch");
+const inputEventIndex=adapter.indexOf('dispatchEvent(new Event("input"');
+const changeEventIndex=adapter.indexOf('dispatchEvent(new Event("change"');
+assert.ok(beforeIndex>=0&&inputEventIndex>beforeIndex&&changeEventIndex>inputEventIndex,"attachment FileList acceptance must be verified before ChatGPT input/change handlers can consume and clear the input");
+assert.ok(!adapter.includes('const selected=[...(input.files||[])].find'),"adapter must not treat post-dispatch input clearing as attachment rejection");
 
 const content=fs.readFileSync("extension/chrome/content.js","utf8");
 assert.ok(content.includes('reason:"body-fallback-exact-envelope"'),"exact-envelope body fallback ACK missing");
