@@ -1,0 +1,15 @@
+{
+  "schema": "sokna-r11-attachment-hotfix-ready-v1",
+  "candidate_ref": "sokna-agent-2.7.1-r11.1-attachment-hotfix",
+  "base_candidate_commit": "eaf1268c1511fe82c74718c2371b62d865ffb665",
+  "hotfix_code_commit": "90d74cba086b8a0a78b53abd8c9f3ad3c1cc38d4",
+  "agent_version": "2.7.1",
+  "extension_version": "3.14.0",
+  "semantic_version": "2.1.1",
+  "uat_scope": [
+    "artifact.out.attach",
+    "artifact.out.attach_many"
+  ],
+  "defect": "ATTACHMENT_INPUT_REJECTED false negative after ChatGPT synchronously consumes and clears the selected file input",
+  "status": "ready_for_automated_qualification"
+}
