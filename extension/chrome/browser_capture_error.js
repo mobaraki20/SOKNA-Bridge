@@ -1,0 +1,1 @@
+(()=>{"use strict";const p=new URLSearchParams(location.search);document.getElementById("url").textContent=p.get("url")||"(unknown)";document.getElementById("error").textContent=p.get("error")||"Capture failed"})();
