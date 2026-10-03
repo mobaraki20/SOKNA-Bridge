@@ -20,6 +20,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 WizardStyle=modern
+SetupIconFile=sokna-bridge.ico
 OutputDir=..\..\artifacts\windows\setup
 OutputBaseFilename=SOKNA-Bridge-Setup-{#MyAppVersion}-x64
 Compression=lzma2/ultra64
