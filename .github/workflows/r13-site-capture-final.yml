@@ -10,12 +10,12 @@ permissions:
 
 concurrency:
   group: sokna-r13-site-capture-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   validate:
     runs-on: windows-2025
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,6 +29,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
 
       - name: Extension syntax
         shell: powershell
@@ -76,16 +79,51 @@ jobs:
           $ErrorActionPreference='Stop'
           $m=Get-Content extension/chrome/manifest.json -Raw | ConvertFrom-Json
           if([string]$m.background.service_worker-ne'background_bootstrap.js'){throw 'R13_BOOTSTRAP_ENTRY_CHANGED'}
+          foreach($n in @(16,32,48,128)){
+            $p="extension/chrome/icons/icon$n.png"
+            if(-not(Test-Path $p -PathType Leaf)){throw "R13_EXTENSION_ICON_MISSING: $p"}
+            if([string]$m.icons."$n" -ne "icons/icon$n.png"){throw "R13_MANIFEST_ICON_MISSING: $n"}
+            if([string]$m.action.default_icon."$n" -ne "icons/icon$n.png"){throw "R13_ACTION_ICON_MISSING: $n"}
+          }
+          if(-not(Test-Path 'maintenance/Sokna.Bridge.ControlCenter/sokna-bridge.ico' -PathType Leaf)){throw 'R13_CONTROL_CENTER_ICON_MISSING'}
+          if(-not(Test-Path 'installer/windows/sokna-bridge.ico' -PathType Leaf)){throw 'R13_INSTALLER_ICON_MISSING'}
           $target=Get-Content extension/chrome/browser_target_core.js -Raw
-          if($target-notmatch'browser_site_capture_core\.js'){throw 'R13_SITE_CORE_PRELOAD_MISSING'}
-          if($target-notmatch'browser_site_capture\.js'){throw 'R13_SITE_RUNTIME_PRELOAD_MISSING'}
+          foreach($needle in @('browser_site_capture_core.js','browser_site_capture.js','delivery_ack_patch.js','event_order_patch.js')){
+            if($target-notmatch[regex]::Escape($needle)){throw "R13_PRELOAD_MISSING: $needle"}
+          }
           $site=Get-Content extension/chrome/browser_site_capture.js -Raw
           foreach($needle in @('max_workers:5','max_pages:500','captureBeyondViewport:true','syntheticEvidence','sokna-browser-task-collection-v1','SOKNA-Bridge/Jobs','body_fallback_positive_ack:true')){
             if($site-notmatch[regex]::Escape($needle)){throw "R13_INVARIANT_MISSING: $needle"}
           }
-          if($site-match'\beval\s*\('){throw 'R13_RAW_EVAL_FORBIDDEN'}
+          $ack=Get-Content extension/chrome/delivery_ack_patch.js -Raw
+          if($ack-notmatch'body-type-id-fallback' -or $ack-notmatch'DELIVERY\.markAcknowledged'){throw 'R13_ACK_PATCH_INCOMPLETE'}
+          $order=Get-Content extension/chrome/event_order_patch.js -Raw
+          if($order-notmatch'command-accepted' -or $order-notmatch'accepted-priority'){throw 'R13_EVENT_ORDER_PATCH_INCOMPLETE'}
+          foreach($src in @($site,$ack,$order)){if($src-match'\beval\s*\('){throw 'R13_RAW_EVAL_FORBIDDEN'}}
 
-      - name: Package extension final candidate
+      - name: Acquire pinned Inno Setup
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Path .ci/tools -Force | Out-Null
+          nuget install Tools.InnoSetup -Version 6.7.3 -OutputDirectory .ci/tools -NonInteractive
+          $iscc=Get-ChildItem .ci/tools -Filter ISCC.exe -File -Recurse | Select-Object -First 1
+          if(-not $iscc){throw 'PINNED_INNO_COMPILER_NOT_FOUND'}
+          $iscc.FullName | Set-Content .ci/inno-compiler-path.txt -Encoding ASCII
+
+      - name: Build Windows final candidate
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $iscc=(Get-Content .ci/inno-compiler-path.txt -Raw).Trim()
+          $output=@(./tools/installer/Build-P1Installer.ps1 -InnoCompiler $iscc -ExpectedSourceCommit '${{ github.sha }}')
+          $result=($output|Select-Object -Last 1)|ConvertFrom-Json
+          if(-not $result.ok){throw 'R13_WINDOWS_SETUP_BUILD_FAILED'}
+          $setup=Get-ChildItem artifacts/windows/setup -Filter '*.exe' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if(-not $setup){throw 'R13_WINDOWS_SETUP_MISSING'}
+          Write-Host ('WINDOWS_SETUP_SHA256='+(Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant())
+
+      - name: Package final candidates
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
@@ -93,10 +131,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $zip=Join-Path $out 'SOKNA-Bridge-Extension-r13-final.zip'
           Compress-Archive -Path 'extension/chrome/*' -DestinationPath $zip -CompressionLevel Optimal
-          $hash=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content -Path (Join-Path $out 'SHA256.txt') -Value ("$hash  SOKNA-Bridge-Extension-r13-final.zip") -Encoding ascii
+          $setup=Get-ChildItem artifacts/windows/setup -Filter '*.exe' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          Copy-Item $setup.FullName (Join-Path $out $setup.Name) -Force
+          $lines=@()
+          foreach($f in Get-ChildItem $out -File | Sort-Object Name){$lines += ((Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+"  "+$f.Name)}
+          $lines | Set-Content -Path (Join-Path $out 'SHA256.txt') -Encoding ascii
           Set-Content -Path (Join-Path $out 'HEAD.txt') -Value $env:GITHUB_SHA -Encoding ascii
-          Write-Host "EXTENSION_ZIP_SHA256=$hash"
+          Get-Content (Join-Path $out 'SHA256.txt') | ForEach-Object {Write-Host $_}
 
       - uses: actions/upload-artifact@v4
         with:
