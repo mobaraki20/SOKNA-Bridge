@@ -1,0 +1,106 @@
+name: R13 Site Capture Final Validation
+
+on:
+  push:
+    branches:
+      - release/r13-site-capture-final
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sokna-r13-site-capture-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Extension syntax
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem extension/chrome -Filter '*.js' -File | ForEach-Object {
+            node --check $_.FullName
+            if($LASTEXITCODE-ne0){throw "JS_SYNTAX_FAILED: $($_.Name)"}
+          }
+
+      - name: JavaScript contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem tools/tests -Filter 'test_*.mjs' -File | Sort-Object Name | ForEach-Object {
+            Write-Host "=== $($_.Name) ==="
+            node $_.FullName
+            if($LASTEXITCODE-ne0){throw "JS_CONTRACT_FAILED: $($_.Name)"}
+          }
+
+      - name: Python contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem tools/tests -Filter 'test_*.py' -File | Sort-Object Name | ForEach-Object {
+            python $_.FullName
+            if($LASTEXITCODE-ne0){throw "PY_CONTRACT_FAILED: $($_.Name)"}
+          }
+
+      - name: Go tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($dir in @('native/agent','native/host','native/browser','native/provider')){
+            Push-Location $dir
+            try {
+              go test ./...
+              if($LASTEXITCODE-ne0){throw "GO_TEST_FAILED: $dir"}
+            } finally { Pop-Location }
+          }
+
+      - name: R13 final invariants
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $m=Get-Content extension/chrome/manifest.json -Raw | ConvertFrom-Json
+          if([string]$m.background.service_worker-ne'background_bootstrap.js'){throw 'R13_BOOTSTRAP_ENTRY_CHANGED'}
+          $target=Get-Content extension/chrome/browser_target_core.js -Raw
+          if($target-notmatch'browser_site_capture_core\.js'){throw 'R13_SITE_CORE_PRELOAD_MISSING'}
+          if($target-notmatch'browser_site_capture\.js'){throw 'R13_SITE_RUNTIME_PRELOAD_MISSING'}
+          $site=Get-Content extension/chrome/browser_site_capture.js -Raw
+          foreach($needle in @('max_workers:5','max_pages:500','captureBeyondViewport:true','syntheticEvidence','sokna-browser-task-collection-v1','SOKNA-Bridge/Jobs','body_fallback_positive_ack:true')){
+            if($site-notmatch[regex]::Escape($needle)){throw "R13_INVARIANT_MISSING: $needle"}
+          }
+          if($site-match'\beval\s*\('){throw 'R13_RAW_EVAL_FORBIDDEN'}
+
+      - name: Package extension final candidate
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'r13-final-out'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $zip=Join-Path $out 'SOKNA-Bridge-Extension-r13-final.zip'
+          Compress-Archive -Path 'extension/chrome/*' -DestinationPath $zip -CompressionLevel Optimal
+          $hash=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path (Join-Path $out 'SHA256.txt') -Value ("$hash  SOKNA-Bridge-Extension-r13-final.zip") -Encoding ascii
+          Set-Content -Path (Join-Path $out 'HEAD.txt') -Value $env:GITHUB_SHA -Encoding ascii
+          Write-Host "EXTENSION_ZIP_SHA256=$hash"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SOKNA-Bridge-R13-Final-${{ github.sha }}
+          path: ${{ runner.temp }}/r13-final-out/*
+          if-no-files-found: error
+          retention-days: 30
