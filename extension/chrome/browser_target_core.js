@@ -54,6 +54,7 @@ if(typeof importScripts==="function"&&typeof chrome==="object"){
     if(!globalThis.__SOKNA_BROWSER_TASK_PRESETS_V1__)importScripts("browser_task_presets.js");
     if(!globalThis.__SOKNA_BROWSER_SITE_CAPTURE_V1__)importScripts("browser_site_capture.js");
     if(!globalThis.__SOKNA_DELIVERY_ACK_PATCH_V1__)importScripts("delivery_ack_patch.js");
+    if(!globalThis.__SOKNA_EVENT_ORDER_PATCH_V1__)importScripts("event_order_patch.js");
   });
 }
 })();
