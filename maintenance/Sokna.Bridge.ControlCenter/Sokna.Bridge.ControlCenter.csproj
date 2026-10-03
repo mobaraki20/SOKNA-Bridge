@@ -13,5 +13,6 @@
     <AssemblyName>Sokna.Bridge.ControlCenter</AssemblyName>
     <RootNamespace>Sokna.Bridge.ControlCenter</RootNamespace>
     <Version>2.7.1</Version>
+    <ApplicationIcon>sokna-bridge.ico</ApplicationIcon>
   </PropertyGroup>
 </Project>
