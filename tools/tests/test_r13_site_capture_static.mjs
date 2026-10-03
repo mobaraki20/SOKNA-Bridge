@@ -1,0 +1,15 @@
+import fs from "node:fs";
+import assert from "node:assert/strict";
+const s=fs.readFileSync("extension/chrome/browser_site_capture.js","utf8");
+const target=fs.readFileSync("extension/chrome/browser_target_core.js","utf8");
+assert.match(target,/browser_site_capture_core\.js/);
+assert.match(target,/browser_site_capture\.js/);
+assert.match(s,/Math\.min\(5,cfg\.workers\)/);
+assert.match(s,/captureBeyondViewport:true/);
+assert.match(s,/syntheticEvidence/);
+assert.match(s,/SOKNA-Bridge\/Jobs/);
+assert.match(s,/sokna-browser-task-collection-v1/);
+assert.match(s,/await waitTabCompleteSafe\(tab\.id/);
+assert.match(s,/body_fallback_positive_ack:true/);
+assert.doesNotMatch(s,/\beval\s*\(/);
+console.log("R13_SITE_CAPTURE_STATIC_PASS");
