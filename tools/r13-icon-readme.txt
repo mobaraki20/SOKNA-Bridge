@@ -1,0 +1,1 @@
+R13 icon assets are staged as base64 source files under extension/chrome/icons and are decoded by the final packaging workflow before packaging. The Windows ICO is generated from the same canonical 256px source during build.
