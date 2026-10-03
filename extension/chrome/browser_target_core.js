@@ -37,8 +37,8 @@ const PAGE_ACTIONS=Object.freeze([
 function isPageAction(action){return PAGE_ACTIONS.includes(String(action||""))}
 globalThis[G]=Object.freeze({schema:"sokna-browser-target-core-v1",normalizeOrigin,originPattern,normalizeApproved,targetRecord,validateRecord,PAGE_ACTIONS,isPageAction});
 
-// R12/R13 service-worker preload: keep the stable background_bootstrap.js manifest entry
-// while extending browser task execution and final site-capture capability locally.
+// R12/R13/R13.1 service-worker preload: keep the stable background_bootstrap.js manifest entry
+// while extending browser task execution, site capture and exact named capture-map execution locally.
 if(typeof importScripts==="function"&&typeof chrome==="object"){
   importScripts("browser_task_core.js","browser_task_preset_core.js","browser_site_capture_core.js");
   const cap=globalThis.__SOKNA_CAPABILITY_GATE_V1__;
@@ -53,6 +53,8 @@ if(typeof importScripts==="function"&&typeof chrome==="object"){
     if(!globalThis.__SOKNA_BROWSER_TASK_RUNTIME_V1__)importScripts("browser_task_runtime.js");
     if(!globalThis.__SOKNA_BROWSER_TASK_PRESETS_V1__)importScripts("browser_task_presets.js");
     if(!globalThis.__SOKNA_BROWSER_SITE_CAPTURE_V1__)importScripts("browser_site_capture.js");
+    if(!globalThis.__SOKNA_BROWSER_CAPTURE_MAPS_V1__)importScripts("browser_capture_maps.js");
+    if(!globalThis.__SOKNA_BROWSER_CAPTURE_MAP_RUNTIME_V1__)importScripts("browser_capture_map.js");
     if(!globalThis.__SOKNA_DELIVERY_ACK_PATCH_V1__)importScripts("delivery_ack_patch.js");
     if(!globalThis.__SOKNA_EVENT_ORDER_PATCH_V1__)importScripts("event_order_patch.js");
   });
