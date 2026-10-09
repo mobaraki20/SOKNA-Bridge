@@ -6,9 +6,13 @@ const captureBefore=text;
 
 const categoryLabels='["\u062f\u0633\u062a\u0647\u200c\u0628\u0646\u062f\u06cc \u062c\u062f\u06cc\u062f","\u062f\u0633\u062a\u0647 \u062c\u062f\u06cc\u062f","\u0648\u06cc\u0631\u0627\u06cc\u0634 \u062f\u0633\u062a\u0647","\u0648\u06cc\u0631\u0627\u06cc\u0634"]';
 const menuLabels='["\u0645\u0646\u0648\u06cc \u062c\u062f\u06cc\u062f","\u0645\u0646\u0648 \u062c\u062f\u06cc\u062f","\u0648\u06cc\u0631\u0627\u06cc\u0634 \u0645\u0646\u0648","\u0648\u06cc\u0631\u0627\u06cc\u0634"]';
+const staffAssignments='["\u0627\u062e\u062a\u0635\u0627\u0635\u200c\u0647\u0627"]';
 
-text=text.replace(/C06:\[\["click",\[[^\n]*?\]\]\]/,`C06:[["click",${categoryLabels}]]`);
-text=text.replace(/C09:\[\["click",\[[^\n]*?\]\]\]/,`C09:[["click",${menuLabels}]]`);
+// Match capture IDs only at an object-entry boundary. Never let C06 match the suffix of SC06.
+text=text.replace(/(^|[,\n])C06:\[\["click",\[[^\n]*?\]\]\]/m,`$1C06:[["click",${categoryLabels}]]`);
+text=text.replace(/(^|[,\n])C09:\[\["click",\[[^\n]*?\]\]\]/m,`$1C09:[["click",${menuLabels}]]`);
+// Repair the one SC06 entry that an earlier over-broad correction could have touched.
+text=text.replace(/(^|[,\n])SC06:\[\["click",\[[^\n]*?\]\]\]/m,`$1SC06:[["click",${staffAssignments}]]`);
 
 const handler=/function interactionRequiresHandler\(e\)\{\n\s*const a=norm\(e\?\.action\|\|""\);\n\s*if\(!a\)return false;\n\s*return [^\n]+;\n\}/;
 const handlerReplacement=[
@@ -23,6 +27,7 @@ text=text.replace(handler,handlerReplacement);
 
 if(!text.includes(`C09:[["click",${menuLabels}]]`))throw new Error('R14_C09_ORDER_NOT_APPLIED');
 if(!text.includes(`C06:[["click",${categoryLabels}]]`))throw new Error('R14_C06_ORDER_NOT_APPLIED');
+if(!text.includes(`SC06:[["click",${staffAssignments}]]`))throw new Error('R14_SC06_REPAIR_NOT_APPLIED');
 if(/Ø|Ù|Ú|Û/.test(text.match(/function interactionRequiresHandler[\s\S]*?\n\}/)?.[0]||''))throw new Error('R14_HANDLER_MOJIBAKE_REMAINS');
 
 if(text!==captureBefore){
