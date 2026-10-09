@@ -1,0 +1,42 @@
+name: R14 Source Normalize
+
+on:
+  push:
+    branches:
+      - release/r14-final
+    paths:
+      - tools/release/R14_APPLY_SOURCE_PATCH.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Normalize capture source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          ./tools/release/Normalize-R14-Capture.ps1
+          node --check extension/chrome/browser_capture_map.js
+          node tools/tests/test_r14_final_hardening.mjs
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add extension/chrome/browser_capture_map.js
+          if(-not (git diff --cached --quiet)){
+            git commit -m "fix(r14): normalize capture state targets [skip ci]"
+            if($LASTEXITCODE-ne0){throw 'R14_NORMALIZE_COMMIT_FAILED'}
+            git push origin HEAD:release/r14-final
+            if($LASTEXITCODE-ne0){throw 'R14_NORMALIZE_PUSH_FAILED'}
+          }
+          Write-Host 'R14_SOURCE_NORMALIZE_PASS'
