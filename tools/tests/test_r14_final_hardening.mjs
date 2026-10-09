@@ -38,6 +38,7 @@ must(c09.length>=3&&c09[0]!=='ویرایش'&&c09.at(-1)==='ویرایش','R14_C0
 
 must(content.includes('if(env.kind!==expected.kind)continue'),'R14_STATUS_RESULT_KIND_GATE');
 must(outcome.includes('retryable:!!d?.retryable'),'R14_NACK_RETRYABLE_SOURCE');
-must(contracts.includes('This is not a command lookup; use bridge.command.get for command ids.'),'R14_RESULT_GET_CONTRACT');
+must(agent.includes('"result.get" {')&&agent.includes("if($id-notmatch'^[a-f0-9]{64}$')"),'R14_RESULT_REF_CONTRACT');
+must(contracts.includes('"bridge.command.get":tool("broker","Recover one durable command outcome'),'R14_COMMAND_GET_CONTRACT');
 
 console.log(JSON.stringify({ok:true,suite:'r14-final-hardening',version:manifest.version}));
