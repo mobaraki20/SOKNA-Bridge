@@ -1,5 +1,7 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
+const FINAL_EXTENSION='3.14.2';
 const capturePath='extension/chrome/browser_capture_map.js';
 let text=fs.readFileSync(capturePath,'utf8');
 const captureBefore=text;
@@ -61,3 +63,29 @@ if(contracts!==contractsBefore){
 }else{
   console.log('R14_RESULT_GET_CONTRACT_ALREADY_FINAL');
 }
+
+// Current-extension contract sweep. Only touch Python tests that read the current extension manifest;
+// historical migration fixtures and unrelated legacy-version tests remain untouched.
+const testDir='tools/tests';
+let normalizedTests=[];
+for(const name of fs.readdirSync(testDir)){
+  if(!/^test_.*\.py$/.test(name))continue;
+  const p=path.join(testDir,name);
+  let src=fs.readFileSync(p,'utf8');
+  if(!src.includes('extension/chrome/manifest.json')||!src.includes('3.14.0'))continue;
+  const before=src;
+  src=src.replace(/(manifest\[['"]version['"]\]\s*==\s*['"])3\.14\.0(['"])/g,`$1${FINAL_EXTENSION}$2`);
+  src=src.replace(/(CURRENT_EXTENSION\s*=\s*['"])3\.14\.0(['"])/g,`$1${FINAL_EXTENSION}$2`);
+  src=src.replace(/(EXPECTED_EXTENSION(?:_VERSION)?\s*=\s*['"])3\.14\.0(['"])/g,`$1${FINAL_EXTENSION}$2`);
+  if(src!==before){fs.writeFileSync(p,src,'utf8');normalizedTests.push(name)}
+}
+console.log(JSON.stringify({event:'R14_PY_VERSION_CONTRACT_SWEEP',normalized:normalizedTests}));
+
+// Fail hard if a current-manifest assertion still pins the obsolete version.
+const stale=[];
+for(const name of fs.readdirSync(testDir)){
+  if(!/^test_.*\.py$/.test(name))continue;
+  const p=path.join(testDir,name),src=fs.readFileSync(p,'utf8');
+  if(src.includes('extension/chrome/manifest.json')&&/manifest\[['"]version['"]\]\s*==\s*['"]3\.14\.0['"]/.test(src))stale.push(name);
+}
+if(stale.length)throw new Error(`R14_STALE_CURRENT_EXTENSION_TESTS:${stale.join(',')}`);
