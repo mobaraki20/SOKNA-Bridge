@@ -30,16 +30,20 @@ jobs:
           node --check extension/chrome/browser_capture_map.js
           node --check extension/chrome/action_contracts_core.js
           node tools/tests/test_r14_final_hardening.mjs
+          if grep -RInE "manifest\[['\"]version['\"]\][[:space:]]*==[[:space:]]*['\"]3\.14\.0['\"]" tools/tests --include='test_*.py'; then
+            echo 'R14_STALE_EXTENSION_TEST_REFERENCE'
+            exit 1
+          fi
       - name: Commit correction if needed
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- extension/chrome/browser_capture_map.js extension/chrome/action_contracts_core.js; then
+          if git diff --quiet -- extension/chrome/browser_capture_map.js extension/chrome/action_contracts_core.js tools/tests; then
             echo 'R14_SOURCE_ALREADY_FINAL'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add extension/chrome/browser_capture_map.js extension/chrome/action_contracts_core.js
-          git commit -m 'fix(r14): finalize capture truth and result contract [skip ci]'
+          git add extension/chrome/browser_capture_map.js extension/chrome/action_contracts_core.js tools/tests
+          git commit -m 'fix(r14): finalize capture and current extension contracts [skip ci]'
           git push origin HEAD:release/r14-final
