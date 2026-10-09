@@ -164,7 +164,7 @@ const C={
  "job.batch":tool("agent","Execute an ordered batch of actions in one workspace.",obj({workspace:S,steps:{type:"array",minItems:1,items:{type:"object",additionalProperties:true,required:["name","action","params"],properties:{name:S,action:S,params:{type:"object"},stop_on_error:B}}}},["workspace","steps"]),{mutating:true,destructive:true,idempotency:"depends_on_steps"}),
  "job.list":tool("broker","List locally known jobs and owned processes.",obj({limit:{type:"integer",minimum:1,maximum:200}})),
  "job.events":tool("broker","Read recent job activity events.",obj({id:{type:"string"},limit:{type:"integer",minimum:1,maximum:500}})),
- "result.get":tool("agent","Read a bounded chunk from an Agent large-result reference.",obj({id:{type:"string",pattern:"^[a-f0-9]{64}$"},offset:{type:"integer",minimum:0},limit:{type:"integer",minimum:1,maximum:12000}},["id"]))
+ "result.get":tool("agent","Read a bounded chunk from a durable large-result reference. id must be the 64-hex result_ref.id returned by the Agent. This is not a command lookup; use bridge.command.get for command ids.",obj({id:{type:"string",pattern:"^[a-fA-F0-9]{64}$"},offset:{type:"integer",minimum:0},limit:{type:"integer",minimum:1,maximum:12000}},["id"]),{errors:["Invalid result ref id","Result ref not found"]})
 };
 function describe(name){
  const n=String(name||""),base=C[n];return base?Object.freeze({name:n,...base}):null;
