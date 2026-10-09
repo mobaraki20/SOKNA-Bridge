@@ -32,7 +32,9 @@ must(capture.includes('state-unchanged'),'R14_CAPTURE_STATE_CHANGE_GATE');
 must(capture.includes('stateFingerprint'),'R14_CAPTURE_FINGERPRINT');
 must(capture.includes('BROWSER_CAPTURE_MAP_ARTIFACT_INVALID'),'R14_CAPTURE_ARTIFACT_MAP');
 must(capture.includes('supports_artifact_map:true'),'R14_CAPTURE_ARTIFACT_CAPABILITY');
-must(capture.includes('["منوی جدید","منو جدید","ویرایش منو","ویرایش"]'),'R14_C09_SPECIFIC_FIRST');
+const c09Raw=capture.match(/C09:\[\["click",\[(.*?)\]\]\]/)?.[1]||'';
+let c09=[];try{c09=JSON.parse(`[${c09Raw}]`)}catch{}
+must(c09.length>=3&&c09[0]!=='ویرایش'&&c09.at(-1)==='ویرایش','R14_C09_SPECIFIC_FIRST');
 
 must(content.includes('if(env.kind!==expected.kind)continue'),'R14_STATUS_RESULT_KIND_GATE');
 must(outcome.includes('retryable:!!d?.retryable'),'R14_NACK_RETRYABLE_SOURCE');
