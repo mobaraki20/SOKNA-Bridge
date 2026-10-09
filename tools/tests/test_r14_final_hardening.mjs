@@ -2,6 +2,10 @@ import fs from 'node:fs';
 
 const read=p=>fs.readFileSync(p,'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+const parseClickLabels=(source,id)=>{
+  const raw=source.match(new RegExp(`(?:^|[,\\n])${id}:\\[\\["click",\\[(.*?)\\]\\]\\]`,'m'))?.[1]||'';
+  try{return JSON.parse(`[${raw}]`)}catch{return []}
+};
 
 const manifest=JSON.parse(read('extension/chrome/manifest.json'));
 const bg=read('extension/chrome/background.js');
@@ -32,13 +36,19 @@ must(capture.includes('state-unchanged'),'R14_CAPTURE_STATE_CHANGE_GATE');
 must(capture.includes('stateFingerprint'),'R14_CAPTURE_FINGERPRINT');
 must(capture.includes('BROWSER_CAPTURE_MAP_ARTIFACT_INVALID'),'R14_CAPTURE_ARTIFACT_MAP');
 must(capture.includes('supports_artifact_map:true'),'R14_CAPTURE_ARTIFACT_CAPABILITY');
-const c09Raw=capture.match(/C09:\[\["click",\[(.*?)\]\]\]/)?.[1]||'';
-let c09=[];try{c09=JSON.parse(`[${c09Raw}]`)}catch{}
+const c09=parseClickLabels(capture,'C09');
+const c06=parseClickLabels(capture,'C06');
+const sc06=parseClickLabels(capture,'SC06');
 must(c09.length>=3&&c09[0]!=='ویرایش'&&c09.at(-1)==='ویرایش','R14_C09_SPECIFIC_FIRST');
+must(c06.length>=3&&c06[0]!=='ویرایش'&&c06.at(-1)==='ویرایش','R14_C06_SPECIFIC_FIRST');
+must(sc06.length===1&&sc06[0]==='اختصاص‌ها','R14_SC06_IDENTITY_PRESERVED');
+const handler=capture.match(/function interactionRequiresHandler[\s\S]*?\n\}/)?.[0]||'';
+must(!/[ØÙÚÛ]/.test(handler),'R14_HANDLER_NO_MOJIBAKE');
 
 must(content.includes('if(env.kind!==expected.kind)continue'),'R14_STATUS_RESULT_KIND_GATE');
 must(outcome.includes('retryable:!!d?.retryable'),'R14_NACK_RETRYABLE_SOURCE');
 must(agent.includes('"result.get" {')&&agent.includes("if($id-notmatch'^[a-f0-9]{64}$')"),'R14_RESULT_REF_CONTRACT');
+must(contracts.includes('This is not a command lookup; use bridge.command.get for command ids.'),'R14_RESULT_GET_DESCRIPTION');
 must(contracts.includes('"bridge.command.get":tool("broker","Recover one durable command outcome'),'R14_COMMAND_GET_CONTRACT');
 
 console.log(JSON.stringify({ok:true,suite:'r14-final-hardening',version:manifest.version}));
