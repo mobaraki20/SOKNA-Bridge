@@ -17,13 +17,15 @@ must(content.includes('const VERSION="3.14.2"'),'R14_VERSION_CONTENT');
 
 must(agent.includes('PLAN_STAGE_INVALID_PATH'),'R14_PLAN_STAGE_ERROR');
 must(agent.includes("^tools/plans/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+\\.json$"),'R14_PLAN_STAGE_NESTED_PATH');
-must(agent.includes('CreateDirectory((Split-Path -Parent $dst))'),'R14_PLAN_STAGE_PARENT_DIR');
+must(agent.includes("$d=Split-Path $f -Parent")&&agent.includes('New-Item -ItemType Directory -Path $d -Force'),'R14_PLAN_STAGE_PARENT_DIR');
 
 must(bg.includes('activeWorkspaceToolPolicy'),'R14_POLICY_PROBE');
 must(bg.includes('filterPolicyBoundActions'),'R14_POLICY_FILTER');
+must(bg.includes('tools:{git:r?.git||{},gh:r?.gh||{}}'),'R14_POLICY_TOOL_STATUS');
 must(bg.includes('a.startsWith("gh.")'),'R14_POLICY_GH');
 must(bg.includes('a.startsWith("git.")'),'R14_POLICY_GIT');
 must(bg.includes('effective_source:tool_policy.resolved'),'R14_EFFECTIVE_SOURCE');
+must(bg.includes('supported_actions'),'R14_SUPPORTED_VS_EFFECTIVE');
 
 must(capture.includes('state-handler-missing'),'R14_CAPTURE_HANDLER_GATE');
 must(capture.includes('state-unchanged'),'R14_CAPTURE_STATE_CHANGE_GATE');
