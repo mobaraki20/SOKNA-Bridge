@@ -74,10 +74,11 @@ function filterPolicyBoundActions(actions,policy){
 '@
   InsertBlock $l $i $helper
 }
-$i=FindLine $l 'const b=await agentExec(command),agent_actions=agentActionsFromBootstrap(b),extension_actions=extensionActions();'
-$j=FindLine $l 'const effective_actions=' ([Math]::Max(0,$i))
-if($i-lt0-or$j-lt0){throw 'R14_BOOTSTRAP_ACTION_LINES_MISSING'}
-if(-not ($l -join "`n").Contains('const tool_policy=await activeWorkspaceToolPolicy')){
+$joinedBg=$l -join "`n"
+if(-not $joinedBg.Contains('const tool_policy=await activeWorkspaceToolPolicy')){
+  $i=FindLine $l 'const b=await agentExec(command),agent_actions=agentActionsFromBootstrap(b),extension_actions=extensionActions();'
+  $j=FindLine $l 'const effective_actions=' ([Math]::Max(0,$i))
+  if($i-lt0-or$j-lt0){throw 'R14_BOOTSTRAP_ACTION_LINES_MISSING'}
   $l[$i]='  const b=await agentExec(command),agent_actions=agentActionsFromBootstrap(b),extension_actions=extensionActions();'
   $l[$j]='  const tool_policy=await activeWorkspaceToolPolicy(b),effective_agent_actions=filterPolicyBoundActions(agent_actions,tool_policy);'
   $l.Insert($j+1,'  const supported_actions=[...new Set([...agent_actions,...extension_actions])].sort(),effective_actions=[...new Set([...effective_agent_actions,...extension_actions])].sort(),recovery_actions=[...(globalThis.__SOKNA_RECOVERY_ACTIONS_V1__||[])].map(String).sort();')
