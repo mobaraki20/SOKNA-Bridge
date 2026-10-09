@@ -1,2 +1,0 @@
-R14 qualification trigger 3
-Line-based source patching.
