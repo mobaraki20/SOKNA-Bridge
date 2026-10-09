@@ -35,14 +35,21 @@ if(text!==captureBefore){
 const contractsPath='extension/chrome/action_contracts_core.js';
 let contracts=fs.readFileSync(contractsPath,'utf8');
 const contractsBefore=contracts;
-const resultGetContract=' "result.get":tool("agent","Read a bounded chunk from a durable large-result reference. id must be the 64-hex result_ref.id returned by the Agent. This is not a command lookup; use bridge.command.get for command ids.",obj({id:{type:"string",pattern:"^[a-fA-F0-9]{64}$"},offset:{type:"integer",minimum:0},limit:{type:"integer",minimum:1,maximum:12000}},["id"]),{errors:["Invalid result ref id","Result ref not found"]}),\n';
-if(!contracts.includes('"result.get":tool(')){
+const resultGetContract=' "result.get":tool("agent","Read a bounded chunk from a durable large-result reference. id must be the 64-hex result_ref.id returned by the Agent. This is not a command lookup; use bridge.command.get for command ids.",obj({id:{type:"string",pattern:"^[a-fA-F0-9]{64}$"},offset:{type:"integer",minimum:0},limit:{type:"integer",minimum:1,maximum:12000}},["id"]),{errors:["Invalid result ref id","Result ref not found"]})';
+const oldResultGet=/ "result\.get":tool\("agent","Read a bounded chunk from an Agent large-result reference\."[^\n]*\)/;
+if(contracts.includes('"result.get":tool(')){
+  if(!contracts.includes('This is not a command lookup; use bridge.command.get for command ids.')){
+    if(!oldResultGet.test(contracts))throw new Error('R14_RESULT_GET_EXISTING_CONTRACT_SHAPE_MISSING');
+    contracts=contracts.replace(oldResultGet,resultGetContract);
+  }
+}else{
   const anchor=' "artifact.apply":tool("agent","Apply a verified workspace patch artifact with SHA/freshness guards.",obj({workspace:S,path:S,expected_sha256:S,apply:B},["workspace","path","expected_sha256"]),{mutating:true,destructive:true,idempotency:"precondition_guarded"}),\n';
   if(!contracts.includes(anchor))throw new Error('R14_RESULT_GET_CONTRACT_ANCHOR_MISSING');
-  contracts=contracts.replace(anchor,anchor+resultGetContract);
+  contracts=contracts.replace(anchor,anchor+resultGetContract+',\n');
 }
 if(!contracts.includes('This is not a command lookup; use bridge.command.get for command ids.'))throw new Error('R14_RESULT_GET_CONTRACT_NOT_APPLIED');
-if(!contracts.includes('pattern:"^[a-fA-F0-9]{64}$"'))throw new Error('R14_RESULT_GET_HASH_PATTERN_MISSING');
+const resultLine=contracts.match(/ "result\.get":tool\([^\n]+/)?.[0]||'';
+if(!resultLine.includes('pattern:"^[a-fA-F0-9]{64}$"'))throw new Error('R14_RESULT_GET_HASH_PATTERN_MISSING');
 if(contracts!==contractsBefore){
   fs.writeFileSync(contractsPath,contracts,'utf8');
   console.log('R14_RESULT_GET_CONTRACT_UPDATED');
