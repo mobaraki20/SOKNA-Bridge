@@ -1,0 +1,228 @@
+name: R14 Final Release
+
+on:
+  push:
+    branches:
+      - release/r14-final
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sokna-r14-final-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qualify-and-release:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      RELEASE_TAG: sokna-agent-2.7.1-r14-final
+      EXTENSION_VERSION: 3.14.2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify immutable finalization
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          ./tools/release/Finalize-R14.ps1
+          git diff --check
+          git diff --exit-code -- native/runtime/v2.7.1/agent.ps1 extension/chrome
+          if($LASTEXITCODE-ne0){throw 'R14_SOURCE_NOT_FINALIZED'}
+          $sha=(git rev-parse HEAD).Trim()
+          "FINAL_SHA=$sha" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "FINAL_SHA=$sha"
+
+      - name: Extension syntax
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem extension/chrome -Filter '*.js' -File | ForEach-Object {
+            node --check $_.FullName
+            if($LASTEXITCODE-ne0){throw "JS_SYNTAX_FAILED: $($_.Name)"}
+          }
+
+      - name: JavaScript contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem tools/tests -Filter 'test_*.mjs' -File | Sort-Object Name | ForEach-Object {
+            Write-Host "=== $($_.Name) ==="
+            node $_.FullName
+            if($LASTEXITCODE-ne0){throw "JS_CONTRACT_FAILED: $($_.Name)"}
+          }
+
+      - name: Python contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Get-ChildItem tools/tests -Filter 'test_*.py' -File | Sort-Object Name | ForEach-Object {
+            Write-Host "=== $($_.Name) ==="
+            python $_.FullName
+            if($LASTEXITCODE-ne0){throw "PY_CONTRACT_FAILED: $($_.Name)"}
+          }
+
+      - name: Go tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($dir in @('native/agent','native/host','native/browser','native/provider')){
+            Push-Location $dir
+            try {
+              go test ./...
+              if($LASTEXITCODE-ne0){throw "GO_TEST_FAILED: $dir"}
+            } finally { Pop-Location }
+          }
+
+      - name: R14 final invariants
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $m=Get-Content extension/chrome/manifest.json -Raw | ConvertFrom-Json
+          if([string]$m.version-ne$env:EXTENSION_VERSION){throw "R14_EXTENSION_VERSION_INVALID: $($m.version)"}
+          if([string]$m.background.service_worker-ne'background_bootstrap.js'){throw 'R14_BOOTSTRAP_ENTRY_CHANGED'}
+          foreach($n in @(16,32,48,128)){
+            $p="extension/chrome/icons/icon$n.png"
+            if(-not(Test-Path $p -PathType Leaf)){throw "R14_EXTENSION_ICON_MISSING: $p"}
+            if([string]$m.icons."$n" -ne "icons/icon$n.png"){throw "R14_MANIFEST_ICON_MISSING: $n"}
+            if([string]$m.action.default_icon."$n" -ne "icons/icon$n.png"){throw "R14_ACTION_ICON_MISSING: $n"}
+          }
+          $agent=Get-Content native/runtime/v2.7.1/agent.ps1 -Raw
+          if($agent-notmatch'PLAN_STAGE_INVALID_PATH'){throw 'R14_PLAN_STAGE_FIX_MISSING'}
+          $bg=Get-Content extension/chrome/background.js -Raw
+          if($bg-notmatch'activeWorkspaceToolPolicy' -or $bg-notmatch'effective_source'){throw 'R14_POLICY_FIX_MISSING'}
+          $capture=Get-Content extension/chrome/browser_capture_map.js -Raw
+          foreach($needle in @('state-handler-missing','state-unchanged','BROWSER_CAPTURE_MAP_ARTIFACT_INVALID','supports_artifact_map:true')){
+            if($capture-notmatch[regex]::Escape($needle)){throw "R14_CAPTURE_FIX_MISSING: $needle"}
+          }
+          $content=Get-Content extension/chrome/content.js -Raw
+          if($content-notmatch'env\.kind!==expected\.kind'){throw 'R14_RESULT_KIND_GATE_MISSING'}
+          $outcome=Get-Content extension/chrome/terminal_outcome_core.js -Raw
+          if($outcome-notmatch'retryable:\s*!!d\?\.retryable'){throw 'R14_RETRYABLE_SOURCE_MISSING'}
+          foreach($src in @($bg,$capture,$content,$outcome)){if($src-match'\beval\s*\('){throw 'R14_RAW_EVAL_FORBIDDEN'}}
+
+      - name: Acquire pinned Inno Setup
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Path .ci/tools -Force | Out-Null
+          nuget install Tools.InnoSetup -Version 6.7.3 -OutputDirectory .ci/tools -NonInteractive
+          $iscc=Get-ChildItem .ci/tools -Filter ISCC.exe -File -Recurse | Select-Object -First 1
+          if(-not $iscc){throw 'PINNED_INNO_COMPILER_NOT_FOUND'}
+          $iscc.FullName | Set-Content .ci/inno-compiler-path.txt -Encoding ASCII
+
+      - name: Build Windows installer
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $iscc=(Get-Content .ci/inno-compiler-path.txt -Raw).Trim()
+          $output=@(./tools/installer/Build-P1Installer.ps1 -InnoCompiler $iscc -ExpectedSourceCommit $env:FINAL_SHA)
+          $result=($output|Select-Object -Last 1)|ConvertFrom-Json
+          if(-not $result.ok){throw 'R14_WINDOWS_SETUP_BUILD_FAILED'}
+          $setup=Get-ChildItem artifacts/windows/setup -Filter '*.exe' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if(-not $setup){throw 'R14_WINDOWS_SETUP_MISSING'}
+          Write-Host ('WINDOWS_SETUP_SHA256='+(Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant())
+
+      - name: Package immutable final assets
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'r14-final-out'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $extension=Join-Path $out 'SOKNA-Bridge-Extension-3.14.2-r14-final.zip'
+          Compress-Archive -Path 'extension/chrome/*' -DestinationPath $extension -CompressionLevel Optimal
+
+          $source=Join-Path $out 'SOKNA-Bridge-release-r14-final.zip'
+          git archive --format=zip --output="$source" HEAD
+          if($LASTEXITCODE-ne0){throw 'R14_SOURCE_ARCHIVE_FAILED'}
+
+          $setup=Get-ChildItem artifacts/windows/setup -Filter '*.exe' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $setupFinal=Join-Path $out 'SOKNA-Bridge-Setup-2.7.1-r14-final-x64.exe'
+          Copy-Item $setup.FullName $setupFinal -Force
+
+          $notes=@"
+          # SOKNA Bridge 2.7.1-r14 Final / Extension 3.14.2
+
+          Final release after October 2026 UAT defect closure.
+
+          Closed in R14:
+          - plan.stage accepts safe nested JSON paths below tools/plans and rejects traversal/absolute paths with a stable error code.
+          - bootstrap effective_actions reflects active-workspace git/gh policy and availability; supported_actions remains separately visible.
+          - capture-map interactive states cannot silently pass without a state handler.
+          - required capture interactions must produce observable state change or are marked state-unreached.
+          - Catalog menu/category capture actions prefer specific labels before generic edit actions.
+          - large canonical capture maps can be supplied through Artifact Plane by validated SHA-256 ref.
+          - STATUS/RESULT identity isolation, delivery recovery, terminal retryable metadata, result.get contract, and send detection remain regression-gated from prior fixes.
+
+          Source commit: $env:FINAL_SHA
+          "@
+          $notes.Trim() | Set-Content -Path (Join-Path $out 'RELEASE_NOTES.md') -Encoding utf8
+
+          $report=[ordered]@{
+            schema='sokna-bridge-final-release-v1'
+            release='2.7.1-r14-final'
+            extension_version='3.14.2'
+            source_commit=$env:FINAL_SHA
+            qualified=$true
+            qualification='GitHub Actions R14 Final Release'
+            generated_at=(Get-Date).ToUniversalTime().ToString('o')
+          }
+          $report | ConvertTo-Json -Depth 8 | Set-Content -Path (Join-Path $out 'R14_FINAL_REPORT.json') -Encoding utf8
+
+          $lines=@()
+          foreach($f in Get-ChildItem $out -File | Where-Object {$_.Name-ne'SHA256.txt'} | Sort-Object Name){
+            $lines += ((Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+"  "+$f.Name)
+          }
+          $lines | Set-Content -Path (Join-Path $out 'SHA256.txt') -Encoding ascii
+          Set-Content -Path (Join-Path $out 'HEAD.txt') -Value $env:FINAL_SHA -Encoding ascii
+          Get-Content (Join-Path $out 'SHA256.txt') | ForEach-Object {Write-Host $_}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SOKNA-Bridge-R14-Final-${{ env.FINAL_SHA }}
+          path: ${{ runner.temp }}/r14-final-out/*
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish final GitHub release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'r14-final-out'
+          gh release view $env:RELEASE_TAG --repo '${{ github.repository }}' *> $null
+          if($LASTEXITCODE-eq0){throw "R14_RELEASE_ALREADY_EXISTS: $env:RELEASE_TAG"}
+          git tag -a $env:RELEASE_TAG $env:FINAL_SHA -m "SOKNA Bridge 2.7.1-r14 Final"
+          git push origin $env:RELEASE_TAG
+          if($LASTEXITCODE-ne0){throw 'R14_TAG_PUSH_FAILED'}
+          gh release create $env:RELEASE_TAG `
+            "$out/SOKNA-Bridge-Extension-3.14.2-r14-final.zip" `
+            "$out/SOKNA-Bridge-release-r14-final.zip" `
+            "$out/SOKNA-Bridge-Setup-2.7.1-r14-final-x64.exe" `
+            "$out/SHA256.txt" `
+            "$out/HEAD.txt" `
+            "$out/R14_FINAL_REPORT.json" `
+            --repo '${{ github.repository }}' `
+            --title 'SOKNA Bridge 2.7.1-r14 Final / Extension 3.14.2' `
+            --notes-file "$out/RELEASE_NOTES.md" `
+            --latest
+          if($LASTEXITCODE-ne0){throw 'R14_RELEASE_PUBLISH_FAILED'}
