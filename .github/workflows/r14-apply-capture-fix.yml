@@ -1,0 +1,40 @@
+name: R14 Apply Capture Fix
+
+on:
+  push:
+    branches:
+      - release/r14-final
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply deterministic correction
+        run: |
+          set -euo pipefail
+          node tools/release/Apply-R14-Capture-Fix.mjs
+          node --check extension/chrome/browser_capture_map.js
+          node tools/tests/test_r14_final_hardening.mjs
+      - name: Commit correction if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- extension/chrome/browser_capture_map.js; then
+            echo 'R14_CAPTURE_SOURCE_ALREADY_FINAL'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add extension/chrome/browser_capture_map.js
+          git commit -m 'fix(r14): finalize truthful capture targeting [skip ci]'
+          git push origin HEAD:release/r14-final
