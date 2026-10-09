@@ -1,0 +1,105 @@
+name: R14 Publish Qualified Final
+
+on:
+  push:
+    branches:
+      - release/r14-final
+    paths:
+      - tools/release/R14_PUBLISH_QUALIFIED.trigger
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: sokna-r14-qualified-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QUALIFIED_RUN_ID: '37932872655'
+      QUALIFIED_ARTIFACT: 'SOKNA-Bridge-R14-Final-c193202633ebed459bd915e64b6b58c7234a9777'
+      FINAL_SHA: 'c193202633ebed459bd915e64b6b58c7234a9777'
+      RELEASE_TAG: 'sokna-agent-2.7.1-r14-final'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Download qualified final artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          gh run download "$QUALIFIED_RUN_ID" --repo '${{ github.repository }}' --name "$QUALIFIED_ARTIFACT" --dir out
+          test -f out/SOKNA-Bridge-Extension-3.14.2-r14-final.zip
+          test -f out/SOKNA-Bridge-release-r14-final.zip
+          test -f out/SOKNA-Bridge-Setup-2.7.1-r14-final-x64.exe
+          test -f out/SHA256.txt
+          test -f out/HEAD.txt
+          test -f out/R14_FINAL_REPORT.json
+          test -f out/RELEASE_NOTES.md
+
+      - name: Verify qualified evidence and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_head="$(tr -d '\r\n ' < out/HEAD.txt)"
+          test "$actual_head" = "$FINAL_SHA"
+          python - <<'PY'
+          import json
+          with open('out/R14_FINAL_REPORT.json','r',encoding='utf-8-sig') as f:
+              r=json.load(f)
+          assert r['qualified'] is True
+          assert r['release']=='2.7.1-r14-final'
+          assert r['extension_version']=='3.14.2'
+          assert r['source_commit']=='c193202633ebed459bd915e64b6b58c7234a9777'
+          PY
+          python - <<'PY'
+          import hashlib, pathlib
+          lines=pathlib.Path('out/SHA256.txt').read_text(encoding='ascii').splitlines()
+          for line in lines:
+              if not line.strip(): continue
+              sha,name=line.split(None,1)
+              p=pathlib.Path('out')/name.strip()
+              assert p.is_file(), name
+              got=hashlib.sha256(p.read_bytes()).hexdigest()
+              assert got==sha.lower(), (name,got,sha)
+          PY
+          echo QUALIFIED_ARTIFACT_VERIFIED
+
+      - name: Publish immutable final release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo '${{ github.repository }}' >/dev/null 2>&1; then
+            echo "Release already exists: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag already exists unexpectedly: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$RELEASE_TAG" "$FINAL_SHA" -m 'SOKNA Bridge 2.7.1-r14 Final'
+          git push origin "$RELEASE_TAG"
+          gh release create "$RELEASE_TAG" \
+            out/SOKNA-Bridge-Extension-3.14.2-r14-final.zip \
+            out/SOKNA-Bridge-release-r14-final.zip \
+            out/SOKNA-Bridge-Setup-2.7.1-r14-final-x64.exe \
+            out/SHA256.txt \
+            out/HEAD.txt \
+            out/R14_FINAL_REPORT.json \
+            --repo '${{ github.repository }}' \
+            --title 'SOKNA Bridge 2.7.1-r14 Final / Extension 3.14.2' \
+            --notes-file out/RELEASE_NOTES.md \
+            --latest
+          gh release view "$RELEASE_TAG" --repo '${{ github.repository }}' --json tagName,name,isDraft,isPrerelease,url
