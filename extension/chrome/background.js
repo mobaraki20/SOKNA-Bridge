@@ -9,7 +9,7 @@ const ORIGIN=globalThis.__SOKNA_CHAT_ORIGIN_REGISTRY_V1__;
 const BROWSER_TARGET=globalThis.__SOKNA_BROWSER_TARGET_CORE_V1__;
 const SESSION_GATE=globalThis.__SOKNA_SESSION_GATE_RUNTIME_V1__;
 const HOST="com.sokna.bridge.v3";
-const VERSION="3.14.0";
+const VERSION="3.14.2";
 const VALID_COMMAND_ID=/^[A-Za-z0-9._-]{1,96}$/;
 const ARMED_KEY="armed_tabs_v3";
 const SEEN_KEY="seen_commands_v3";
@@ -115,9 +115,32 @@ function bootstrapNextAction(b){
   if(resumable?.id)return {action:"session.resume",reason:"resumable_session_available",params:{id:String(resumable.id)}};
   return {action:"session.open",reason:"no_ready_session",params:{project:"SOKNA Bridge",phase:"connected"}};
 }
+async function activeWorkspaceToolPolicy(b){
+  const workspace=String(b?.active_session?.workspace||b?.active_session?.workspace_id||"").trim();
+  if(!workspace)return {resolved:false,workspace:"",tools:{},reason:"no-active-workspace"};
+  try{
+    const r=await agentExec(unifiedLocalCommand("system.capabilities",{workspace}));
+    return {resolved:true,workspace,tools:{git:r?.git||{},gh:r?.gh||{}},reason:"active-workspace-policy"};
+  }catch(e){
+    return {resolved:false,workspace,tools:{},reason:"capability-probe-failed",error:String(e?.message||e||"")};
+  }
+}
+function toolAllowedByPolicy(policy,name){
+  const row=policy?.tools?.[String(name||"").toLowerCase()];
+  return !!policy?.resolved&&row?.allowed===true&&row?.available===true;
+}
+function filterPolicyBoundActions(actions,policy){
+  return (Array.isArray(actions)?actions:[]).filter(action=>{
+    const a=String(action||"");
+    if(a.startsWith("gh."))return toolAllowedByPolicy(policy,"gh");
+    if(a.startsWith("git."))return toolAllowedByPolicy(policy,"git");
+    return true;
+  });
+}
 async function extensionBootstrap(command,tabId=null){
   const b=await agentExec(command),agent_actions=agentActionsFromBootstrap(b),extension_actions=extensionActions();
-  const effective_actions=[...new Set([...agent_actions,...extension_actions])].sort(),recovery_actions=[...(globalThis.__SOKNA_RECOVERY_ACTIONS_V1__||[])].map(String).sort();
+  const tool_policy=await activeWorkspaceToolPolicy(b),effective_agent_actions=filterPolicyBoundActions(agent_actions,tool_policy);
+  const supported_actions=[...new Set([...agent_actions,...extension_actions])].sort(),effective_actions=[...new Set([...effective_agent_actions,...extension_actions])].sort(),recovery_actions=[...(globalThis.__SOKNA_RECOVERY_ACTIONS_V1__||[])].map(String).sort();
   const armed=Number.isInteger(tabId)?await isArmed(tabId):{armed:false,registered:null},challenge=String(armed?.registered?.intakeChallenge||"");
   const origins=await approvedChatOrigins();
   const extension_policy={
@@ -131,7 +154,7 @@ async function extensionBootstrap(command,tabId=null){
     origins:{policy:"explicit-https-user-approval",approved:origins,current:armed?.registered?.url?ORIGIN.normalizeOrigin(armed.registered.url):""},
     next_action:bootstrapNextAction(b)
   };
-  return {...b,capabilities:{agent_actions,extension_actions,effective_actions},effective_actions,extension_policy};
+  return {...b,capabilities:{agent_actions,extension_actions,supported_actions,effective_actions,tool_policy,effective_source:tool_policy.resolved?"active-workspace-policy":"no-active-workspace-policy"},supported_actions,effective_actions,extension_policy};
 }
 async function connectionProbe(tabId){
   const out={semantic:{ok:false},message_intake:{ready:false},background:true,agent:{ok:false},session:{ready:false},delivery:{ready:false},verified:false};

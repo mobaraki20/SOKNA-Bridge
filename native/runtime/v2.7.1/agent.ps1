@@ -574,8 +574,9 @@ function InvokeAction([string]$action,$p) {
       $r=RunProcess "gh" $args $w.path 120
       return @{ok=($r.code-eq0);code=$r.code;stdout=$r.stdout;stderr=$r.stderr;repository="$owner/$name"}
     }
-    "plan.stage" {$w=ResolveWorkspace $p;$r=[string]$p.path
-      if($r-notmatch'^tools[\/]+plans[\/]+[A-Za-z0-9._-]+\.json$'){throw "Invalid plan path"}
+    "plan.stage" {$w=ResolveWorkspace $p;$r=([string]$p.path).Replace('\','/').Trim()
+      $segments=@($r-split'/');$unsafeSegment=@($segments|Where-Object{$_-eq'.'-or$_-eq'..'}).Count-gt0
+      if([string]::IsNullOrWhiteSpace($r)-or$r.Length-gt240-or$r.StartsWith('/')-or$r-match'^[A-Za-z]:'-or$unsafeSegment-or$r-notmatch'^tools/plans/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+\.json$'){throw "PLAN_STAGE_INVALID_PATH: path must be a safe workspace-relative JSON path below tools/plans"}
       $f=SafePath $w $r 'write' -AllowMissing;$sync=GetOptionalFreshnessGuard $w;if((-not$p.reset)-and$p.expected_sha256-and((Sha256File $f)-ne([string]$p.expected_sha256).ToLowerInvariant())){throw "Stage SHA256 mismatch"};$b=[Convert]::FromBase64String([string]$p.data_b64);if($b.Length-gt512){throw "Chunk too large"}
       $d=Split-Path $f -Parent;if(-not(Test-Path $d)){New-Item -ItemType Directory -Path $d -Force|Out-Null}
       if($p.reset){[IO.File]::WriteAllBytes($f,$b)}else{if(-not(Test-Path $f)){throw "Stage file missing"};$s=[IO.File]::Open($f,'Append');try{$s.Write($b,0,$b.Length)}finally{$s.Dispose()}}

@@ -38,10 +38,31 @@ IN01:[["selectRow"]],IN03:[["click",["پیش‌نمایش قالب چاپ","پی
 A01:[["click",["حساب جدید","ویرایش"]]],A02:[["click",["حساب جدید","ویرایش"]]],A04:[["click",["پرسنل جدید","افزودن پرسنل","ویرایش"]]],A09:[["click",["میز جدید","افزودن میز","ویرایش"]]],A10:[["click",["ساخت گروهی میز"]]]
 };
 const CONDITIONAL=new Set(["H02","P01","OP08","OP12","F06","G08","IN01"]);
+function interactionRequiresHandler(e){
+  const a=norm(e?.action||"");
+  if(!a)return false;
+  return /(^|\b)(open|click|select|toggle|type|switch|expand|choose|pick|edit)\b/i.test(a)||/(Ø¨Ø§Ø² Ú©Ù†|Ø¨Ø§Ø²Ú©Ø±Ø¯Ù†|Ú©Ù„ÛŒÚ©|Ø§Ù†ØªØ®Ø§Ø¨|ÙˆÛŒØ±Ø§ÛŒØ´|ØªØºÛŒÛŒØ± ØªÙ…|Ø¬Ø³ØªØ¬Ùˆ)/i.test(a);
+}
+async function stateFingerprint(tabId){
+  try{
+    const r=await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},func:()=>{
+      const visible=e=>{const s=getComputedStyle(e),b=e.getBoundingClientRect();return s.display!=="none"&&s.visibility!=="hidden"&&b.width>0&&b.height>0};
+      const flags=[...document.querySelectorAll('[aria-expanded="true"],[aria-selected="true"],dialog[open],[role="dialog"],[aria-modal="true"]')].filter(visible).slice(0,50).map(e=>`${e.tagName}:${e.id||""}:${e.getAttribute("role")||""}:${String(e.innerText||e.textContent||"").replace(/\s+/g," ").trim().slice(0,240)}`);
+      const values=[...document.querySelectorAll("input,textarea,select")].filter(visible).slice(0,50).map(e=>`${e.tagName}:${e.type||""}:${e.value||""}:${e.getAttribute("aria-expanded")||""}:${e.getAttribute("aria-selected")||""}`);
+      const active=document.activeElement;
+      return {href:location.href,htmlClass:document.documentElement.className||"",bodyClass:document.body?.className||"",theme:document.documentElement.getAttribute("data-theme")||document.body?.getAttribute("data-theme")||"",active:active?`${active.tagName}:${active.id||""}:${active.getAttribute?.("aria-label")||""}`:"",flags,values,text:String(document.body?.innerText||"").replace(/\s+/g," ").trim().slice(0,12000)};
+    }});
+    return JSON.stringify(r?.[0]?.result||{});
+  }catch{return ""}
+}
 async function applyState(tabId,e){
   const ops=H[e.id]||[],details=[];let reached=true,noData=false,revert=null;
-  if(!ops.length)return {reached:true,noData:false,details,revert:null};
+  if(!ops.length){
+    if(interactionRequiresHandler(e))return {reached:false,noData:CONDITIONAL.has(e.id),details:[{op:"state-contract",result:{ok:false,reason:"state-handler-missing"}}],revert:null};
+    return {reached:true,noData:false,details,revert:null};
+  }
   for(const op of ops){
+    const before=op[0]==="safetyUnreached"?"":await stateFingerprint(tabId);
     let r={ok:false};
     if(op[0]==="click")r=await clickText(tabId,op[1]);
     else if(op[0]==="searchOpen"){r=await clickText(tabId,op[1]);if(!r.ok)r={ok:true,reason:"search-opener-optional"}}
@@ -50,6 +71,11 @@ async function applyState(tabId,e){
     else if(op[0]==="selectTable")r=await selectFirst(tabId,"table");
     else if(op[0]==="theme"){r=await themeToggle(tabId);if(r.ok)revert=async()=>{await themeToggle(tabId);await sleep(150)}}
     else if(op[0]==="safetyUnreached"){r={ok:false,reason:op[1],safety:true}}
+    if(r.ok&&op[0]!=="searchOpen"){
+      await sleep(450);
+      const after=await stateFingerprint(tabId);
+      if(before&&after&&before===after)r={...r,ok:false,reason:"state-unchanged"};
+    }
     details.push({op:op[0],result:r});
     if(!r.ok){reached=false;if(CONDITIONAL.has(e.id))noData=true;break}
     await sleep(250);
@@ -91,8 +117,8 @@ if(typeof artifactCollectionGet==="function"){
 }
 function patchContract(){
   const base=globalThis.__SOKNA_ACTION_CONTRACTS_V1__;if(!base)return;const old=base.describe?.(ACTION);if(!old)return;
-  const props={...(old.inputSchema?.properties||{}),map_preset:{type:"string",enum:["local18080-ui-audit-v1"]},map_workers:{type:"integer",minimum:1,maximum:5}};
-  const input={...(old.inputSchema||{}),properties:props,anyOf:[...(old.inputSchema?.anyOf||[]),{required:["map_preset"]}]};
+  const props={...(old.inputSchema?.properties||{}),map_preset:{type:"string",enum:["local18080-ui-audit-v1"]},map_artifact_ref:{type:"string",pattern:"^[a-fA-F0-9]{64}$"},map_workers:{type:"integer",minimum:1,maximum:5}};
+  const input={...(old.inputSchema||{}),properties:props,anyOf:[...(old.inputSchema?.anyOf||[]),{required:["map_preset"]},{required:["map_artifact_ref"]}]};
   const contract=Object.freeze({...old,inputSchema:input,description:String(old.description||"")+" Map mode executes the bundled named UI audit capture map, preserving duplicate URLs as distinct requested UI states and recording state-unreached/no-data evidence without destructive mutations."});
   const contracts=Object.freeze({...base.contracts,[ACTION]:Object.freeze({...contract,name:undefined})});
   const describe=name=>String(name||"")===ACTION?contract:base.describe(name);
@@ -100,7 +126,19 @@ function patchContract(){
 }
 patchContract();
 async function runMap(command,conversationKey,p){
-  const preset=String(p.map_preset||""),entries=MAPS.get(preset);if(!entries)throw E("BROWSER_CAPTURE_MAP_UNKNOWN","Unknown capture map preset.");
+  const preset=String(p.map_preset||"");
+  let entries=MAPS.get(preset),mapSource=entries?"bundled":"",mapRef=String(p.map_artifact_ref||"").toLowerCase();
+  if(!entries&&mapRef){
+    const imported=await readJsonArtifact(mapRef),raw=Array.isArray(imported)?imported:(Array.isArray(imported?.entries)?imported.entries:null);
+    if(!raw||!raw.length||raw.length>500)throw E("BROWSER_CAPTURE_MAP_ARTIFACT_INVALID","Map artifact must contain 1..500 entries.");
+    entries=raw.map((x,i)=>({id:String(x?.id||x?.code||`state-${i+1}`),title:String(x?.title||x?.name||x?.id||""),url:String(x?.url||""),action:String(x?.action||x?.instruction||"")}));
+    if(entries.some(x=>!SAFE_ID.test(x.id)||!/^https?:\/\//i.test(x.url)))throw E("BROWSER_CAPTURE_MAP_ARTIFACT_INVALID","Map artifact entries require safe ids and absolute http(s) URLs.");
+    const firstOrigin=T.normalizeOrigin(entries[0].url);
+    if(entries.some(x=>T.normalizeOrigin(x.url)!==firstOrigin))throw E("BROWSER_CAPTURE_MAP_CROSS_ORIGIN","A capture map must use one approved origin.");
+    mapSource="artifact";
+  }
+  if(!entries)throw E("BROWSER_CAPTURE_MAP_UNKNOWN","Unknown capture map preset or missing map artifact.");
+  const mapName=preset||`artifact:${mapRef.slice(0,12)}`;
   const id=String(p.capture_id||"").trim();if(!SAFE_ID.test(id))throw E("BROWSER_CAPTURE_ID_INVALID","capture_id must be a safe id.");
   const origin=T.normalizeOrigin(entries[0]?.url||"");const approved=await approvedBrowserOrigins(),pattern=T.originPattern(origin);if(!approved.includes(origin)||!await chrome.permissions.contains({origins:[pattern]}))throw E("BROWSER_SITE_ORIGIN_PERMISSION_REQUIRED","Approve the site origin from the Bridge popup before capture.",{origin});
   const oldStore=await chrome.storage.local.get([STORE]),runs=oldStore[STORE]||{},prior=runs[id];if(prior?.state==="completed"&&prior?.result)return {...prior.result,resumed:true};
@@ -115,16 +153,16 @@ async function runMap(command,conversationKey,p){
     const tailTab=tabs[0];for(const x of tail)records[x.i]=await captureEntry(tailTab,x.e,cfg,folder,x.i);
   }finally{await Promise.all(tabs.map(t=>chrome.tabs.remove(t).catch(()=>{})))}
   const items=records.filter(Boolean),captured=items.filter(x=>x.artifact_ref?.id).length,failed=items.filter(x=>x.status==="capture-error").length,stateUnreached=items.filter(x=>x.status==="state-unreached").length,noData=items.filter(x=>x.status==="no-data").length;
-  const manifest={schema:SCHEMA,version:1,kind:"capture-map",capture_id:id,map_preset:preset,command_id:String(command.id||""),conversation_key:String(conversationKey||""),claimed_origin:origin,created_at:Date.now(),started_at:started,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,workers:cfg.workers,full_page:cfg.full_page,items};
+  const manifest={schema:SCHEMA,version:1,kind:"capture-map",capture_id:id,map_preset:mapName,map_source:mapSource,map_artifact_ref:mapRef||undefined,command_id:String(command.id||""),conversation_key:String(conversationKey||""),claimed_origin:origin,created_at:Date.now(),started_at:started,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,workers:cfg.workers,full_page:cfg.full_page,items};
   const ing=await ingestExtensionArtifact(`browser-capture-map-${id}.json`,"application/json",utf8B64(JSON.stringify(manifest))),ref=ing?.artifact_ref||null;
   let md=null,sd=null;try{md=await saveText(JSON.stringify(manifest,null,2),"application/json",`${folder}/manifest.json`)}catch{};try{sd=await saveText(csv(manifest),"text/csv;charset=utf-8",`${folder}/summary.csv`)}catch{};
   const abs=(items.find(x=>x.human_file?.absolute_path)?.human_file?.absolute_path||md?.absolute_path||sd?.absolute_path||"").replace(/[\\/][^\\/]+$/,"");
   const view={ok:true,schema:"sokna-browser-human-job-view-v1",job_id:id,folder,absolute_folder:abs,file_count:items.filter(x=>x.human_file).length,manifest:md,summary:sd};
   if(ref?.id)VIEW_CACHE.set(String(ref.id).toLowerCase(),view);
-  const result={ok:true,schema:RESULT_SCHEMA,capture_id:id,map_preset:preset,resumed:false,origin,workers:cfg.workers,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,collection_ref:ref,job_view:view};
+  const result={ok:true,schema:RESULT_SCHEMA,capture_id:id,map_preset:mapName,map_source:mapSource,map_artifact_ref:mapRef||undefined,resumed:false,origin,workers:cfg.workers,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,collection_ref:ref,job_view:view};
   runs[id]={state:"completed",result,updated_at:Date.now()};await chrome.storage.local.set({[STORE]:runs});return result;
 }
 const base=browserSemanticAction;
-browserSemanticAction=async function(command,conversationKey){const p=command?.params||{};if(String(command?.action||"")===ACTION&&p.map_preset)return await runMap(command,conversationKey,p);return await base(command,conversationKey)};
-globalThis.__SOKNA_BROWSER_CAPTURE_MAP_RUNTIME_V1__=Object.freeze({schema:"sokna-browser-capture-map-runtime-v1",version:1,preset:"local18080-ui-audit-v1",states:MAPS.get("local18080-ui-audit-v1")?.length||0,max_workers:5});
+browserSemanticAction=async function(command,conversationKey){const p=command?.params||{};if(String(command?.action||"")===ACTION&&(p.map_preset||p.map_artifact_ref))return await runMap(command,conversationKey,p);return await base(command,conversationKey)};
+globalThis.__SOKNA_BROWSER_CAPTURE_MAP_RUNTIME_V1__=Object.freeze({schema:"sokna-browser-capture-map-runtime-v1",version:1,preset:"local18080-ui-audit-v1",states:MAPS.get("local18080-ui-audit-v1")?.length||0,max_workers:5,supports_artifact_map:true});
 })();
