@@ -104,8 +104,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $dll=Join-Path $PWD 'maintenance/Sokna.Agent.Maintenance/bin/Release/net8.0/Sokna.Agent.Maintenance.dll'
-          if(-not(Test-Path -LiteralPath $dll)){throw 'MAINTENANCE_ASSEMBLY_MISSING'}
+          $bin=Join-Path $PWD 'maintenance/Sokna.Agent.Maintenance/bin/Release'
+          $candidate=Get-ChildItem -LiteralPath $bin -Filter 'Sokna.Agent.Maintenance.dll' -File -Recurse |
+            Where-Object { $_.FullName -match 'net8\.0[\\/]win-x64[\\/]' } | Select-Object -First 1
+          if($null -eq $candidate){throw 'MAINTENANCE_ASSEMBLY_MISSING'}
+          $dll=$candidate.FullName
           $asm=[System.Reflection.Assembly]::LoadFrom($dll)
           $type=$asm.GetType('Sokna.Agent.Maintenance.AgentConfiguration',$true)
           $method=$type.GetMethod('ResolveArtifactRoot',[System.Reflection.BindingFlags]'NonPublic,Static')
