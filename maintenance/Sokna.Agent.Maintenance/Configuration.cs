@@ -12,9 +12,11 @@ internal static class AgentConfiguration
     internal static string LocatorPath() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SOKNA", "Agent", "install-locator.json");
 
-    internal static string? Initialize(string installRoot, string artifactRoot)
+    internal static string? Initialize(string installRoot, string? requestedArtifactRoot)
     {
         installRoot = Path.GetFullPath(installRoot);
+        var configPath = Path.Combine(installRoot, "config.json");
+        var artifactRoot = ResolveArtifactRoot(installRoot, requestedArtifactRoot);
         artifactRoot = Path.GetFullPath(artifactRoot);
         ValidateArtifactRoot(installRoot, artifactRoot);
         Directory.CreateDirectory(installRoot);
@@ -24,7 +26,6 @@ internal static class AgentConfiguration
         var probe = Path.Combine(artifactRoot, ".maintenance-write-probe-" + Guid.NewGuid().ToString("N"));
         File.WriteAllText(probe, "ok", Encoding.ASCII); File.Delete(probe);
 
-        var configPath = Path.Combine(installRoot, "config.json");
         string? migrationSource = null;
         JsonObject cfg;
         if (File.Exists(configPath)) cfg = ReadObject(configPath);
@@ -71,6 +72,26 @@ internal static class AgentConfiguration
             });
         }
         return migrationSource;
+    }
+
+    internal static string ResolveArtifactRoot(string installRoot, string? requestedArtifactRoot)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedArtifactRoot))
+        {
+            if (!Path.IsPathFullyQualified(requestedArtifactRoot))
+                throw new InvalidDataException("Explicit artifact_root must be an absolute path.");
+            return Path.GetFullPath(requestedArtifactRoot);
+        }
+        var configPath = Path.Combine(Path.GetFullPath(installRoot), "config.json");
+        if (!File.Exists(configPath)) return DefaultArtifactRoot();
+        var cfg = ReadObject(configPath);
+        if (cfg["artifact_root"] is null) return DefaultArtifactRoot();
+        var saved = cfg["artifact_root"]!.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(saved))
+            throw new InvalidDataException("Existing artifact_root is empty; refusing to replace it during upgrade.");
+        if (!Path.IsPathFullyQualified(saved))
+            throw new InvalidDataException("Existing artifact_root is not absolute; refusing to replace it during upgrade.");
+        return Path.GetFullPath(saved);
     }
 
     internal static JsonObject ApplyUserSettings(string installRoot, int port, string artifactRoot)
