@@ -31,7 +31,19 @@ $maintenanceOut=Join-Path $payload '.build-maintenance'
 $launcherOut=Join-Path $payload '.build-launcher'
 $controlOut=Join-Path $payload '.build-control-center'
 function Invoke-DotnetPublish([string]$Project,[string]$Output,[string]$FailureCode){
-  & dotnet publish $Project -c $Configuration -r win-x64 --self-contained true -p:PublishSingleFile=true -o $Output 2>&1 | ForEach-Object { Write-Host $_ }
+  # Build outputs must never be generated inside the frozen source files.
+  $projectName=[IO.Path]::GetFileNameWithoutExtension($Project)
+  $intermediate=Join-Path $RepoRoot ('artifacts\windows\dotnet-obj\'+$projectName)
+  $binary=Join-Path $RepoRoot ('artifacts\windows\dotnet-bin\'+$projectName)
+  New-Item -ItemType Directory -Path $intermediate,$binary -Force|Out-Null
+  $intermediateArg=$intermediate.Replace('\','/')+'/'
+  $binaryArg=$binary.Replace('\','/')+'/'
+  & dotnet publish $Project -c $Configuration -r win-x64 --self-contained true `
+      -p:PublishSingleFile=true `
+      "-p:BaseIntermediateOutputPath=$intermediateArg" `
+      "-p:MSBuildProjectExtensionsPath=$intermediateArg" `
+      "-p:BaseOutputPath=$binaryArg" `
+      -o $Output 2>&1 | ForEach-Object { Write-Host $_ }
   if($LASTEXITCODE-ne0){throw $FailureCode}
 }
 Invoke-DotnetPublish (Join-Path $RepoRoot 'maintenance\Sokna.Agent.Maintenance\Sokna.Agent.Maintenance.csproj') $maintenanceOut 'DOTNET_MAINTENANCE_PUBLISH_FAILED'
@@ -78,7 +90,14 @@ if(-not$SkipInno){
   $isccPath=''
   if(-not[string]::IsNullOrWhiteSpace($InnoCompiler)){if(-not(Test-Path $InnoCompiler -PathType Leaf)){throw "INNO_COMPILER_NOT_FOUND: $InnoCompiler"};$isccPath=(Resolve-Path $InnoCompiler).Path}
   if([string]::IsNullOrWhiteSpace($isccPath)){$cmd=Get-Command ISCC.exe -ErrorAction SilentlyContinue;if($cmd){$isccPath=$cmd.Source}}
-  if([string]::IsNullOrWhiteSpace($isccPath)){$candidates=@("$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe","$env:ProgramFiles\Inno Setup 7\ISCC.exe","$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe");$isccPath=$candidates|Where-Object{$_-and(Test-Path $_)}|Select-Object -First 1}
+  if([string]::IsNullOrWhiteSpace($isccPath)){
+    $programFilesX86=${env:ProgramFiles(x86)}
+    $candidates=@()
+    if(-not[string]::IsNullOrWhiteSpace($programFilesX86)){$candidates+=(Join-Path $programFilesX86 'Inno Setup 6\ISCC.exe')}
+    if(-not[string]::IsNullOrWhiteSpace($env:ProgramFiles)){$candidates+=(Join-Path $env:ProgramFiles 'Inno Setup 7\ISCC.exe')}
+    if(-not[string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)){$candidates+=(Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe')}
+    $isccPath=$candidates|Where-Object{$_-and(Test-Path -LiteralPath $_ -PathType Leaf)}|Select-Object -First 1
+  }
   if([string]::IsNullOrWhiteSpace($isccPath)){throw 'MISSING_TOOL: ISCC.exe'}
   & $isccPath (Join-Path $RepoRoot 'installer\windows\SOKNA.Agent.iss')
   if($LASTEXITCODE-ne0){throw 'INNO_COMPILE_FAILED'}
