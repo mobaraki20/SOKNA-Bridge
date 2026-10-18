@@ -119,14 +119,14 @@ jobs:
           $config=Join-Path $root 'config.json'
           $original='{ "artifact_root": "' + ($data.Replace('\','\\')) + '", "port": 8766 }'
           [IO.File]::WriteAllText($config,$original)
-          $result=[string]$method.Invoke($null,@($root,$null))
+          $result=[string]$method.Invoke($null,([object[]]@([string]$root,[string]::Empty)))
           if($result -ne [IO.Path]::GetFullPath($data)){throw 'ARTIFACT_ROOT_CHANGED_DURING_UPGRADE'}
           $other=Join-Path $env:RUNNER_TEMP 'explicit-storage'
-          $explicit=[string]$method.Invoke($null,@($root,$other))
+          $explicit=[string]$method.Invoke($null,([object[]]@([string]$root,[string]$other)))
           if($explicit -ne [IO.Path]::GetFullPath($other)){throw 'EXPLICIT_ARTIFACT_ROOT_NOT_HONORED'}
           [IO.File]::WriteAllText($config,'{corrupt')
           $rejected=$false
-          try { [void]$method.Invoke($null,@($root,$null)) }
+          try { [void]$method.Invoke($null,([object[]]@([string]$root,[string]::Empty))) }
           catch { $rejected=$true }
           if(-not $rejected){throw 'CORRUPT_EXISTING_CONFIG_SILENTLY_REPLACED'}
           Write-Host 'DOTNET_ARTIFACT_ROOT_CONTRACT_PASS; INSTALLED_UPGRADE_NOT_TESTED'
