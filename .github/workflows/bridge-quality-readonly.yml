@@ -100,6 +100,34 @@ jobs:
             if($LASTEXITCODE -ne 0) { throw "DOTNET_WINDOWS_BUILD_FAILED $p" }
           }
 
+      - name: Verify artifact root preservation using actual .NET assembly
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $dll=Join-Path $PWD 'maintenance/Sokna.Agent.Maintenance/bin/Release/net8.0/Sokna.Agent.Maintenance.dll'
+          if(-not(Test-Path -LiteralPath $dll)){throw 'MAINTENANCE_ASSEMBLY_MISSING'}
+          $asm=[System.Reflection.Assembly]::LoadFrom($dll)
+          $type=$asm.GetType('Sokna.Agent.Maintenance.AgentConfiguration',$true)
+          $method=$type.GetMethod('ResolveArtifactRoot',[System.Reflection.BindingFlags]'NonPublic,Static')
+          if($null -eq $method){throw 'RESOLVE_ARTIFACT_ROOT_METHOD_MISSING'}
+          $root=Join-Path $env:RUNNER_TEMP 'bridge-maintenance-test'
+          $data=Join-Path $env:RUNNER_TEMP 'my-other-software-storage'
+          New-Item -ItemType Directory -Force -Path $root,$data|Out-Null
+          $config=Join-Path $root 'config.json'
+          $original='{ "artifact_root": "' + ($data.Replace('\','\\')) + '", "port": 8766 }'
+          [IO.File]::WriteAllText($config,$original)
+          $result=[string]$method.Invoke($null,@($root,$null))
+          if($result -ne [IO.Path]::GetFullPath($data)){throw 'ARTIFACT_ROOT_CHANGED_DURING_UPGRADE'}
+          $other=Join-Path $env:RUNNER_TEMP 'explicit-storage'
+          $explicit=[string]$method.Invoke($null,@($root,$other))
+          if($explicit -ne [IO.Path]::GetFullPath($other)){throw 'EXPLICIT_ARTIFACT_ROOT_NOT_HONORED'}
+          [IO.File]::WriteAllText($config,'{corrupt')
+          $rejected=$false
+          try { [void]$method.Invoke($null,@($root,$null)) }
+          catch { $rejected=$true }
+          if(-not $rejected){throw 'CORRUPT_EXISTING_CONFIG_SILENTLY_REPLACED'}
+          Write-Host 'DOTNET_ARTIFACT_ROOT_CONTRACT_PASS; INSTALLED_UPGRADE_NOT_TESTED'
+
   windows-bootstrap-smoke:
     name: Windows bootstrap smoke on disposable runner (not upgrade UAT)
     runs-on: windows-2025
@@ -179,3 +207,47 @@ jobs:
           }
           if((git status --porcelain --untracked-files=all).Count -gt 0){throw 'BUILD_MODIFIED_TRACKED_OR_UNTRACKED_SOURCE'}
           Write-Host 'WINDOWS_INSTALLER_PAYLOAD_BUILD_PASS; INNO_INSTALLER_AND_WINDOWS_INSTALLED_UAT_NOT_RUN'
+
+  windows-inno-build:
+    name: Inno Setup candidate compilation (no installation or release)
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Locate Inno Setup compiler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $paths=@()
+          $compiler=Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if($compiler){$paths+= $compiler.Source}
+          $x86=${env:ProgramFiles(x86)}
+          if($x86){$paths+=(Join-Path $x86 'Inno Setup 6/ISCC.exe')}
+          if($env:ProgramFiles){$paths+=(Join-Path $env:ProgramFiles 'Inno Setup 7/ISCC.exe')}
+          $found=$paths|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -First 1
+          if(-not $found){throw 'WINDOWS_RUNNER_INNO_SETUP_MISSING; do not claim installer qualified'}
+          "BRIDGE_ISCC=$found" >> $env:GITHUB_ENV
+          Write-Host "INNO_SETUP_COMPILER_FOUND"
+      - name: Build actual Windows setup from unchanged commit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sha=(git rev-parse HEAD).Trim()
+          & ./tools/installer/Build-P1Installer.ps1 -ExpectedSourceCommit $sha -InnoCompiler $env:BRIDGE_ISCC | Out-Host
+          if($LASTEXITCODE -ne 0){throw 'INNO_SETUP_BUILD_FAILED'}
+          $setup=Join-Path $PWD 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          if(-not(Test-Path -LiteralPath $setup -PathType Leaf)){throw 'INNO_SETUP_FILE_MISSING'}
+          $meta=Get-Item -LiteralPath $setup
+          if($meta.Length -lt 100000){throw 'INNO_SETUP_TOO_SMALL'}
+          $digest=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          if((git status --porcelain --untracked-files=all).Count -gt 0){throw 'INNO_BUILD_MUTATED_SOURCE'}
+          Write-Host "INNO_COMPILE_PASS bytes=$($meta.Length) sha256=$digest commit=$sha"
+          Write-Host 'INSTALLER_NOT_EXECUTED; NO INSTALL/UPGRADE/REPAIR/ROLLBACK UAT PERFORMED'
