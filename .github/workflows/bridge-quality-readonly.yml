@@ -147,3 +147,35 @@ jobs:
           if((Get-Content -LiteralPath $configPath -Raw).Trim() -ne '{broken-json'){throw 'INVALID_CONFIG_SILENTLY_REPLACED'}
           Set-Content -LiteralPath $configPath -Value $original -Encoding UTF8
           Write-Host 'BRIDGE_BOOTSTRAP_SMOKE_PASS; INSTALLED_UPGRADE_ROLLBACK_UAT_NOT_RUN'
+
+  windows-installer-payload:
+    name: Windows Installer payload build and manifest (no setup, no install)
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build signed-off source payload without Inno or install
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $sourceCommit=(git rev-parse HEAD).Trim()
+          & ./tools/installer/Build-P1Installer.ps1 -SkipInno -ExpectedSourceCommit $sourceCommit | Out-Host
+          $manifestPath='artifacts/windows/installer-payload/manifests/installed-manifest.json'
+          if(-not(Test-Path -LiteralPath $manifestPath -PathType Leaf)){throw 'INSTALLER_PAYLOAD_MANIFEST_MISSING'}
+          $manifest=Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          if($manifest.source_commit -ne $sourceCommit){throw 'INSTALLER_PAYLOAD_SOURCE_MISMATCH'}
+          if(@($manifest.files).Count -lt 10){throw 'INSTALLER_PAYLOAD_INCOMPLETE'}
+          foreach($exe in @('Sokna.Agent.Maintenance.exe','Sokna.Agent.Launcher.exe','Sokna.Bridge.ControlCenter.exe')){
+            if(-not(Test-Path -LiteralPath (Join-Path 'artifacts/windows/installer-payload' $exe) -PathType Leaf)){throw "INSTALLER_PAYLOAD_EXE_MISSING: $exe"}
+          }
+          if((git status --porcelain --untracked-files=all).Count -gt 0){throw 'BUILD_MODIFIED_TRACKED_OR_UNTRACKED_SOURCE'}
+          Write-Host 'WINDOWS_INSTALLER_PAYLOAD_BUILD_PASS; INNO_INSTALLER_AND_WINDOWS_INSTALLED_UAT_NOT_RUN'
