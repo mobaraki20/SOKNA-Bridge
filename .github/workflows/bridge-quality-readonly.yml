@@ -99,3 +99,51 @@ jobs:
             dotnet build $p -c Release --nologo
             if($LASTEXITCODE -ne 0) { throw "DOTNET_WINDOWS_BUILD_FAILED $p" }
           }
+
+  windows-bootstrap-smoke:
+    name: Windows bootstrap smoke on disposable runner (not upgrade UAT)
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - name: Build standalone bootstrap and exercise install/upgrade guards
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./installer/bootstrap/build-package.ps1 -OutDir 'artifacts/bridge-ci' | Out-Host
+          if($LASTEXITCODE -ne 0){throw 'BOOTSTRAP_BUILD_FAILED'}
+          $stage=Join-Path $PWD 'artifacts/bridge-ci/SOKNA-Bridge-Setup'
+          $install=Join-Path $stage 'install.ps1'
+          if(-not(Test-Path -LiteralPath $install -PathType Leaf)){throw 'BOOTSTRAP_INSTALL_SCRIPT_MISSING'}
+          $dataRoot=Join-Path $env:RUNNER_TEMP 'bridge-unrelated-webapp'
+          & $install -SkipStart -SkipOpenExtensions -WorkspaceRoot $dataRoot
+          $configPath=Join-Path $env:LOCALAPPDATA 'SOKNA-Bridge-V2/config.json'
+          $cfg=Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+          if($cfg.workspace_root -ne $dataRoot){throw 'FRESH_WORKSPACE_ROOT_MISMATCH'}
+          if([string]$cfg.default_github_owner -ne ''){throw 'FRESH_INSTALL_OWNER_NOT_EMPTY'}
+          if(@($cfg.allowed_github_owners).Count -ne 0){throw 'FRESH_INSTALL_OWNER_ALLOWLIST_NOT_EMPTY'}
+          if(@($cfg.workspaces.PSObject.Properties).Count -ne 0){throw 'FRESH_INSTALL_AUTODISCOVERED_APP'}
+          if([string]::IsNullOrWhiteSpace([string]$cfg.token)){throw 'FRESH_INSTALL_TOKEN_MISSING'}
+          $token=[string]$cfg.token
+          $cfg.allowed_github_owners=@('example')
+          $cfg.workspaces | Add-Member -NotePropertyName 'DemoWebApp' -NotePropertyValue ([pscustomobject]@{path=$dataRoot;expected_repo='example/demo-webapp';write_enabled=$false}) -Force
+          $cfg | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $configPath -Encoding UTF8
+          & $install -SkipStart -SkipOpenExtensions
+          $again=Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+          if($again.token -ne $token){throw 'UPGRADE_TOKEN_CHANGED'}
+          if($again.workspace_root -ne $dataRoot){throw 'UPGRADE_ROOT_RESET'}
+          if([string]$again.workspaces.DemoWebApp.expected_repo -ne 'example/demo-webapp'){throw 'UPGRADE_WORKSPACE_REMOVED'}
+          if(-not (@($again.allowed_github_owners) -contains 'example')){throw 'UPGRADE_PERMISSION_RESET'}
+          $original=Get-Content -LiteralPath $configPath -Raw
+          Set-Content -LiteralPath $configPath -Value '{broken-json' -Encoding UTF8
+          $rejected=$false
+          try { & $install -SkipStart -SkipOpenExtensions } catch { $rejected=($_.Exception.Message -like '*BRIDGE_CONFIG_INVALID_REFUSING_OVERWRITE*') }
+          if(-not $rejected){throw 'INVALID_CONFIG_WAS_NOT_REJECTED'}
+          if((Get-Content -LiteralPath $configPath -Raw).Trim() -ne '{broken-json'){throw 'INVALID_CONFIG_SILENTLY_REPLACED'}
+          Set-Content -LiteralPath $configPath -Value $original -Encoding UTF8
+          Write-Host 'BRIDGE_BOOTSTRAP_SMOKE_PASS; INSTALLED_UPGRADE_ROLLBACK_UAT_NOT_RUN'
