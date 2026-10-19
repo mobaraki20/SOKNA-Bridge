@@ -28,9 +28,9 @@ internal sealed class MainForm : Form
     private readonly NumericUpDown _portInput = new();
     private readonly TextBox _artifactInput = new();
     private readonly CheckBox _autostart = new();
-    private readonly ListView _workspaces = new();
+    private readonly ListView _workspaces = new BridgeDataList();
     private readonly Label _workspacesEmpty = new();
-    private readonly ListView _credentials = new();
+    private readonly ListView _credentials = new BridgeDataList();
     private readonly Label _credentialsEmpty = new();
     private readonly Label _extensionInfo = new();
     private readonly Button _saveSettings = new();
@@ -323,6 +323,7 @@ internal sealed class MainForm : Form
         _workspaces.Columns.Add("دسترسی", 135);
         _workspaces.Columns.Add("ابزارها", 140);
         _workspaces.Columns.Add("وضعیت", 90);
+        _workspaces.Resize += (_, _) => FitDataColumns(_workspaces, [0.20, 0.32, 0.16, 0.16, 0.16]);
         var workspaceList = new Panel { Dock = DockStyle.Fill, BackColor = BridgeUi.Canvas, Padding = new Padding(4, 12, 4, 0) };
         workspaceList.Controls.Add(_workspaces);
         _workspacesEmpty.Dock = DockStyle.Top;
@@ -387,6 +388,7 @@ internal sealed class MainForm : Form
         _credentials.Columns.Add("شناسه", 200);
         _credentials.Columns.Add("نام کاربری", 300);
         _credentials.Columns.Add("ذخیره‌سازی", 150);
+        _credentials.Resize += (_, _) => FitDataColumns(_credentials, [0.31, 0.40, 0.29]);
         var credentialList = new Panel { Dock = DockStyle.Fill, BackColor = BridgeUi.Canvas, Padding = new Padding(4, 12, 4, 0) };
         credentialList.Controls.Add(_credentials);
         _credentialsEmpty.Dock = DockStyle.Top;
@@ -963,18 +965,35 @@ internal sealed class MainForm : Form
         second.SubItems.Add(@"D:\TestData"); second.SubItems.Add("خواندن");
         second.SubItems.Add("ابزارها"); second.SubItems.Add("ثبت‌شده");
         _workspaces.Items.AddRange([first, second]);
+        FitDataColumns(_workspaces, [0.20, 0.32, 0.16, 0.16, 0.16]);
         _workspacesEmpty.Visible = false;
         _workspaces.Visible = true;
         _credentials.Items.Clear();
         var credential = new ListViewItem("نمونه-آزمایشی");
         credential.SubItems.Add("sample-user"); credential.SubItems.Add("رمزگذاری‌شده");
         _credentials.Items.Add(credential);
+        FitDataColumns(_credentials, [0.31, 0.40, 0.29]);
         _credentialsEmpty.Visible = false;
         _credentials.Visible = true;
         _diagnosticsStatus.Text = "بررسی آزمایشی تکمیل شد؛ مورد مهمی پیدا نشد.";
         _diagnosticsEmpty.Visible = false;
         _diagnosticsBox.Text = "{\\\"status\\\": \\\"ok\\\", \\\"source\\\": \\\"visual fixture\\\"}";
         _diagnosticsBox.Visible = true;
+    }
+
+    private static void FitDataColumns(ListView list, double[] widths)
+    {
+        if (list.Columns.Count != widths.Length || list.ClientSize.Width < 230) return;
+        // Reserve space for native scrollbar even when it is not yet visible.
+        var available = Math.Max(200, list.ClientSize.Width - 30);
+        var used = 0;
+        for (var i = 0; i < widths.Length; i++)
+        {
+            var width = i == widths.Length - 1 ? available - used :
+                (int)Math.Floor(available * widths[i]);
+            list.Columns[i].Width = Math.Max(48, width);
+            used += width;
+        }
     }
 
     private static Panel NewPage(string title) => new() { Text = title, Padding = new Padding(6), BackColor = BridgeUi.Canvas };
