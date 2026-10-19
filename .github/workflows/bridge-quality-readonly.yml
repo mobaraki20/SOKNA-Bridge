@@ -272,7 +272,8 @@ jobs:
             $psi.FileName=$exe
             $psi.UseShellExecute=$false
             $psi.CreateNoWindow=$true
-            foreach($argument in $setupArguments){[void]$psi.ArgumentList.Add($argument)}
+            # Inno Setup parses GetCommandLineW itself, not argv: preserve raw /DIR="path with spaces".
+            $psi.Arguments=[string]::Join(' ', $setupArguments)
             $process=[Diagnostics.Process]::Start($psi)
             if($null -eq $process){throw "INSTALLER_PROCESS_NOT_STARTED: $what"}
             try {
