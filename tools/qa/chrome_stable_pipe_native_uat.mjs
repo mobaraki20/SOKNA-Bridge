@@ -140,6 +140,10 @@ async function main(){
     reply=await extCtx.native({type:'host.ping',request_id:'stable-reconnected-4'});
     assert.equal(reply.error,null);assert.equal(reply.response?.ok,true);
     mark('STABLE_CHROME_NATIVE_RECONNECTED');
+    const profileSentinel = 'BRIDGE_CDPUAT_ONLY_SENTINEL_V1';
+    const sentinelSaved = await extCtx.evaluate('new Promise(resolve=>chrome.storage.local.set({bridge_cdp_uat_restart_check:'+JSON.stringify('BRIDGE_CDPUAT_ONLY_SENTINEL_V1')+'},()=>resolve(!chrome.runtime.lastError)))');
+    if(sentinelSaved!==true)fail('CHROME_PROFILE_SENTINEL_WRITE_FAILED');
+    mark('STABLE_CHROME_PROFILE_SENTINEL_WRITTEN');
     // Allow Chrome to persist the extension/profile metadata before clean quit.
     await sleep(2000);
     await b.close();
@@ -162,6 +166,11 @@ async function main(){
       mark('STABLE_CHROME_DEVTOOLS_PROFILE_PERSISTED');
     }
     const ctx=await extensionContext(b);
+    const storedSentinel = await ctx.evaluate('new Promise(resolve=>chrome.storage.local.get("bridge_cdp_uat_restart_check", v=>resolve(v.bridge_cdp_uat_restart_check||null)))');
+    const storagePersisted = storedSentinel===profileSentinel;
+    if(storagePersisted)mark('STABLE_CHROME_PROFILE_STORAGE_PERSISTED');
+    else console.log('STABLE_CHROME_CDP_PROFILE_STORAGE_NOT_VERIFIED');
+    await ctx.evaluate('new Promise(resolve=>chrome.storage.local.remove("bridge_cdp_uat_restart_check",()=>resolve(true)))');
     reply=await ctx.native({type:'host.ping',request_id:'stable-restart-5'});
     assert.equal(reply.error,null);assert.equal(reply.response?.ok,true);
     mark('STABLE_CHROME_RESTART_RECONNECT');
@@ -171,6 +180,7 @@ async function main(){
       browser:chromeVersion,extension_version:manifest.version,extension_id:expectedId,
       passed,result:'PASS',devtools_unpacked_profile_persistence:profilePersisted?'PASS':'NOT_VERIFIED_AFTER_RESTART',
       browser_restart_reconnect:'PASS_AFTER_DEVTOOLS_RELOAD_IF_NEEDED',
+      cdptemporary_extension_storage_persistence:storagePersisted?'PASS':'NOT_VERIFIED',
       windows10_client:'NOT_RUN',chrome_manual_ui:'NOT_RUN',
       maintenance_delta_upgrade:'NOT_RUN',release_ready:false
     },null,2)+'\n',{flag:'wx'});
