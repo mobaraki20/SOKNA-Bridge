@@ -468,12 +468,12 @@ internal sealed class MainForm : Form
         var page = NewPage("راهنمای شروع");
         var root = Stack();
 
-        root.Controls.Add(SectionTitle("برای استفاده از SOKNA Bridge این مراحل را انجام بده"));
+        root.Controls.Add(SectionTitle("راهنمای راه‌اندازی و اتصال بریج"));
 
-        root.Controls.Add(Step("۱", "از وضعیت Agent مطمئن شو", "در تب «وضعیت»، اتصال Agent را بررسی کن. اگر متوقف است، آن را راه‌اندازی کن."));
-        root.Controls.Add(Step("۲", "افزونهٔ Chrome را نصب کن", "در Google Chrome به chrome://extensions برو؛ Developer mode را روشن کن، Load unpacked را بزن و پوشه دائمی افزونه نصب‌شده را انتخاب کن."));
+        root.Controls.Add(Step("۱", "از وضعیت Agent مطمئن شو", "در بخش «وضعیت»، اتصال Agent را بررسی کن. اگر در دسترس نبود، آن را راه‌اندازی کن."));
+        root.Controls.Add(Step("۲", "افزونهٔ Chrome را نصب کن", "در مرورگر Chrome صفحهٔ chrome://extensions را باز کن. حالت Developer mode را فعال کن، سپس Load unpacked را بزن و پوشهٔ افزونهٔ نصب‌شده را انتخاب کن."));
         root.Controls.Add(Step("۳", "فضای کاری تعریف کن", "از تب «فضاهای کاری» پوشهٔ مجاز را ثبت کن. دسترسی نوشتن فقط برای پروژه‌های مورد اعتماد مناسب است."));
-        root.Controls.Add(Step("۴", "گفتگو را به بریج متصل کن", "در ChatGPT روی افزونهٔ بریج بزن و «Connect this Chat» را انتخاب کن. اتصال نهایی باید تأیید شود."));
+        root.Controls.Add(Step("۴", "گفتگو را به بریج متصل کن", "در گفتگوی ChatGPT روی افزونهٔ بریج بزن و گزینهٔ Connect this Chat را انتخاب کن. پس از آن باید اتصال نهایی تأیید شود."));
         root.Controls.Add(Step("۵", "در صورت مشکل، عیب‌یابی را باز کن", "از بخش عیب‌یابی همین پنل شروع کن؛ تنها اگر لازم بود بستهٔ پشتیبانی بساز."));
 
         var extPath = Path.Combine(_installRoot, "extension");
@@ -520,6 +520,7 @@ internal sealed class MainForm : Form
         try
         {
             _lastError.Text = "";
+            _errorPanel.Visible = false;
             var cfg = ReadConfig();
             var port = cfg["port"]?.GetValue<int>() ?? 8766;
             var artifact = cfg["artifact_root"]?.GetValue<string>() ?? "";
@@ -552,6 +553,13 @@ internal sealed class MainForm : Form
 
             await RefreshWorkspacesAsync(silent: true);
             try { await RefreshCredentialsAsync(); } catch { }
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "● بررسی Agent کامل نشد";
+            _status.ForeColor = BridgeUi.Danger;
+            _statusGuidance.Text = "BR-AGENT-003 — تنظیمات نصب خوانده نشد؛ جزئیات را در پنل خطا بررسی کن.";
+            ShowError(ex);
         }
         finally { _busy = false; }
     }
@@ -855,7 +863,11 @@ internal sealed class MainForm : Form
             if (!string.IsNullOrWhiteSpace(first)) summary = first.Length > 240 ? first[..240] + "…" : first;
         }
         _lastError.Text = summary; _errorDetails.Text = raw; _errorPanel.Visible = true;
-        MessageBox.Show(this, summary, "SOKNA Bridge — عملیات ناموفق", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        // One actionable inline error, without an additional intrusive modal.
+        if (Controls.OfType<TabControl>().FirstOrDefault() is { } tabs)
+            tabs.SelectedIndex = 0;
+        if (_errorPanel.Parent is ScrollableControl scroll)
+            scroll.ScrollControlIntoView(_errorPanel);
     }
 
     private static TabPage NewPage(string title) => new(title) { Padding = new Padding(8), BackColor = BridgeUi.Canvas };
@@ -877,7 +889,7 @@ internal sealed class MainForm : Form
         stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         stack.ControlAdded += (_, e) =>
         {
-            e.Control.Dock = DockStyle.Top;
+            if (e.Control is { } child) child.Dock = DockStyle.Top;
         };
         return stack;
     }
@@ -948,7 +960,7 @@ internal sealed class MainForm : Form
             BackColor = BridgeUi.Surface
         };
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        card.ControlAdded += (_, e) => { e.Control.Dock = DockStyle.Top; };
+        card.ControlAdded += (_, e) => { if (e.Control is { } child) child.Dock = DockStyle.Top; };
         card.Controls.Add(new Label
         {
             Text = title, AutoSize = false, Height = 38,
@@ -982,9 +994,9 @@ internal sealed class MainForm : Form
     {
         var table = new TableLayoutPanel { Width = 720, AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Margin = new Padding(8, 6, 8, 6), Padding = new Padding(14), BorderStyle = BorderStyle.FixedSingle, BackColor = BridgeUi.Surface };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64)); table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var n = new Label { Text = number, AutoSize = false, Width = 42, Height = 42, TextAlign = ContentAlignment.MiddleCenter, Font = BridgeUi.Font(13f, FontStyle.Bold), BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(6) };
+        var n = new Label { Text = number, AutoSize = false, Width = 42, Height = 42, TextAlign = ContentAlignment.MiddleCenter, Font = BridgeUi.Font(13f, FontStyle.Bold), ForeColor = BridgeUi.BrandDark, BackColor = BridgeUi.BrandSoft, BorderStyle = BorderStyle.None, Margin = new Padding(6) };
         var text = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(6) };
         text.Controls.Add(new Label { Text = title, AutoSize = true, Font = BridgeUi.Font(11.4f, FontStyle.Bold) });
-        text.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(625, 0), Font = BridgeUi.Font(10.3f), ForeColor = BridgeUi.Muted, Margin = new Padding(0, 6, 0, 0) });
+        text.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(625, 0), Font = BridgeUi.Font(11.2f), ForeColor = BridgeUi.Muted, Margin = new Padding(0, 8, 0, 2) });
         table.Controls.Add(n, 0, 0); table.Controls.Add(text, 1, 0); return table;
     }}
