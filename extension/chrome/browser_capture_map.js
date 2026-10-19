@@ -66,7 +66,7 @@ if(typeof artifactCollectionGet==="function"){
 function patchContract(){
   const base=globalThis.__SOKNA_ACTION_CONTRACTS_V1__;if(!base)return;const old=base.describe?.(ACTION);if(!old)return;
   const props={...(old.inputSchema?.properties||{}),map_preset:{type:"string",description:"Optional named profile; Bridge core ships no application-specific presets."},map_artifact_ref:{type:"string",pattern:"^[a-fA-F0-9]{64}$"},map_workers:{type:"integer",minimum:1,maximum:5}};
-  const input={...(old.inputSchema||{}),properties:props,anyOf:[...(old.inputSchema?.anyOf||[]),{required:["map_preset"]},{required:["map_artifact_ref"]}]};
+  const input={...(old.inputSchema||{}),properties:props,required:["capture_id"],anyOf:[{required:["items"]},{required:["map_preset"]},{required:["map_artifact_ref"]}]};
   const contract=Object.freeze({...old,inputSchema:input,description:String(old.description||"")+" Map mode uses explicitly imported, same-origin operator-approved read-only capture recipes; every screenshot, redirect, HTTP error and unreached state has separate evidence."});
   const contracts=Object.freeze({...base.contracts,[ACTION]:Object.freeze({...contract,name:undefined})});
   const describe=name=>String(name||"")===ACTION?contract:base.describe(name);
