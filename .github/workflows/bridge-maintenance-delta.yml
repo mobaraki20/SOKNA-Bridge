@@ -1,0 +1,95 @@
+name: Bridge Maintenance Delta Installed Windows E2E
+on:
+  pull_request:
+    branches:
+      - release/r14-final
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  installed-maintenance-delta:
+    name: Real installed Maintenance delta upgrade/rollback/add/remove
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Check full lifecycle script syntax
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tokens=$null;$errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'tools/installer/Test-P1Windows.ps1'),[ref]$tokens,[ref]$errors)
+          if($errors.Count -gt 0){throw 'P1_FULL_DELTA_POWERSHELL_SYNTAX_FAILED'}
+          Write-Host 'MAINTENANCE_DELTA_HARNESS_PS51_SYNTAX_PASS'
+      - name: Build exact-commit Inno Setup and payload
+        shell: pwsh
+        timeout-minutes: 18
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidates=@()
+          $command=Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if($command){$candidates+=$command.Source}
+          $x86=[Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+          if($x86){$candidates+=(Join-Path $x86 'Inno Setup 6/ISCC.exe')}
+          if($env:ProgramFiles){$candidates+=(Join-Path $env:ProgramFiles 'Inno Setup 7/ISCC.exe')}
+          $compiler=$candidates|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -First 1
+          if(-not $compiler){throw 'MAINTENANCE_DELTA_ISCC_MISSING'}
+          $commit=(git rev-parse HEAD).Trim()
+          & ./tools/installer/Build-P1Installer.ps1 -ExpectedSourceCommit $commit -InnoCompiler $compiler|Out-Host
+          if($LASTEXITCODE -ne 0 -or -not $?){throw 'MAINTENANCE_DELTA_SETUP_BUILD_FAILED'}
+          $setup='artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          if(-not(Test-Path -LiteralPath $setup -PathType Leaf)){throw 'MAINTENANCE_DELTA_SETUP_MISSING'}
+          Write-Host ('MAINTENANCE_DELTA_EXACT_SETUP_BUILD_PASS source='+$commit)
+      - name: Real installed Lifecycle and Maintenance delta acceptance
+        shell: powershell
+        timeout-minutes: 23
+        run: |
+          $ErrorActionPreference='Stop'
+          $setup=Join-Path $PWD 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          $result=@(& ./tools/installer/Test-P1Windows.ps1 -RepoRoot $PWD -SetupPath $setup)
+          if(-not $?){throw 'MAINTENANCE_DELTA_FULL_P1_SCRIPT_FAILED'}
+          $evidence=$result|Where-Object{$_ -is [string] -and $_ -match '^\s*\{\s*"ok"' }|Select-Object -Last 1
+          if(-not $evidence){throw 'MAINTENANCE_DELTA_FULL_P1_EVIDENCE_MISSING'}
+          $data=$evidence|ConvertFrom-Json
+          foreach($k in @('ok','repair','upgrade','rollback','automatic_rollback',
+            'unhealthy_current_runtime','legacy_running_setup','active_runtime_reinstall',
+            'control_center','support_bundle_partial','uninstall','artifact_root_preserved')){
+            if($data.$k -ne $true){throw ('MAINTENANCE_DELTA_P1_REQUIRED_GATE_FAILED_'+$k)}
+          }
+          $commit=(git rev-parse HEAD).Trim()
+          $out=Join-Path $env:RUNNER_TEMP 'bridge-maintenance-delta-evidence.json'
+          if(Test-Path -LiteralPath $out){throw 'MAINTENANCE_DELTA_EVIDENCE_ALREADY_EXISTS'}
+          $report=[ordered]@{
+            schema='sokna-bridge-installed-maintenance-delta-v1'
+            source_commit=$commit
+            environment='isolated Windows Server 2025 GitHub runner'
+            real_inno_install='PASS'
+            real_maintenance_delta_add_remove='PASS'
+            real_manual_rollback='PASS'
+            real_unhealthy_upgrade_auto_rollback='PASS'
+            configuration_and_artifacts_preserved='PASS'
+            whole_p1_lifecycle='PASS'
+            windows10_desktop='NOT_RUN'
+            physical_power_loss='NOT_RUN'
+            release_ready=$false
+          }
+          [IO.File]::WriteAllText($out,($report|ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))
+          Write-Host 'MAINTENANCE_DELTA_REAL_INSTALLED_WINDOWS_E2E_PASS'
+          Write-Host 'NOT_QUALIFIED: physical Windows 10 client, power loss, operator UI, release'
+      - name: Upload scrubbed Maintenance delta evidence only on PASS
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-maintenance-delta-installed-evidence
+          path: ${{ runner.temp }}/bridge-maintenance-delta-evidence.json
+          if-no-files-found: error
+          retention-days: 14
