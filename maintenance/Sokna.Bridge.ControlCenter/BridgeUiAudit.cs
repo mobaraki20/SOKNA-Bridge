@@ -123,6 +123,22 @@ internal static class BridgeUiAudit
                     }
                     if (nonCanvas < 250) problems.Add(title + ":empty-painted-bitmap");
                 }
+                if (size.Width == 960)
+                {
+                    form.ApplyVisualAuditFixtures();
+                    foreach (var index in new[] { 0, 1, 2, 4 })
+                    {
+                        form.SelectAuditPage(index);
+                        form.PerformLayout();
+                        Application.DoEvents();
+                        problems.AddRange(Check(form.ActiveAuditPage).Select(issue =>
+                            $"960x600-populated-tab{index + 1}:" + issue));
+                        using var populated = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb);
+                        form.DrawToBitmap(populated, new Rectangle(Point.Empty, size));
+                        populated.Save(Path.Combine(output,
+                            $"960x600-populated-tab{index + 1}.png"), ImageFormat.Png);
+                    }
+                }
                 form.ShowLayoutError();
                 form.SelectAuditPage(0);
                 form.PerformLayout();
@@ -162,7 +178,7 @@ internal static class BridgeUiAudit
                 foreach (var problem in problems) Console.Error.WriteLine("BRIDGE_UI_AUDIT: " + problem);
                 return 1;
             }
-            Console.WriteLine("BRIDGE_CONTROL_CENTER_SIDEBAR_GUI_23_SCREENSHOTS_PASS");
+            Console.WriteLine("BRIDGE_CONTROL_CENTER_SIDEBAR_GUI_27_SCREENSHOTS_PASS");
             Console.WriteLine("BRIDGE_UI_CONTRAST_BIDI_LAYOUT_STATIC_GATES_PASS");
             return 0;
         }
