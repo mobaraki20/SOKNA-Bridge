@@ -91,7 +91,7 @@ async function runMap(command,conversationKey,p){
   const origin=T.normalizeOrigin(entries[0]?.url||"");const approved=await approvedBrowserOrigins(),pattern=T.originPattern(origin);if(!approved.includes(origin)||!await chrome.permissions.contains({origins:[pattern]}))throw E("BROWSER_SITE_ORIGIN_PERMISSION_REQUIRED","Approve the site origin from the Bridge popup before capture.",{origin});
   const oldStore=await chrome.storage.local.get([STORE]),runs=oldStore[STORE]||{},prior=runs[id];if(prior?.state==="completed"&&prior?.result)return {...prior.result,resumed:true};
   const cfg={workers:Math.max(1,Math.min(5,Number(p.map_workers||p.workers||5))),full_page:p.full_page!==false,settle_ms:Math.max(0,Math.min(10000,Number(p.settle_ms??600))),timeout_ms:Math.max(1000,Math.min(60000,Number(p.timeout_ms??30000)))},started=Date.now(),folder=jobFolder(id,started),records=new Array(entries.length);
-  const preIds=new Set(["S00","S01","S02","S03"]),lastIds=new Set(["Z90","Z91"]),allIndexed=entries.map((e,i)=>({e,i})),pre=allIndexed.filter(x=>preIds.has(x.e.id)),middle=allIndexed.filter(x=>!preIds.has(x.e.id)&&!lastIds.has(x.e.id)),tail=allIndexed.filter(x=>lastIds.has(x.e.id));
+  const preIds=new Set(),lastIds=new Set(),allIndexed=entries.map((e,i)=>({e,i})),pre=allIndexed.filter(x=>preIds.has(x.e.id)),middle=allIndexed.filter(x=>!preIds.has(x.e.id)&&!lastIds.has(x.e.id)),tail=allIndexed.filter(x=>lastIds.has(x.e.id));
   let cursor=0;const tabs=[];
   async function worker(tabId){for(;;){const n=cursor++;if(n>=middle.length)return;const x=middle[n];records[x.i]=await captureEntry(tabId,x.e,cfg,folder,x.i)}}
   try{
