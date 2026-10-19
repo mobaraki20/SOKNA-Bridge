@@ -116,7 +116,7 @@ async function main(){
     assert.equal(recovered?.error,null);assert.equal(recovered?.response?.ok,true);
     assert.equal(recovered.response.request_id,'chrome-reconnect-5');
     mark('CHROME_HOST_RECONNECTED');
-    if(passed.length!==5)stop('CHROME_EVIDENCE_INCOMPLETE');
+    assert.deepEqual(passed,['CHROME_EXTENSION_CONTEXT','CHROME_PERMISSION_SCOPE','CHROME_INSTALLED_HOST_PING','CHROME_HOST_REJECT_INVALID_COMMANDS','CHROME_HOST_DISCONNECT_FAIL_CLOSED','CHROME_HOST_RECONNECTED'],'CHROME_EVIDENCE_INCOMPLETE');
     writeFileSync(resolve(arg['--evidence']),JSON.stringify({
       schema:'sokna-bridge-chrome-installed-native-v1',
       kind:'DISPOSABLE_WINDOWS_CHROME_FOR_TESTING_INSTALLED_HOST',
