@@ -19,6 +19,15 @@ internal static class BridgeUiAudit
                 "Screenshots larger than this desktop may be clipped by the real WinForms " +
                 "paint API even when geometry and layout assertions pass.\n");
             var problems = new List<string>();
+            using (var font = BridgeUi.Font(11f))
+            {
+                File.WriteAllText(Path.Combine(output, "persian-font-evidence.txt"),
+                    $"embedded={BridgeUi.EmbeddedPersianFontLoaded}; family={font.FontFamily.Name}; " +
+                    $"size={font.SizeInPoints}\n");
+                if (!BridgeUi.EmbeddedPersianFontLoaded ||
+                    !font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
+                    problems.Add("missing-required-embedded-vazirmatn");
+            }
             if (BridgeUi.Contrast(BridgeUi.Brand, Color.White) < 4.5 ||
                 BridgeUi.Contrast(BridgeUi.Text, BridgeUi.Surface) < 4.5 ||
                 BridgeUi.Contrast(BridgeUi.Danger, BridgeUi.DangerSoft) < 4.5)
@@ -32,6 +41,8 @@ internal static class BridgeUiAudit
                     ClientSize = size
                 };
                 form.Show();
+                if (!form.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
+                    problems.Add("actual-form-font-is-not-vazirmatn");
                 Application.DoEvents();
                 var tabs = form.Controls.OfType<TabControl>().Single();
                 for (var i = 0; i < tabs.TabPages.Count; i++)

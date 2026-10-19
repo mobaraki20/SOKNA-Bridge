@@ -22,13 +22,16 @@ internal sealed class MainForm : Form
     private readonly Panel _errorPanel = new();
     private readonly TextBox _diagnosticsBox = new();
     private readonly Label _diagnosticsStatus = new();
+    private readonly Label _diagnosticsEmpty = new();
     private string _lastMaintenanceAction = "";
     private string[] _lastMaintenanceArgs = Array.Empty<string>();
     private readonly NumericUpDown _portInput = new();
     private readonly TextBox _artifactInput = new();
     private readonly CheckBox _autostart = new();
     private readonly ListView _workspaces = new();
+    private readonly Label _workspacesEmpty = new();
     private readonly ListView _credentials = new();
+    private readonly Label _credentialsEmpty = new();
     private readonly Label _extensionInfo = new();
     private readonly Button _saveSettings = new();
     private bool _busy;
@@ -42,13 +45,13 @@ internal sealed class MainForm : Form
 
     internal MainForm(bool layoutTestMode = false)
     {
-        Text = "SOKNA Bridge Control Center";
+        Text = "مرکز کنترل بریج سکنا — SOKNA Bridge";
         ClientSize = new Size(1100, 720);
         MinimumSize = new Size(840, 560);
         StartPosition = FormStartPosition.CenterScreen;
         BridgeUi.Prepare(this);
 
-        var tabs = new TabControl { Dock = DockStyle.Fill, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, Padding = new Point(14, 6), Font = BridgeUi.Font(9.5f, FontStyle.Bold) };
+        var tabs = new TabControl { Dock = DockStyle.Fill, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, Padding = new Point(17, 8), Font = BridgeUi.Font(10.7f, FontStyle.Bold) };
         tabs.TabPages.Add(BuildHomeTab());
         tabs.TabPages.Add(BuildWorkspaceTab());
         tabs.TabPages.Add(BuildCredentialsTab());
@@ -65,28 +68,29 @@ internal sealed class MainForm : Form
         var page = NewPage("وضعیت");
         var root = Stack();
 
-        root.Controls.Add(new Label { Text = "SOKNA Bridge", AutoSize = true, Font = new Font(Font.FontFamily, 22f, FontStyle.Bold), Margin = new Padding(8, 14, 8, 2) });
-        root.Controls.Add(new Label { Text = "وضعیت کلی، عملیات اصلی و آخرین خطای قابل اقدام را از این صفحه ببین.", AutoSize = true, ForeColor = BridgeUi.Muted, Margin = new Padding(8, 0, 8, 16) });
+        root.Controls.Add(new Label { Text = "مرکز کنترل بریج سکنا", AutoSize = true, Font = BridgeUi.Font(19f, FontStyle.Bold), ForeColor = BridgeUi.BrandDark, Margin = new Padding(8, 12, 8, 3) });
+        root.Controls.Add(new Label { Text = "وضعیت Agent، مدیریت دسترسی‌ها و پشتیبانی — SOKNA Bridge", AutoSize = true, Font = BridgeUi.Font(10.6f), ForeColor = BridgeUi.Muted, Margin = new Padding(8, 0, 8, 16) });
 
-        var health = Card("سلامت Agent");
-        _status.AutoSize = true; _status.Font = new Font(Font.FontFamily, 14f, FontStyle.Bold); _status.Text = "در حال بررسی…"; _status.Margin = new Padding(8, 8, 8, 12);
+        var health = Card("وضعیت Agent و اطلاعات نصب");
+        _status.AutoSize = true; _status.Font = BridgeUi.Font(14f, FontStyle.Bold); _status.Text = "در حال بررسی…"; _status.Margin = new Padding(8, 8, 8, 12);
         health.Controls.Add(_status);
         _statusGuidance.Text = "آخرین وضعیت هنوز بررسی نشده است. برای بررسی «تازه‌سازی» را بزن.";
         _statusGuidance.ForeColor = BridgeUi.Muted;
         _statusGuidance.AutoSize = true;
         _statusGuidance.Margin = new Padding(8, 0, 8, 8);
         health.Controls.Add(_statusGuidance);
-        var info = new TableLayoutPanel { Name = "BridgeStatusFacts", AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Padding = new Padding(8), Margin = new Padding(8), Width = 720, BackColor = BridgeUi.Surface };
-        info.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220)); info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var info = new TableLayoutPanel { Name = "BridgeStatusFacts", AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Padding = new Padding(8), Margin = new Padding(8), Width = 760, BackColor = BridgeUi.Surface };
+        info.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240)); info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         AddInfo(info, 0, "نسخه کنترل‌پنل", _shellVersion);
         AddInfo(info, 1, "نسخه Agent نصب‌شده", _version);
         AddInfo(info, 2, "پورت محلی", _port);
         AddInfo(info, 3, "محل فایل‌ها", _artifact);
+        _artifact.RightToLeft = RightToLeft.No;
         AddInfo(info, 4, "تعداد فضای کاری", _workspaceCount);
         health.Controls.Add(info);
         root.Controls.Add(health);
 
-        var primary = Card("عملیات اصلی");
+        var primary = Card("مدیریت Agent");
         var actions = ButtonRow();
         actions.Controls.Add(StyledButton("تازه‌سازی وضعیت", async () => await RefreshAllAsync(), "primary"));
         actions.Controls.Add(StyledButton("شروع Agent", async () => await LifecycleAsync("start"), "secondary"));
@@ -100,7 +104,7 @@ internal sealed class MainForm : Form
         primary.Controls.Add(actions);
         root.Controls.Add(primary);
 
-        var maintenance = Card("نگهداری و پشتیبانی");
+        var maintenance = Card("عیب‌یابی و پشتیبانی");
         var tools = ButtonRow();
         tools.Controls.Add(StyledButton("باز کردن Logها", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
         tools.Controls.Add(StyledButton("باز کردن ArtifactRoot", () => OpenFolder(CurrentArtifactRoot()), "secondary"));
@@ -158,7 +162,7 @@ internal sealed class MainForm : Form
         var page = NewPage("عیب‌یابی");
         var root = Stack();
         root.Controls.Add(SectionTitle("عیب‌یابی و گزارش پشتیبانی"));
-        root.Controls.Add(new Label { Text = "این بخش برای عیب‌یابی است. خروجی‌ها Token و secret را نمایش نمی‌دهند.", AutoSize = true, ForeColor = BridgeUi.Muted, Margin = new Padding(8) });
+        root.Controls.Add(new Label { Text = "ابتدا وضعیت بررسی را بخوان. فقط هنگام نیاز، گزارش فنی را برای پشتیبانی ذخیره کن. رمزها و Token نباید در خروجی ظاهر شوند.", AutoSize = true, Font = BridgeUi.Font(10.5f), ForeColor = BridgeUi.Muted, Margin = new Padding(8) });
         var actions = ButtonRow();
         actions.Controls.Add(StyledButton("تازه‌سازی عیب‌یابی", RefreshDiagnosticsAsync, "primary"));
         actions.Controls.Add(StyledButton("کپی برای پشتیبانی", () => { if (!string.IsNullOrWhiteSpace(_diagnosticsBox.Text)) Clipboard.SetText(_diagnosticsBox.Text); }, "secondary"));
@@ -166,9 +170,21 @@ internal sealed class MainForm : Form
         actions.Controls.Add(StyledButton("بسته پشتیبانی", CreateSupportBundleAsync, "secondary"));
         actions.Controls.Add(StyledButton("گزارش‌ها", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
         root.Controls.Add(actions);
-        _diagnosticsStatus.AutoSize = true; _diagnosticsStatus.Text = "برای شروع، «تازه‌سازی عیب‌یابی» را بزن."; _diagnosticsStatus.ForeColor = BridgeUi.Muted; _diagnosticsStatus.Margin = new Padding(8); root.Controls.Add(_diagnosticsStatus);
-        _diagnosticsBox.Multiline = true; _diagnosticsBox.ReadOnly = true; _diagnosticsBox.ScrollBars = ScrollBars.Both; _diagnosticsBox.WordWrap = false; _diagnosticsBox.RightToLeft = RightToLeft.No; _diagnosticsBox.Font = new Font("Consolas", 9f); _diagnosticsBox.Width = 720; _diagnosticsBox.Height = 400; _diagnosticsBox.Margin = new Padding(8);
-        root.Controls.Add(_diagnosticsBox);
+        _diagnosticsStatus.AutoSize = true; _diagnosticsStatus.Text = "هنوز عیب‌یابی انجام نشده است."; _diagnosticsStatus.ForeColor = BridgeUi.Muted; _diagnosticsStatus.Margin = new Padding(8); root.Controls.Add(_diagnosticsStatus);
+        _diagnosticsBox.Multiline = true; _diagnosticsBox.ReadOnly = true; _diagnosticsBox.ScrollBars = ScrollBars.Both; _diagnosticsBox.WordWrap = false; _diagnosticsBox.RightToLeft = RightToLeft.No; _diagnosticsBox.Font = new Font("Consolas", 9f); _diagnosticsBox.Width = 720; _diagnosticsBox.Height = 335; _diagnosticsBox.Margin = new Padding(8);
+        var diagHost = new Panel { Name = "DiagnosticsContent", Dock = DockStyle.Top, Height = 335, BackColor = BridgeUi.Surface, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(8) };
+        _diagnosticsBox.Dock = DockStyle.Fill;
+        _diagnosticsBox.Margin = Padding.Empty;
+        diagHost.Controls.Add(_diagnosticsBox);
+        _diagnosticsEmpty.Dock = DockStyle.Fill;
+        _diagnosticsEmpty.TextAlign = ContentAlignment.MiddleCenter;
+        _diagnosticsEmpty.ForeColor = BridgeUi.Muted;
+        _diagnosticsEmpty.Font = BridgeUi.Font(11.5f);
+        _diagnosticsEmpty.Text = "هنوز گزارشی ثبت نشده است.\nبرای بررسی وضعیت، «تازه‌سازی عیب‌یابی» را بزن.";
+        _diagnosticsEmpty.BackColor = BridgeUi.Surface;
+        diagHost.Controls.Add(_diagnosticsEmpty);
+        _diagnosticsEmpty.BringToFront();
+        root.Controls.Add(diagHost);
         page.Controls.Add(root); return page;
     }
 
@@ -176,55 +192,69 @@ internal sealed class MainForm : Form
     {
         var page = NewPage("تنظیمات");
         var root = Stack();
-
         root.Controls.Add(SectionTitle("تنظیمات Agent"));
 
-        var portPanel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(8) };
-        portPanel.Controls.Add(new Label { Text = "پورت محلی:", AutoSize = true, Margin = new Padding(8) });
+        var settingsCard = Card("اتصال و مسیر ذخیره‌سازی");
+        settingsCard.Controls.Add(BridgeUi.Caption(
+            "این تنظیمات فقط روی Agent همین رایانه اثر می‌گذارند."));
+
+        var portArea = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top, AutoSize = true,
+            FlowDirection = FlowDirection.RightToLeft,
+            RightToLeft = RightToLeft.No,
+            WrapContents = false, Margin = new Padding(5, 7, 5, 10)
+        };
+        portArea.Controls.Add(BridgeUi.FieldLabel("پورت محلی Agent"));
         _portInput.Minimum = 1024;
         _portInput.Maximum = 65535;
         _portInput.Value = 8766;
-        _portInput.Width = 120;
-        portPanel.Controls.Add(_portInput);
-        root.Controls.Add(portPanel);
+        _portInput.Width = 126;
+        _portInput.RightToLeft = RightToLeft.No;
+        portArea.Controls.Add(_portInput);
+        settingsCard.Controls.Add(portArea);
 
-        var artifactPanel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(8) };
-        artifactPanel.Controls.Add(new Label { Text = "ArtifactRoot:", AutoSize = true, Margin = new Padding(8) });
-        _artifactInput.Width = 460;
-        artifactPanel.Controls.Add(_artifactInput);
-        artifactPanel.Controls.Add(ActionButton("انتخاب پوشه", ChooseArtifactRoot));
-        root.Controls.Add(artifactPanel);
-
-        _autostart.Text = "Agent هنگام ورود به Windows به‌صورت خودکار اجرا شود";
-        _autostart.AutoSize = true;
-        _autostart.Margin = new Padding(8, 16, 8, 8);
-        root.Controls.Add(_autostart);
-
-        var warning = new Label
+        settingsCard.Controls.Add(BridgeUi.FieldLabel("محل نگهداری فایل‌ها (ArtifactRoot)"));
+        var artifactArea = new TableLayoutPanel
         {
-            Text = "تغییر ArtifactRoot فایل‌های قبلی را جابه‌جا نمی‌کند؛ فقط محل جدید برای Artifactهای بعدی آماده می‌شود.",
-            AutoSize = true,
-            MaximumSize = new Size(850, 0),
-            Margin = new Padding(8)
+            Dock = DockStyle.Top, Height = 48, ColumnCount = 2,
+            RightToLeft = RightToLeft.Yes, BackColor = BridgeUi.Surface,
+            Margin = new Padding(5, 0, 5, 10)
         };
-        root.Controls.Add(warning);
+        artifactArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        artifactArea.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        _artifactInput.Dock = DockStyle.Top;
+        _artifactInput.Height = 34;
+        _artifactInput.RightToLeft = RightToLeft.No;
+        _artifactInput.TextAlign = HorizontalAlignment.Left;
+        artifactArea.Controls.Add(_artifactInput, 0, 0);
+        var browse = ActionButton("انتخاب پوشه", ChooseArtifactRoot);
+        browse.Dock = DockStyle.Fill;
+        artifactArea.Controls.Add(browse, 1, 0);
+        settingsCard.Controls.Add(artifactArea);
 
-        _saveSettings.Text = "ذخیره تنظیمات و راه‌اندازی مجدد Agent";
-        _saveSettings.AutoSize = true;
-        _saveSettings.Padding = new Padding(14, 8, 14, 8);
-        _saveSettings.Margin = new Padding(8, 18, 8, 8);
+        _autostart.Text = "اجرای خودکار Agent هنگام ورود به ویندوز";
+        _autostart.AutoSize = true;
+        _autostart.Font = BridgeUi.Font(10.5f);
+        _autostart.Margin = new Padding(7, 12, 7, 8);
+        settingsCard.Controls.Add(_autostart);
+
+        settingsCard.Controls.Add(BridgeUi.Caption(
+            "تغییر محل ذخیره‌سازی، فایل‌های قبلی را جابه‌جا نمی‌کند. داده‌های بعدی در مسیر جدید ذخیره می‌شوند."));
+
+        _saveSettings.Text = "ذخیره و راه‌اندازی مجدد Agent";
         BridgeUi.Button(_saveSettings, "primary");
         _saveSettings.Click += async (_, _) => await SaveSettingsAsync();
-        root.Controls.Add(_saveSettings);
+        var saveArea = ButtonRow();
+        saveArea.Controls.Add(_saveSettings);
+        settingsCard.Controls.Add(saveArea);
+        root.Controls.Add(settingsCard);
 
-        root.Controls.Add(SectionTitle("امنیت"));
-        root.Controls.Add(new Label
-        {
-            Text = "Token اتصال عمداً در این پنل نمایش داده نمی‌شود. دسترسی Agent فقط از طریق Workspace و Permissionهایی که تعریف می‌کنی انجام می‌شود.",
-            AutoSize = true,
-            MaximumSize = new Size(850, 0),
-            Margin = new Padding(8)
-        });
+        var securityCard = Card("حفاظت از اطلاعات");
+        securityCard.Controls.Add(BridgeUi.Caption(
+            "رمز اتصال و اطلاعات محرمانه در این پنل نمایش داده نمی‌شوند. " +
+            "دسترسی Agent فقط از طریق فضاهای کاری و مجوزهایی است که مشخص می‌کنی."));
+        root.Controls.Add(securityCard);
 
         page.Controls.Add(root);
         return page;
@@ -239,16 +269,26 @@ internal sealed class MainForm : Form
         _workspaces.View = View.Details;
         _workspaces.FullRowSelect = true;
         _workspaces.MultiSelect = false;
-        _workspaces.Columns.Add("نام", 160);
-        _workspaces.Columns.Add("مسیر", 430);
-        _workspaces.Columns.Add("دسترسی", 120);
-        _workspaces.Columns.Add("ابزارها", 200);
-        _workspaces.Columns.Add("وضعیت", 100);
-        panel.Controls.Add(_workspaces);
+        _workspaces.Columns.Add("نام", 150);
+        _workspaces.Columns.Add("مسیر", 330);
+        _workspaces.Columns.Add("دسترسی", 135);
+        _workspaces.Columns.Add("ابزارها", 140);
+        _workspaces.Columns.Add("وضعیت", 90);
+        var workspaceList = new Panel { Dock = DockStyle.Fill, BackColor = BridgeUi.Surface };
+        workspaceList.Controls.Add(_workspaces);
+        _workspacesEmpty.Dock = DockStyle.Fill;
+        _workspacesEmpty.BackColor = BridgeUi.Surface;
+        _workspacesEmpty.ForeColor = BridgeUi.Muted;
+        _workspacesEmpty.Font = BridgeUi.Font(11.5f);
+        _workspacesEmpty.TextAlign = ContentAlignment.MiddleCenter;
+        _workspacesEmpty.Text = "هنوز فضای کاری ثبت نشده است.\nبرای شروع، «افزودن فضای کاری» را انتخاب کن.";
+        workspaceList.Controls.Add(_workspacesEmpty);
+        _workspacesEmpty.BringToFront();
+        panel.Controls.Add(workspaceList);
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
-        top.Controls.Add(ActionButton("افزودن Workspace", AddWorkspaceAsync));
-        top.Controls.Add(ActionButton("حذف از Bridge", RemoveWorkspaceAsync));
+        top.Controls.Add(ActionButton("افزودن فضای کاری", AddWorkspaceAsync));
+        top.Controls.Add(ActionButton("حذف دسترسی", RemoveWorkspaceAsync));
         top.Controls.Add(ActionButton("تازه‌سازی", async () => await RefreshWorkspacesAsync()));
         top.Controls.Add(ActionButton("بررسی انتخاب‌شده", InspectWorkspaceAsync));
         panel.Controls.Add(top);
@@ -257,7 +297,7 @@ internal sealed class MainForm : Form
         {
             Dock = DockStyle.Bottom,
             Height = 54,
-            Text = "حذف Workspace از Bridge هیچ فایل یا پوشه‌ای را از کامپیوتر پاک نمی‌کند؛ فقط دسترسی Agent به آن ثبت را حذف می‌کند.",
+            Text = "حذف دسترسی یک فضای کاری، هیچ فایل یا پوشه‌ای را از رایانه پاک نمی‌کند.",
             AutoEllipsis = true,
             Padding = new Padding(8)
         };
@@ -276,10 +316,20 @@ internal sealed class MainForm : Form
         _credentials.View = View.Details;
         _credentials.FullRowSelect = true;
         _credentials.MultiSelect = false;
-        _credentials.Columns.Add("شناسه", 260);
-        _credentials.Columns.Add("نام کاربری", 360);
-        _credentials.Columns.Add("ذخیره‌سازی", 160);
-        panel.Controls.Add(_credentials);
+        _credentials.Columns.Add("شناسه", 200);
+        _credentials.Columns.Add("نام کاربری", 300);
+        _credentials.Columns.Add("ذخیره‌سازی", 150);
+        var credentialList = new Panel { Dock = DockStyle.Fill, BackColor = BridgeUi.Surface };
+        credentialList.Controls.Add(_credentials);
+        _credentialsEmpty.Dock = DockStyle.Fill;
+        _credentialsEmpty.BackColor = BridgeUi.Surface;
+        _credentialsEmpty.ForeColor = BridgeUi.Muted;
+        _credentialsEmpty.Font = BridgeUi.Font(11.5f);
+        _credentialsEmpty.TextAlign = ContentAlignment.MiddleCenter;
+        _credentialsEmpty.Text = "هنوز اعتبارنامه‌ای ثبت نشده است.\nبرای افزودن امن رمز، دکمهٔ «افزودن» را انتخاب کن.";
+        credentialList.Controls.Add(_credentialsEmpty);
+        _credentialsEmpty.BringToFront();
+        panel.Controls.Add(credentialList);
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
         top.Controls.Add(ActionButton("افزودن", AddCredentialAsync));
@@ -292,7 +342,7 @@ internal sealed class MainForm : Form
         {
             Dock = DockStyle.Bottom,
             Height = 70,
-            Text = "Secretها با Windows DPAPI و فقط برای کاربر فعلی Windows ذخیره می‌شوند. ChatGPT فقط شناسه Credential را می‌بیند؛ مقدار Secret در Diagnostics، Ledger و Result نمایش داده نمی‌شود.",
+            Text = "رمزها با Windows DPAPI برای کاربر فعلی ذخیره می‌شوند. مقدار رمز در گزارش‌ها و خروجی پشتیبانی نمایش داده نمی‌شود.",
             AutoEllipsis = true,
             Padding = new Padding(8)
         };
@@ -357,6 +407,7 @@ internal sealed class MainForm : Form
                     _credentials.Items.Add(row);
                 }
             }
+            _credentialsEmpty.Visible = _credentials.Items.Count == 0;
         }
         catch (Exception ex) { ShowError(ex); }
     }
@@ -410,14 +461,14 @@ internal sealed class MainForm : Form
 
         root.Controls.Add(SectionTitle("برای استفاده از SOKNA Bridge این مراحل را انجام بده"));
 
-        root.Controls.Add(Step("۱", "Agent باید Healthy باشد", "در تب Status وضعیت Agent باید سبز باشد. اگر نیست، دکمه «شروع Agent» را بزن."));
-        root.Controls.Add(Step("۲", "Extension مرورگر را Load کن", "در Google Chrome به chrome://extensions برو؛ Developer mode را روشن کن، Load unpacked را بزن و پوشه دائمی افزونه نصب‌شده را انتخاب کن."));
-        root.Controls.Add(Step("۳", "Workspace تعریف کن", "در تب Workspace پوشه‌ای را که ChatGPT اجازه کار روی آن دارد اضافه کن. برای پروژه نرم‌افزاری می‌توانی preset توسعه را انتخاب کنی."));
-        root.Controls.Add(Step("۴", "ChatGPT را باز و همان Chat را Connect کن", "در chatgpt.com روی آیکن SOKNA Bridge بزن و Connect this Chat را انتخاب کن. سبز کامل فقط بعد از End-to-End Verify نمایش داده می‌شود."));
-        root.Controls.Add(Step("۵", "در صورت خطا Diagnostics را بگیر", "از Popup بخش Advanced Diagnostics یا تب Diagnostics همین برنامه استفاده کن؛ raw خطا را لازم نیست دستی پیدا کنی."));
+        root.Controls.Add(Step("۱", "از وضعیت Agent مطمئن شو", "در تب «وضعیت»، اتصال Agent را بررسی کن. اگر متوقف است، آن را راه‌اندازی کن."));
+        root.Controls.Add(Step("۲", "افزونهٔ Chrome را نصب کن", "در Google Chrome به chrome://extensions برو؛ Developer mode را روشن کن، Load unpacked را بزن و پوشه دائمی افزونه نصب‌شده را انتخاب کن."));
+        root.Controls.Add(Step("۳", "فضای کاری تعریف کن", "از تب «فضاهای کاری» پوشهٔ مجاز را ثبت کن. دسترسی نوشتن فقط برای پروژه‌های مورد اعتماد مناسب است."));
+        root.Controls.Add(Step("۴", "گفتگو را به بریج متصل کن", "در ChatGPT روی افزونهٔ بریج بزن و «Connect this Chat» را انتخاب کن. اتصال نهایی باید تأیید شود."));
+        root.Controls.Add(Step("۵", "در صورت مشکل، عیب‌یابی را باز کن", "از بخش عیب‌یابی همین پنل شروع کن؛ تنها اگر لازم بود بستهٔ پشتیبانی بساز."));
 
         var extPath = Path.Combine(_installRoot, "extension");
-        _extensionInfo.Text = "مسیر Extension: " + extPath;
+        _extensionInfo.Text = "پوشهٔ افزونه: " + extPath;
         _extensionInfo.AutoSize = true;
         _extensionInfo.MaximumSize = new Size(850, 0);
         _extensionInfo.Margin = new Padding(8, 18, 8, 8);
@@ -522,10 +573,13 @@ internal sealed class MainForm : Form
                 }
             }
             _workspaceCount.Text = _workspaces.Items.Count.ToString();
+            _workspacesEmpty.Visible = _workspaces.Items.Count == 0;
         }
         catch (Exception ex)
         {
             _workspaceCount.Text = "—";
+            _workspacesEmpty.Text = "فهرست فضاهای کاری در دسترس نیست. اتصال Agent را بررسی کن.";
+            _workspacesEmpty.Visible = true;
             if (!silent) ShowError(ex);
         }
     }
@@ -573,6 +627,7 @@ internal sealed class MainForm : Form
         {
             var r = await AgentCallAsync("workspace.inspect", new { workspace = id });
             _diagnosticsBox.Text = r.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            _diagnosticsEmpty.Visible = false;
             _diagnosticsStatus.Text = "جزئیات Workspace «" + id + "» در تب Diagnostics آماده است.";
         }
         catch (Exception ex) { ShowError(ex); }
@@ -585,6 +640,7 @@ internal sealed class MainForm : Form
         {
             await RunMaintenanceAsync("diagnostics", "--output", output);
             _diagnosticsBox.Text = File.Exists(output) ? File.ReadAllText(output, Encoding.UTF8) : "{}";
+            _diagnosticsEmpty.Visible = false;
             _diagnosticsStatus.Text = "Diagnostic در " + DateTime.Now.ToString("HH:mm:ss") + " به‌روز شد.";
         }
         catch (Exception ex)
@@ -609,6 +665,7 @@ internal sealed class MainForm : Form
         };
         try { var ping = await AgentCallAsync("ping", new { }); minimal["agent_ping"] = ping.DeepClone(); } catch (Exception ex) { minimal["agent_error"] = ex.Message; }
         _diagnosticsBox.Text = minimal.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        _diagnosticsEmpty.Visible = false;
         _diagnosticsStatus.Text = "Minimal Diagnostics آماده است.";
     }
 
@@ -880,8 +937,8 @@ internal sealed class MainForm : Form
         card.ControlAdded += (_, e) => { e.Control.Dock = DockStyle.Top; };
         card.Controls.Add(new Label
         {
-            Text = title, AutoSize = false, Height = 32,
-            Font = BridgeUi.Font(11f, FontStyle.Bold),
+            Text = title, AutoSize = false, Height = 38,
+            Font = BridgeUi.Font(12.2f, FontStyle.Bold),
             ForeColor = BridgeUi.BrandDark,
             RightToLeft = RightToLeft.Yes,
             // WinForms mirrors TextAlign under RTL; MiddleLeft paints on the visual right.
@@ -894,7 +951,7 @@ internal sealed class MainForm : Form
     private static void AddInfo(TableLayoutPanel table, int row, string name, Label value)
     {
         while (table.RowCount <= row) { table.RowStyles.Add(new RowStyle(SizeType.AutoSize)); table.RowCount++; }
-        table.Controls.Add(new Label { Text = name, AutoSize = true, Font = BridgeUi.Font(9.5f, FontStyle.Bold), Margin = new Padding(6) }, 0, row);
+        table.Controls.Add(new Label { Text = name, AutoSize = true, Font = BridgeUi.Font(10.6f, FontStyle.Bold), Margin = new Padding(6) }, 0, row);
         value.Text = "—"; value.AutoSize = true; value.MaximumSize = new Size(620, 0); value.Margin = new Padding(6);
         table.Controls.Add(value, 1, row);
     }
@@ -909,11 +966,11 @@ internal sealed class MainForm : Form
 
     private static Control Step(string number, string title, string detail)
     {
-        var table = new TableLayoutPanel { Width = 720, AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Margin = new Padding(8), Padding = new Padding(10), BorderStyle = BorderStyle.FixedSingle };
+        var table = new TableLayoutPanel { Width = 720, AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Margin = new Padding(8, 6, 8, 6), Padding = new Padding(14), BorderStyle = BorderStyle.FixedSingle, BackColor = BridgeUi.Surface };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64)); table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         var n = new Label { Text = number, AutoSize = false, Width = 42, Height = 42, TextAlign = ContentAlignment.MiddleCenter, Font = BridgeUi.Font(13f, FontStyle.Bold), BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(6) };
         var text = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(6) };
-        text.Controls.Add(new Label { Text = title, AutoSize = true, Font = BridgeUi.Font(10.5f, FontStyle.Bold) });
-        text.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(625, 0), ForeColor = BridgeUi.Muted, Margin = new Padding(0, 6, 0, 0) });
+        text.Controls.Add(new Label { Text = title, AutoSize = true, Font = BridgeUi.Font(11.4f, FontStyle.Bold) });
+        text.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(625, 0), Font = BridgeUi.Font(10.3f), ForeColor = BridgeUi.Muted, Margin = new Padding(0, 6, 0, 0) });
         table.Controls.Add(n, 0, 0); table.Controls.Add(text, 1, 0); return table;
     }}
