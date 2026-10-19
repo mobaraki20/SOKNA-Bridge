@@ -71,24 +71,20 @@ internal sealed class MainForm : Form
         root.Controls.Add(new Label { Text = "مرکز کنترل بریج سکنا", AutoSize = true, Font = BridgeUi.Font(19f, FontStyle.Bold), ForeColor = BridgeUi.BrandDark, Margin = new Padding(8, 12, 8, 3) });
         root.Controls.Add(new Label { Text = "وضعیت Agent، مدیریت دسترسی‌ها و پشتیبانی — SOKNA Bridge", AutoSize = true, Font = BridgeUi.Font(10.6f), ForeColor = BridgeUi.Muted, Margin = new Padding(8, 0, 8, 16) });
 
-        var health = Card("وضعیت Agent و اطلاعات نصب");
+        var health = Card("وضعیت Agent");
         health.Name = "BridgeAgentHealthCard";
-        _status.AutoSize = true; _status.Font = BridgeUi.Font(14f, FontStyle.Bold); _status.Text = "در حال بررسی…"; _status.Margin = new Padding(8, 8, 8, 12);
+        _status.AutoSize = true;
+        _status.Font = BridgeUi.Font(14f, FontStyle.Bold);
+        _status.Text = "هنوز وضعیت Agent بررسی نشده است";
+        _status.ForeColor = BridgeUi.Warning;
+        _status.Margin = new Padding(7, 4, 7, 6);
         health.Controls.Add(_status);
-        _statusGuidance.Text = "آخرین وضعیت هنوز بررسی نشده است. برای بررسی «تازه‌سازی» را بزن.";
+        _statusGuidance.Text = "برای بررسی اتصال، «تازه‌سازی وضعیت» را بزن.";
         _statusGuidance.ForeColor = BridgeUi.Muted;
+        _statusGuidance.Font = BridgeUi.Font(10.7f);
         _statusGuidance.AutoSize = true;
-        _statusGuidance.Margin = new Padding(8, 0, 8, 8);
+        _statusGuidance.Margin = new Padding(7, 0, 7, 7);
         health.Controls.Add(_statusGuidance);
-        var info = new TableLayoutPanel { Name = "BridgeStatusFacts", AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Padding = new Padding(8), Margin = new Padding(8), Width = 760, BackColor = BridgeUi.Surface };
-        info.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240)); info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddInfo(info, 0, "نسخه کنترل‌پنل", _shellVersion);
-        AddInfo(info, 1, "نسخه Agent نصب‌شده", _version);
-        AddInfo(info, 2, "پورت محلی", _port);
-        AddInfo(info, 3, "محل فایل‌ها", _artifact);
-        _artifact.RightToLeft = RightToLeft.No;
-        AddInfo(info, 4, "تعداد فضای کاری", _workspaceCount);
-        health.Controls.Add(info);
         root.Controls.Add(health);
 
         var primary = Card("مدیریت Agent");
@@ -104,6 +100,36 @@ internal sealed class MainForm : Form
         actions.Controls.Add(StyledButton("توقف Agent", async () => await LifecycleAsync("stop"), "danger"));
         primary.Controls.Add(actions);
         root.Controls.Add(primary);
+
+        var details = Card("اطلاعات نصب و اتصال");
+        var info = new TableLayoutPanel
+        {
+            Name = "BridgeStatusFacts",
+            AutoSize = false,
+            Dock = DockStyle.Top,
+            Height = 118,
+            ColumnCount = 4,
+            RowCount = 3,
+            RightToLeft = RightToLeft.Yes,
+            BackColor = BridgeUi.Surface,
+            Margin = new Padding(3, 1, 3, 2),
+            Padding = new Padding(4, 0, 4, 0)
+        };
+        info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24));
+        info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26));
+        info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24));
+        info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26));
+        for (var row = 0; row < 3; row++)
+            info.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        AddStatusMetric(info, 0, 0, "کنترل‌پنل", _shellVersion);
+        AddStatusMetric(info, 0, 2, "Agent نصب‌شده", _version);
+        AddStatusMetric(info, 1, 0, "پورت محلی", _port);
+        AddStatusMetric(info, 1, 2, "فضاهای کاری", _workspaceCount);
+        AddStatusMetric(info, 2, 0, "محل فایل‌ها", _artifact);
+        _artifact.RightToLeft = RightToLeft.No;
+        details.Controls.Add(info);
+        root.Controls.Add(details);
+
 
         var maintenance = Card("عیب‌یابی و پشتیبانی");
         var tools = ButtonRow();
@@ -974,12 +1000,30 @@ internal sealed class MainForm : Form
         return card;
     }
 
-    private static void AddInfo(TableLayoutPanel table, int row, string name, Label value)
+    private static void AddStatusMetric(TableLayoutPanel table, int row, int col, string title, Label value)
     {
-        while (table.RowCount <= row) { table.RowStyles.Add(new RowStyle(SizeType.AutoSize)); table.RowCount++; }
-        table.Controls.Add(new Label { Text = name, AutoSize = true, Font = BridgeUi.Font(10.6f, FontStyle.Bold), Margin = new Padding(6) }, 0, row);
-        value.Text = "—"; value.AutoSize = true; value.MaximumSize = new Size(620, 0); value.Margin = new Padding(6);
-        table.Controls.Add(value, 1, row);
+        var label = new Label
+        {
+            Text = title,
+            AutoSize = false,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes,
+            Font = BridgeUi.Font(10.4f, FontStyle.Bold),
+            ForeColor = BridgeUi.BrandDark,
+            AutoEllipsis = true,
+            Margin = new Padding(5, 1, 3, 1)
+        };
+        value.AutoSize = false;
+        value.Dock = DockStyle.Fill;
+        value.AutoEllipsis = true;
+        value.TextAlign = ContentAlignment.MiddleLeft;
+        value.ForeColor = BridgeUi.Text;
+        value.Font = BridgeUi.Font(10.3f);
+        value.Margin = new Padding(3, 1, 5, 1);
+        value.Text = "—";
+        table.Controls.Add(label, col, row);
+        table.Controls.Add(value, col + 1, row);
     }
 
     private Button StyledButton(string text, Action action, string style) => Style(ActionButton(text, action), style);
