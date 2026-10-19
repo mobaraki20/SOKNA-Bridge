@@ -174,8 +174,8 @@ internal static class BridgeUiAudit
         {
             if (!control.Visible) continue;
             if (control.Width <= 0 || control.Height <= 0) yield return "zero-size:" + control.Name;
-            if (control is Button button && !button.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
-                yield return "button-not-persian-font:" + button.Name;
+            if (control is Button fontButton && !fontButton.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
+                yield return "button-not-persian-font:" + fontButton.Name;
             if (control is Label paintedLabel &&
                 !paintedLabel.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
                 yield return "label-not-persian-font:" + paintedLabel.Name;
