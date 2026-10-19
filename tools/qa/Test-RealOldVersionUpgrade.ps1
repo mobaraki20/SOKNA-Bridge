@@ -24,15 +24,15 @@ $installed=$false
 $stage='prepare'
 $markers=New-Object 'System.Collections.Generic.List[string]'
 function Mark([string]$value){$script:markers.Add($value);Write-Host ($value+'_PASS')}
-function Launch([string]$exe,[string[]]$args,[string]$purpose){
+function Launch([string]$exe,[string[]]$launchArguments,[string]$purpose){
   $info=[Diagnostics.ProcessStartInfo]::new()
   $info.FileName=$exe
   $info.UseShellExecute=$false;$info.CreateNoWindow=$true
-  $info.Arguments=[string]::Join(' ',$args)
+  $info.Arguments=[string]::Join(' ',$launchArguments)
   if($purpose -in @('old-install','actual-upgrade')){
     # Historical P1 Windows UAT for 2.7.0 used Start-Process -WindowStyle Hidden.
     # Preserve exact invocation semantics; the old installer is never rebuilt or patched.
-    $proc=Start-Process -FilePath $exe -ArgumentList $args -PassThru -WindowStyle Hidden
+    $proc=Start-Process -FilePath $exe -ArgumentList $launchArguments -PassThru -WindowStyle Hidden
   }else{
     $proc=[Diagnostics.Process]::Start($info)
   }
