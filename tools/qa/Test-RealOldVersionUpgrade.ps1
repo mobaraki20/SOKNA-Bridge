@@ -31,6 +31,18 @@ function Launch([string]$exe,[string[]]$args,[string]$purpose){
   if($null-eq$proc){throw ('UPGRADE_PROCESS_START_FAILED_'+$purpose)}
   try{
     if(-not $proc.WaitForExit(180000)){
+  Write-Host ("UPGRADE_DIAGNOSTIC_PURPOSE="+$purpose)
+  foreach($key in @('manifests/installed-manifest.json','config.json','state/runtime-ownership.json','Sokna.Agent.Maintenance.exe','Sokna.Agent.Launcher.exe','runtime/agent.ps1','unins000.exe')){
+    $present=Test-Path -LiteralPath (Join-Path $install $key) -PathType Leaf
+    Write-Host ("UPGRADE_FILE_"+($key.Replace('/','_').Replace('.','_').ToUpper())+"="+[bool]$present)
+  }
+  foreach($name in @('Sokna.Agent.Maintenance','Sokna.Agent.Launcher','powershell','pwsh')){
+    Write-Host ("UPGRADE_PROC_"+($name.Replace('.','_').ToUpper())+"_COUNT="+@(Get-Process -Name $name -ErrorAction SilentlyContinue).Count)
+  }
+  $innoTmp=@(Get-Process -Name '*setup*' -ErrorAction SilentlyContinue)
+  Write-Host ("UPGRADE_INNO_PROCESS_COUNT="+$innoTmp.Count)
+  $rootExists=Test-Path -LiteralPath $install -PathType Container
+  Write-Host ("UPGRADE_INSTALL_DIRECTORY_EXISTS="+[bool]$rootExists)
   $events=Join-Path $install 'logs/maintenance/events.jsonl'
   if(Test-Path -LiteralPath $events -PathType Leaf){
     foreach($line in @(Get-Content -LiteralPath $events -Tail 10)){
