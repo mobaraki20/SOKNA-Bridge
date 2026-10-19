@@ -27,6 +27,13 @@ internal static class BridgeUi
     private static readonly List<GCHandle> FontPins = new();
     private static readonly FontFamily PersianFamily = InitializePersianFont();
     internal static bool EmbeddedPersianFontLoaded { get; private set; }
+    internal static bool NativePersianFontRegistered { get; private set; }
+
+    // Native WinForms TextRenderer uses GDI, not the private GDI+ font list.
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern IntPtr AddFontMemResourceEx(IntPtr pbFont, uint cbFont,
+        IntPtr pdv, [In, Out] ref uint pcFonts);
+
 
     private static FontFamily InitializePersianFont()
     {
@@ -42,8 +49,14 @@ internal static class BridgeUi
                 resource.CopyTo(buffer);
                 var bytes = buffer.ToArray();
                 var handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
-                FontPins.Add(handle); // Retained until process exit: AddMemoryFont needs live bytes.
+                FontPins.Add(handle); // Both font engines need the bytes until process exit.
                 EmbeddedFontCollection.AddMemoryFont(handle.AddrOfPinnedObject(), bytes.Length);
+                uint registeredFaces = 0;
+                var gdiHandle = AddFontMemResourceEx(handle.AddrOfPinnedObject(),
+                    (uint)bytes.Length, IntPtr.Zero, ref registeredFaces);
+                if (gdiHandle == IntPtr.Zero || registeredFaces == 0)
+                    throw new InvalidOperationException("Vazirmatn unavailable to native GDI text rendering.");
+                NativePersianFontRegistered = true;
             }
             var family = EmbeddedFontCollection.Families.FirstOrDefault(f =>
                 f.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
@@ -54,6 +67,7 @@ internal static class BridgeUi
         catch
         {
             EmbeddedPersianFontLoaded = false;
+            NativePersianFontRegistered = false;
             return FontFamily.Families.FirstOrDefault(f =>
                 f.Name.Equals("Vazirmatn", StringComparison.OrdinalIgnoreCase))
                 ?? new FontFamily("Segoe UI");
@@ -84,10 +98,11 @@ internal static class BridgeUi
         button.Font = Font(10.2f, FontStyle.Bold);
         button.Cursor = Cursors.Hand;
         button.AutoSize = true;
-        button.MinimumSize = new Size(110, 42);
-        button.Padding = new Padding(12, 5, 12, 5);
-        button.Margin = new Padding(5);
+        button.MinimumSize = new Size(106, 38);
+        button.Padding = new Padding(13, 5, 13, 5);
+        button.Margin = new Padding(4, 3, 4, 3);
         button.TextAlign = ContentAlignment.MiddleCenter;
+        button.UseCompatibleTextRendering = true;
         if (kind == "primary")
         {
             button.BackColor = Brand;
@@ -114,6 +129,7 @@ internal static class BridgeUi
         AutoSize = true,
         ForeColor = Muted,
         Font = Font(10.3f),
+        UseCompatibleTextRendering = true,
         Margin = new Padding(3, 4, 3, 7)
     };
 
@@ -123,6 +139,7 @@ internal static class BridgeUi
         AutoSize = true,
         ForeColor = BrandDark,
         Font = Font(10.5f, FontStyle.Bold),
+        UseCompatibleTextRendering = true,
         Margin = new Padding(3, 0, 3, 7)
     };
 
