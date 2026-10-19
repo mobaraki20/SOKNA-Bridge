@@ -97,9 +97,9 @@ internal sealed class BridgeNavigationShell : UserControl
             Margin = Padding.Empty, Padding = Padding.Empty
         };
         sidebar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 138));
+        sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 119));
         sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 65));
 
         var brand = new Panel { Dock = DockStyle.Fill, BackColor = Sidebar,
             Padding = new Padding(19, 18, 19, 6) };
@@ -132,7 +132,7 @@ internal sealed class BridgeNavigationShell : UserControl
 
         var menu = new TableLayoutPanel
         {
-            Dock = DockStyle.Top, Height = 340, ColumnCount = 1,
+            Dock = DockStyle.Top, Height = 308, ColumnCount = 1,
             RowCount = _pages.Count, Margin = Padding.Empty,
             Padding = new Padding(8, 2, 8, 2), RightToLeft = RightToLeft.No,
             BackColor = Sidebar
@@ -140,7 +140,7 @@ internal sealed class BridgeNavigationShell : UserControl
         menu.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (var i = 0; i < _pages.Count; i++)
         {
-            menu.RowStyles.Add(new RowStyle(SizeType.Absolute, 53));
+            menu.RowStyles.Add(new RowStyle(SizeType.Absolute, 49));
             var item = new NavigationItem(_pages[i].Text, i, SidebarActive, SidebarSecondary);
             item.Dock = DockStyle.Fill;
             item.Margin = new Padding(4, 3, 4, 3);
@@ -161,9 +161,9 @@ internal sealed class BridgeNavigationShell : UserControl
         };
         var foot = new Label
         {
-            Text = "برای کار با بریج، از بخش\n«راهنمای شروع» کمک بگیر.",
+            Text = "راهنمای شروع و اتصال",
             Dock = DockStyle.Fill, ForeColor = SidebarSecondary,
-            Font = BridgeUi.Font(9.8f),
+            Font = BridgeUi.Font(10f),
             RightToLeft = RightToLeft.Yes, UseCompatibleTextRendering = true,
             TextAlign = ContentAlignment.MiddleRight
         };
