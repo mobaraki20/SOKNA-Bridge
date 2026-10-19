@@ -70,7 +70,8 @@ jobs:
           $sha256=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
           Write-Host "CURRENT_271_INSTALLER_BUILT_PASS sha256=$sha256 source_commit=$sha"
       - name: Actually install 2.7.0 then upgrade in place to 2.7.1
-        shell: pwsh
+        # Run exactly like the proven released 2.7.0 P1 Windows acceptance, not under pwsh 7.
+        shell: powershell
         timeout-minutes: 15
         run: |
           $ErrorActionPreference='Stop'

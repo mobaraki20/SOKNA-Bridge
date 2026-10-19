@@ -82,9 +82,9 @@ function RequireVersion([string]$version,[string]$commit=''){
 }
 function Hash([string]$p){return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
 function RunInno([string]$exe,[string]$label,[bool]$setRoot) {
-  $arguments=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/SP-','/NOICONS','/TASKS=""',('/DIR="'+$install+'"'),
-    ('/LOG="'+(Join-Path $logs ($label+'.log'))+'"'))
+  $arguments=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="'+$install+'"'))
   if($setRoot){$arguments+=('/ArtifactRoot="'+$artifacts+'"')}
+  $arguments+=@('/TASKS=""',('/LOG="'+(Join-Path $logs ($label+'.log'))+'"'))
   Launch $exe $arguments $label
 }
 function InspectInstalledHashes($manifest){
@@ -158,7 +158,7 @@ try{
     new_source_commit=$CandidateSourceCommit
     result='PASS';passed=$required
     chrome_manual='NOT_RUN';maintenance_delta_upgrade='NOT_RUN';physical_power_loss='NOT_RUN';release_ready=$false
-  }|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $report -Encoding UTF8NoBOM -NoNewline
+  }|ConvertTo-Json -Depth 5|ForEach-Object { [IO.File]::WriteAllText($report,$_,[Text.UTF8Encoding]::new($false)) }
   Write-Host 'REAL_WINDOWS_OLD_VERSION_INSTALLED_UPGRADE_E2E_PASS'
 }catch{
   Write-Host "UPGRADE_FAILED_STAGE=$stage"
