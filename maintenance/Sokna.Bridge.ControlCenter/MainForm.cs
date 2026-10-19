@@ -35,6 +35,11 @@ internal sealed class MainForm : Form
     private readonly Label _extensionInfo = new();
     private readonly Button _saveSettings = new();
     private bool _busy;
+    private BridgeNavigationShell? _navigation;
+    internal IReadOnlyList<TabPage> AuditPages => _navigation?.Pages ?? [];
+    internal TabPage ActiveAuditPage => _navigation?.CurrentPage ??
+        throw new InvalidOperationException("Navigation shell is not initialized.");
+    internal void SelectAuditPage(int index) => _navigation?.SelectPage(index);
 
     private static readonly string[] DevelopmentTools =
     [
@@ -51,55 +56,17 @@ internal sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         BridgeUi.Prepare(this);
 
-        var tabs = new TabControl
-        {
-            Dock = DockStyle.Fill, RightToLeft = RightToLeft.Yes,
-            RightToLeftLayout = true, Font = BridgeUi.Font(11f, FontStyle.Bold),
-            DrawMode = TabDrawMode.OwnerDrawFixed, SizeMode = TabSizeMode.Fixed,
-            ItemSize = new Size(124, 46), Padding = new Point(10, 8)
-        };
-        tabs.DrawItem += DrawNavigationTab;
-        tabs.TabPages.Add(BuildHomeTab());
-        tabs.TabPages.Add(BuildWorkspaceTab());
-        tabs.TabPages.Add(BuildCredentialsTab());
-        tabs.TabPages.Add(BuildSettingsTab());
-        tabs.TabPages.Add(BuildDiagnosticsTab());
-        tabs.TabPages.Add(BuildGettingStartedTab());
-        Controls.Add(tabs);
-        BridgeUi.Fields(tabs);
+        _navigation = new BridgeNavigationShell([
+            BuildHomeTab(),
+            BuildWorkspaceTab(),
+            BuildCredentialsTab(),
+            BuildSettingsTab(),
+            BuildDiagnosticsTab(),
+            BuildGettingStartedTab()
+        ]);
+        Controls.Add(_navigation);
+        BridgeUi.Fields(_navigation);
         if (!layoutTestMode) Shown += async (_, _) => await RefreshAllAsync();
-    }
-
-    private static void DrawNavigationTab(object? sender, DrawItemEventArgs e)
-    {
-        if (sender is not TabControl nav || e.Index < 0) return;
-        var selected = nav.SelectedIndex == e.Index;
-        var bounds = e.Bounds;
-        using var background = new SolidBrush(selected ? BridgeUi.Surface : BridgeUi.Canvas);
-        using var ink = new SolidBrush(selected ? BridgeUi.BrandDark : BridgeUi.Muted);
-        e.Graphics.FillRectangle(background, bounds);
-        e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-        using var font = BridgeUi.Font(10.8f, selected ? FontStyle.Bold : FontStyle.Regular);
-        using var format = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center,
-            FormatFlags = StringFormatFlags.DirectionRightToLeft
-        };
-        // RightToLeftLayout mirrors the underlying Win32 HDC. Without a
-        // counter-transform, native owner-drawn Persian glyphs are reversed.
-        var state = e.Graphics.Save();
-        e.Graphics.TranslateTransform(bounds.Left + bounds.Right, 0);
-        e.Graphics.ScaleTransform(-1f, 1f);
-        e.Graphics.DrawString(nav.TabPages[e.Index].Text, font, ink,
-            new RectangleF(bounds.X + 4, bounds.Y + 2, bounds.Width - 8, bounds.Height - 6), format);
-        e.Graphics.Restore(state);
-        if (selected)
-        {
-            using var accent = new SolidBrush(BridgeUi.Brand);
-            e.Graphics.FillRectangle(accent, bounds.Left + 9, bounds.Bottom - 4,
-                Math.Max(0, bounds.Width - 18), 3);
-        }
     }
 
     private TabPage BuildHomeTab()
@@ -107,8 +74,8 @@ internal sealed class MainForm : Form
         var page = NewPage("وضعیت");
         var root = Stack();
 
-        root.Controls.Add(new Label { Text = "مرکز کنترل بریج سکنا", AutoSize = true, Font = BridgeUi.Font(19f, FontStyle.Bold), ForeColor = BridgeUi.BrandDark, Margin = new Padding(8, 12, 8, 3) });
-        root.Controls.Add(new Label { Text = "مدیریت اتصال، دسترسی‌ها و گزارش‌های پشتیبانی", AutoSize = true, Font = BridgeUi.Font(10.6f), ForeColor = BridgeUi.Muted, Margin = new Padding(8, 0, 8, 16) });
+        // The permanent application header owns the page title: avoid an
+        // oversized duplicated heading above everyday lifecycle controls.
 
         var health = Card("وضعیت ایجنت");
         health.Name = "BridgeAgentHealthCard";
@@ -188,8 +155,7 @@ internal sealed class MainForm : Form
         tools.Controls.Add(StyledButton("ساخت بسته پشتیبانی", CreateSupportBundleAsync, "secondary"));
         tools.Controls.Add(StyledButton("عیب‌یابی", async () => {
             await RefreshDiagnosticsAsync();
-            if (Controls.OfType<TabControl>().FirstOrDefault() is { } tabs)
-                tabs.SelectedTab = tabs.TabPages.Cast<TabPage>().FirstOrDefault(p => p.Text == "عیب‌یابی");
+            _navigation?.SelectPage(4);
         }, "primary"));
         maintenance.Controls.Add(tools);
         root.Controls.Add(maintenance);
@@ -946,8 +912,7 @@ internal sealed class MainForm : Form
         }
         _lastError.Text = summary; _errorDetails.Text = raw; _errorPanel.Visible = true;
         // One actionable inline error, without an additional intrusive modal.
-        if (Controls.OfType<TabControl>().FirstOrDefault() is { } tabs)
-            tabs.SelectedIndex = 0;
+        _navigation?.SelectPage(0);
         if (_errorPanel.Parent is ScrollableControl scroll)
             scroll.ScrollControlIntoView(_errorPanel);
     }
