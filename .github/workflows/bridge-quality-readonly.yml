@@ -266,7 +266,7 @@ jobs:
           $logs=Join-Path $testRoot 'test-logs'
           New-Item -ItemType Directory -Force -Path $testRoot,$logs,$data|Out-Null
           function Invoke-Setup([string]$exe,[string[]]$setupArguments,[string]$what) {
-            if(@($setupArguments).Count -lt 5 -or @($setupArguments | Where-Object { $_ -eq '/VERYSILENT' }).Count -ne 1 -or @($setupArguments | Where-Object { $_ -like '/LOG=*' }).Count -ne 1){ throw "SETUP_REQUIRED_SILENT_ARGUMENTS_MISSING: $what" }
+            if(@($setupArguments).Count -lt $(if($what -eq 'uninstall'){3}else{5}) -or @($setupArguments | Where-Object { $_ -eq '/VERYSILENT' }).Count -ne 1 -or @($setupArguments | Where-Object { $_ -like '/LOG=*' }).Count -ne 1){ throw "SETUP_REQUIRED_SILENT_ARGUMENTS_MISSING: $what" }
             Write-Host "SETUP_SILENT_ARGUMENTS_VERIFIED: $what count=$(@($setupArguments).Count)"
             $psi=[Diagnostics.ProcessStartInfo]::new()
             $psi.FileName=$exe
@@ -319,8 +319,8 @@ jobs:
           if(-not(Test-Path -LiteralPath $manifest -PathType Leaf)){throw 'INSTALLER_INSTALLED_MANIFEST_MISSING'}
           $nativeHost=Join-Path $install 'native-host/com.sokna.bridge.v3.json'
           if(-not(Test-Path -LiteralPath $nativeHost -PathType Leaf)){throw 'INSTALLER_NATIVE_HOST_MANIFEST_MISSING'}
-          $host=(Get-Content -LiteralPath $nativeHost -Raw|ConvertFrom-Json)
-          if(-not(Test-Path -LiteralPath $host.path -PathType Leaf)){throw 'INSTALLER_NATIVE_HOST_PATH_BROKEN'}
+          $nativeHostManifest=(Get-Content -LiteralPath $nativeHost -Raw|ConvertFrom-Json)
+          if(-not(Test-Path -LiteralPath $nativeHostManifest.path -PathType Leaf)){throw 'INSTALLER_NATIVE_HOST_PATH_BROKEN'}
           $marker=Join-Path $data 'operator-data-must-survive-uninstall.txt'
           [IO.File]::WriteAllText($marker,'DO_NOT_DELETE')
           $secondLog=Join-Path $logs 'install-repeat.log'
