@@ -22,9 +22,9 @@ internal static class BridgeUiAudit
             using (var font = BridgeUi.Font(11f))
             {
                 File.WriteAllText(Path.Combine(output, "persian-font-evidence.txt"),
-                    $"embedded={BridgeUi.EmbeddedPersianFontLoaded}; family={font.FontFamily.Name}; " +
+                    $"embedded={BridgeUi.EmbeddedPersianFontLoaded}; native_gdi={BridgeUi.NativePersianFontRegistered}; family={font.FontFamily.Name}; " +
                     $"size={font.SizeInPoints}\n");
-                if (!BridgeUi.EmbeddedPersianFontLoaded ||
+                if (!BridgeUi.EmbeddedPersianFontLoaded || !BridgeUi.NativePersianFontRegistered ||
                     !font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
                     problems.Add("missing-required-embedded-vazirmatn");
             }
@@ -45,6 +45,8 @@ internal static class BridgeUiAudit
                     problems.Add("actual-form-font-is-not-vazirmatn");
                 Application.DoEvents();
                 var tabs = form.Controls.OfType<TabControl>().Single();
+                if (tabs.DrawMode != TabDrawMode.OwnerDrawFixed || tabs.ItemSize.Height < 42)
+                    problems.Add("navigation-not-custom-painted-or-too-small");
                 for (var i = 0; i < tabs.TabPages.Count; i++)
                 {
                     tabs.SelectedIndex = i;
@@ -67,11 +69,14 @@ internal static class BridgeUiAudit
                     }
                     if (i is 1 or 2 or 4)
                     {
-                        var hasVisibleEmptyState = Descendants(page).OfType<Label>()
-                            .Any(label => label.Visible &&
+                        var emptyState = Descendants(page).OfType<Label>()
+                            .FirstOrDefault(label => label.Visible &&
                                 label.Text.Contains("هنوز", StringComparison.Ordinal));
-                        if (!hasVisibleEmptyState)
+                        if (emptyState is null)
                             problems.Add(title + ":empty-state-invisible");
+                        else if (i is 1 or 2 && (emptyState.Dock != DockStyle.Top ||
+                                 emptyState.Height > 170 || emptyState.BackColor != BridgeUi.BrandSoft))
+                            problems.Add(title + ":empty-state-not-compact-actionable-card");
                     }
                     if (i == 0)
                     {
@@ -169,6 +174,11 @@ internal static class BridgeUiAudit
         {
             if (!control.Visible) continue;
             if (control.Width <= 0 || control.Height <= 0) yield return "zero-size:" + control.Name;
+            if (control is Button button && !button.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
+                yield return "button-not-persian-font:" + button.Name;
+            if (control is Label paintedLabel &&
+                !paintedLabel.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
+                yield return "label-not-persian-font:" + paintedLabel.Name;
             if (control is Button button && button.ClientSize.Width + 4 < button.PreferredSize.Width)
                 yield return "button-clipped:" + button.Text;
             if (control is Button shortButton && shortButton.ClientSize.Height + 4 < shortButton.PreferredSize.Height)
