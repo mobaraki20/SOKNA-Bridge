@@ -38,12 +38,21 @@ internal static class BridgeUiAudit
                 {
                     StartPosition = FormStartPosition.Manual,
                     Location = new Point(15, 15),
-                    ClientSize = size
+                    // An outer 960x600 window must be imaged as 960x600; using
+                    // ClientSize here used to crop the bottom 30px titlebar offset.
+                    Size = size
                 };
                 form.Show();
                 if (!form.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
                     problems.Add("actual-form-font-is-not-vazirmatn");
                 Application.DoEvents();
+                var footer = Descendants(form).OfType<Label>()
+                    .FirstOrDefault(x => x.Text == "راهنمای شروع و اتصال");
+                var viewport = form.RectangleToScreen(form.ClientRectangle);
+                if (footer is null)
+                    problems.Add("missing-sidebar-footer");
+                else if (footer.RectangleToScreen(footer.ClientRectangle).Bottom > viewport.Bottom)
+                    problems.Add("sidebar-footer-cut-by-window-height");
                 // Ensure standard native caption placement, not the mirrored HWND
                 // which moves close/maximize/minimize to the left in Windows.
                 if (form.RightToLeftLayout || form.RightToLeft != RightToLeft.Yes)
