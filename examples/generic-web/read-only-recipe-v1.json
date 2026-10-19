@@ -1,0 +1,18 @@
+{
+  "schema": "sokna-bridge-capture-recipe-template-v1",
+  "id": "unrelated-web-app-smoke",
+  "entries": [
+    {
+      "id": "landing",
+      "route": "index.html",
+      "title": "Landing page",
+      "action": "Capture page only"
+    },
+    {
+      "id": "about",
+      "route": "about",
+      "title": "About page",
+      "action": "Capture read-only informational page"
+    }
+  ]
+}
