@@ -1,0 +1,67 @@
+name: Bridge Windows Recovery Isolation
+on:
+  pull_request:
+    branches:
+      - release/r14-final
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-repair-rollback:
+    name: Real Windows repair and automatic rollback (disposable runner)
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Parse recovery script before build
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tokens=$null;$errors=$null
+          $path=Join-Path $PWD 'tools/qa/Test-WindowsRepairRollback.ps1'
+          [void][System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+          if($errors.Count -gt 0){throw "RECOVERY_SCRIPT_PARSE_FAILURE: $($errors.Count)"}
+      - name: Discover Inno Setup compiler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidate=@()
+          $path=Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if($path){$candidate+=$path.Source}
+          $x86=${env:ProgramFiles(x86)}
+          if($x86){$candidate+=(Join-Path $x86 'Inno Setup 6/ISCC.exe')}
+          if($env:ProgramFiles){$candidate+=(Join-Path $env:ProgramFiles 'Inno Setup 7/ISCC.exe')}
+          $compiler=$candidate|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -First 1
+          if(-not $compiler){throw 'ISCC_UNAVAILABLE_WINDOWS_RECOVERY_BLOCKED'}
+          "BRIDGE_ISCC=$compiler" >> $env:GITHUB_ENV
+      - name: Compile exact-commit candidate installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sha=(git rev-parse HEAD).Trim()
+          & ./tools/installer/Build-P1Installer.ps1 -ExpectedSourceCommit $sha -InnoCompiler $env:BRIDGE_ISCC | Out-Host
+          if($LASTEXITCODE -ne 0){throw 'RECOVERY_INSTALLER_BUILD_FAILED'}
+          $setup=Join-Path $PWD 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          if(-not(Test-Path -LiteralPath $setup -PathType Leaf)){throw 'RECOVERY_SETUP_NOT_BUILT'}
+          $hash=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
+          Write-Host "RECOVERY_BUILD_PASS sha256=$hash commit=$sha"
+      - name: Actual isolated install repair rollback and uninstall
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tools/qa/Test-WindowsRepairRollback.ps1 -SetupPath 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe' -PayloadRoot 'artifacts/windows/installer-payload'
+          if($LASTEXITCODE -ne 0){throw 'RECOVERY_E2E_FAILED'}
+      - name: Qualification scope
+        if: success()
+        shell: pwsh
+        run: |
+          Write-Host 'RECOVERY_TEST_SCOPE: ephemeral-Windows-Inno-only'
+          Write-Host 'NOT_QUALIFIED: old-version migration, Chrome/Edge loaded extension, live-site UAT, signed release'
