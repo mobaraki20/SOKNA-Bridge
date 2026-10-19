@@ -36,7 +36,7 @@ async function captureEntry(tabId,e,cfg,folder,index){
   try{
     await chrome.tabs.update(tabId,{url:e.url});let t=await waitTab(tabId,cfg.timeout_ms);if(cfg.settle_ms)await sleep(cfg.settle_ms);t=await chrome.tabs.get(tabId);finalUrl=String(t.url||e.url);title=String(t.title||"");
     const expected=new URL(e.url),actual=new URL(finalUrl);
-    const cleanPath=u=>u.pathname.replace(/\\/+$/,"")||"/";
+    const cleanPath=u=>u.pathname.replace(/\/+$/,"")||"/";
     if(expected.origin!==actual.origin||cleanPath(expected)!==cleanPath(actual))status="unexpected-navigation";
     const info=await pageInfo(tabId);if(info.title)title=info.title;if(info.url)finalUrl=info.url;httpStatus=Number(info.response_status||0);
     const current=new URL(finalUrl);
