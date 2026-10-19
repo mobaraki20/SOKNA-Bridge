@@ -884,7 +884,8 @@ internal sealed class MainForm : Form
             Font = BridgeUi.Font(11f, FontStyle.Bold),
             ForeColor = BridgeUi.BrandDark,
             RightToLeft = RightToLeft.Yes,
-            TextAlign = ContentAlignment.MiddleRight,
+            // WinForms mirrors TextAlign under RTL; MiddleLeft paints on the visual right.
+            TextAlign = ContentAlignment.MiddleLeft,
             Margin = new Padding(5, 2, 5, 12)
         });
         return card;

@@ -13,6 +13,11 @@ internal static class BridgeUiAudit
         try
         {
             Directory.CreateDirectory(output);
+            var screen = Screen.PrimaryScreen?.Bounds ?? Rectangle.Empty;
+            File.WriteAllText(Path.Combine(output, "screen-coverage.txt"),
+                $"Actual Windows runner desktop: {screen.Width}x{screen.Height}. " +
+                "Screenshots larger than this desktop may be clipped by the real WinForms " +
+                "paint API even when geometry and layout assertions pass.\n");
             var problems = new List<string>();
             if (BridgeUi.Contrast(BridgeUi.Brand, Color.White) < 4.5 ||
                 BridgeUi.Contrast(BridgeUi.Text, BridgeUi.Surface) < 4.5 ||
