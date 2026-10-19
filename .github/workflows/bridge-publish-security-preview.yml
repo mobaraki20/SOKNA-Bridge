@@ -1,0 +1,114 @@
+name: Publish verified SOKNA Bridge Chrome-manual prerelease
+on:
+  push:
+    branches:
+      - pre-release/sokna-bridge-271-manual-chrome-20261019
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: bridge-prerelease-271-manualchrome-20261019
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_PROMPT_DISABLED: "1"
+      EXPECTED_SHA: 494a6360812788c5cb70b77b174c5d477c07fb2a
+      ARTIFACT_ID: "12196107108"
+      ARTIFACT_DIGEST: sha256:e51f982301818fbf144bdd958bd41f291d831b3249ac9efc6305a15fffdcbcf5
+      PREVIEW_TAG: sokna-agent-2.7.1-security-preview-20261019
+    steps:
+      - name: Reject existing releases/tags and verify pinned Windows artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$PREVIEW_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "RELEASE_ALREADY_EXISTS"; exit 1; fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$PREVIEW_TAG" >/dev/null 2>&1; then echo "TAG_ALREADY_EXISTS"; exit 1; fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" > /tmp/art.json
+          jq -e --arg sha "$EXPECTED_SHA" --arg digest "$ARTIFACT_DIGEST" \
+            '.name=="bridge-win10-chrome-operator-candidate" and .expired==false and .workflow_run.head_sha==$sha and .digest==$digest' \
+            /tmp/art.json >/dev/null
+          echo "IMMUTABLE_WINDOWS_CANDIDATE_SOURCE_AND_DIGEST_PASS"
+      - name: Download previously tested Windows candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p candidate
+          gh run download 39272898438 --repo "$GITHUB_REPOSITORY" \
+            --name bridge-win10-chrome-operator-candidate --dir candidate
+          echo "CANDIDATE_ARTIFACT_DOWNLOADED"
+      - name: Verify actual Setup hash, provenance and file size
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,shutil
+          found=list(pathlib.Path("candidate").rglob("candidate-provenance.json"))
+          installers=list(pathlib.Path("candidate").rglob("SOKNA-Bridge-Setup-2.7.1-x64.exe"))
+          if len(found)!=1 or len(installers)!=1: raise SystemExit("CANDIDATE_FILESET_MISMATCH")
+          m=json.loads(found[0].read_text(encoding="utf-8-sig"));exe=installers[0]
+          with exe.open("rb") as f: digest=hashlib.file_digest(f,"sha256").hexdigest()
+          if m.get("source_commit")!=os.environ["EXPECTED_SHA"]: raise SystemExit("SOURCE_COMMIT_MISMATCH")
+          if m.get("release_status")!="DRAFT_TEST_ONLY": raise SystemExit("CANDIDATE_STATUS_UNEXPECTED")
+          if m.get("chrome_for_testing_windows_server_ci")!="PASS": raise SystemExit("WINDOWS_QA_EVIDENCE_MISSING")
+          if digest!=m.get("installer_sha256"): raise SystemExit("INSTALLER_SHA256_MISMATCH")
+          if exe.stat().st_size!=int(m.get("installer_bytes",-1)): raise SystemExit("INSTALLER_BYTES_MISMATCH")
+          shutil.copy2(exe,pathlib.Path("assets")/exe.name)
+          shutil.copy2(found[0],pathlib.Path("assets")/"candidate-provenance.json")
+          (pathlib.Path("assets")/"SHA256SUMS.txt").write_text(digest+"  "+exe.name+"\n",encoding="utf-8")
+          provenance={
+            "schema":"sokna-bridge-preview-v1",
+            "source_commit":os.environ["EXPECTED_SHA"],
+            "source_artifact_id":int(os.environ["ARTIFACT_ID"]),
+            "installer_sha256":digest,
+            "agent_version":"2.7.1","chrome_extension_version":"3.14.2",
+            "channel":"PRERELEASE_MANUAL_CHROME_INTERNAL_TEST",
+            "publisher_authenticode_signature":"NOT_VERIFIED",
+            "chrome_manual_ui_install_persistence":"NOT_RUN",
+            "independent_privacy_audit":"NOT_RUN",
+            "merged_into_default":False
+          }
+          (pathlib.Path("assets")/"PREVIEW_PROVENANCE.json").write_text(
+            json.dumps(provenance,indent=2)+"\n",encoding="utf-8")
+          print("PINNED_WINDOWS_SETUP_SHA256_VERIFIED_PASS")
+          PY
+      - name: Write manual Chrome installation instructions
+        shell: bash
+        run: |
+          cat > /tmp/bridge-preview-notes.md <<'EOF'
+          ## SOKNA Bridge 2.7.1 / Chrome Extension 3.14.2 — Pre-release
+          
+          **پیش‌انتشار آزمایشی برای دانلود مستقیم؛ نه نسخهٔ امضاشدهٔ نهایی.**
+          
+          فایل Setup از Commit امنیتی تأییدشده 494a6360812788c5cb70b77b174c5d477c07fb2a و اجرای موفق GitHub Actions شمارهٔ 39272898438 تهیه شده است. SHA-256 با منشأ همان نصب‌کننده تطبیق داده شده؛ شواهد Windows Server 2025، Chrome Stable، Native Host و تست‌های نصب و بازیابی موفق هستند.
+          
+          ### نصب ویندوز و افزونه
+          1. فایل SOKNA-Bridge-Setup-2.7.1-x64.exe را از Assets همین Pre-release دریافت و SHA-256 آن را با SHA256SUMS.txt مطابقت دهید.
+          2. Setup را اجرا و ArtifactRoot داده‌ها را جدا از پوشهٔ نصب برنامه انتخاب کنید.
+          3. در **Google Chrome** به chrome://extensions بروید، Developer mode را فعال کنید و Load unpacked را بزنید. پوشهٔ extension در محل نصب دائمی برنامه را انتخاب کنید (معمولاً %LOCALAPPDATA%\Programs\SOKNA Agent\extension).
+          4. نسخهٔ افزونه 3.14.2 و مجوزها را بررسی کنید، سپس Self Test و Native Host ping را انجام دهید. Chrome را ببندید و باز کنید و مجدداً نتیجه را بررسی کنید.
+          
+          نصب افزونه **دستی** است. ماندگاری نصب گرافیکی افزونه هنوز در CI اثبات نشده؛ CI آن را با DevTools بارگذاری کرده است. امضای معتبر ناشر و ممیزی مستقل حریم خصوصی برای انتشار عمومی تأیید نشده‌اند. **صرفاً برای تست داخلی و کنترل‌شده**؛ Edge و سامانهٔ کافه خارج از محدوده‌اند. PR توسعه Merge نشده و R14 قبلی دست‌نخورده است.
+          EOF
+      - name: Publish immutable new GitHub prerelease with direct EXE asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$PREVIEW_TAG" \
+            assets/SOKNA-Bridge-Setup-2.7.1-x64.exe \
+            assets/SHA256SUMS.txt \
+            assets/candidate-provenance.json \
+            assets/PREVIEW_PROVENANCE.json \
+            --repo "$GITHUB_REPOSITORY" --target "$EXPECTED_SHA" \
+            --title "SOKNA Bridge 2.7.1 — Security Preview / Manual Chrome" \
+            --notes-file /tmp/bridge-preview-notes.md \
+            --prerelease
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PREVIEW_TAG" > /tmp/result.json
+          jq -e --arg tag "$PREVIEW_TAG" \
+            '.tag_name==$tag and .prerelease==true and .draft==false and ([.assets[].name]|index("SOKNA-Bridge-Setup-2.7.1-x64.exe"))!=null' \
+            /tmp/result.json >/dev/null
+          jq -r '"VERIFIED_PRERELEASE_URL="+.html_url' /tmp/result.json
