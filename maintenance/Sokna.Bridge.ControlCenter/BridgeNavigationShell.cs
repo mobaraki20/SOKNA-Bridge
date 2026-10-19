@@ -12,16 +12,16 @@ internal sealed class BridgeNavigationShell : UserControl
     private static readonly Color Sidebar = Color.FromArgb(19, 72, 68);
     private static readonly Color SidebarActive = Color.FromArgb(43, 111, 101);
     private static readonly Color SidebarSecondary = Color.FromArgb(181, 211, 202);
-    private readonly List<TabPage> _pages;
+    private readonly List<Panel> _pages;
     private readonly List<NavigationItem> _navigation = [];
     private readonly Panel _viewport;
     private readonly Label _pageTitle;
     private readonly Label _pageHint;
     internal int SelectedIndex { get; private set; } = -1;
-    internal TabPage CurrentPage => _pages[SelectedIndex];
-    internal IReadOnlyList<TabPage> Pages => _pages;
+    internal Panel CurrentPage => _pages[SelectedIndex];
+    internal IReadOnlyList<Panel> Pages => _pages;
 
-    internal BridgeNavigationShell(IEnumerable<TabPage> pages)
+    internal BridgeNavigationShell(IEnumerable<Panel> pages)
     {
         _pages = pages.ToList();
         Dock = DockStyle.Fill;
