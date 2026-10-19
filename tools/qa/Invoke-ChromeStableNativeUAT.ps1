@@ -46,18 +46,18 @@ try{
     ('/LOG="'+(Join-Path $logs 'setup.log')+'"'))
   Run-Setup $setup $argsInno 'install'
   $installed=$true
-  $host=Join-Path $install 'native-host\com.sokna.bridge.v3.json'
+  $hostManifest=Join-Path $install 'native-host\com.sokna.bridge.v3.json'
   $extension=Join-Path $install 'extension'
-  if(-not(Test-Path -LiteralPath $host -PathType Leaf) -or -not(Test-Path -LiteralPath (Join-Path $extension 'manifest.json') -PathType Leaf)){
+  if(-not(Test-Path -LiteralPath $hostManifest -PathType Leaf) -or -not(Test-Path -LiteralPath (Join-Path $extension 'manifest.json') -PathType Leaf)){
     throw 'STABLE_NATIVE_OR_EXTENSION_INSTALL_MISSING'
   }
   if(-not(Test-Path -LiteralPath $key)){throw 'STABLE_CHROME_NATIVE_HOST_REGISTRY_MISSING'}
   $registered=[string](Get-Item -LiteralPath $key).GetValue('')
-  if(-not [string]::Equals([IO.Path]::GetFullPath($registered),[IO.Path]::GetFullPath($host),[StringComparison]::OrdinalIgnoreCase)){
+  if(-not [string]::Equals([IO.Path]::GetFullPath($registered),[IO.Path]::GetFullPath($hostManifest),[StringComparison]::OrdinalIgnoreCase)){
     throw 'STABLE_HOST_REGISTRY_PATH_MISMATCH'
   }
   Write-Host 'STABLE_CHROME_HOST_INSTALLED_REGISTRATION_PASS'
-  & node ./tools/qa/chrome_stable_pipe_native_uat.mjs --chrome $chrome --extension $extension --host-manifest $host --profile $profile --evidence $evidence
+  & node ./tools/qa/chrome_stable_pipe_native_uat.mjs --chrome $chrome --extension $extension --host-manifest $hostManifest --profile $profile --evidence $evidence
   if($LASTEXITCODE -ne 0 -or -not(Test-Path -LiteralPath $evidence -PathType Leaf)){
     throw 'STABLE_CHROME_NATIVE_E2E_FAILED'
   }
