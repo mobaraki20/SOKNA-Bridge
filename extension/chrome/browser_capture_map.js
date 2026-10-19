@@ -17,7 +17,7 @@ function outputName(entry,suffix=""){let path="home";try{const u=new URL(entry.u
 async function waitTab(tabId,timeout=30000){const end=Date.now()+timeout;let t=null;while(Date.now()<end){t=await chrome.tabs.get(tabId);if(String(t.status)==="complete")return t;await sleep(120)}throw E("BROWSER_NAVIGATION_TIMEOUT","Timed out waiting for page.",{tab_id:tabId,url:String(t?.url||"")})}
 async function shot(tabId,full=true){const target={tabId:Number(tabId)};let attached=false;try{await debugAttach(target);attached=true;await debugSend(target,"Page.enable",{});const m=await debugSend(target,"Page.getLayoutMetrics",{}),b=full?(m.cssContentSize||m.contentSize||{}):(m.cssVisualViewport||m.visualViewport||{}),width=Number(full?b.width:(b.clientWidth||b.width)),height=Number(full?b.height:(b.clientHeight||b.height)),x=full?0:Number(b.pageX)||0,y=full?0:Number(b.pageY)||0;if(!(width>0&&height>0))throw E("BROWSER_CAPTURE_GEOMETRY_INVALID","Empty screenshot geometry.");if(width>16384||height>16384||width*height>250000000)throw E("BROWSER_CAPTURE_TOO_LARGE","Screenshot exceeds safety limits.",{width,height});const r=await debugSend(target,"Page.captureScreenshot",{format:"png",clip:{x:Math.max(0,x),y:Math.max(0,y),width,height,scale:1},captureBeyondViewport:true});if(!r?.data)throw E("BROWSER_CAPTURE_EMPTY","Empty screenshot.");return {data_b64:String(r.data),width,height}}finally{if(attached)await debugDetach(target)}}
 async function synthetic(tabId,requested,errorText,full){const u=chrome.runtime.getURL("browser_capture_error.html")+"?url="+encodeURIComponent(requested)+"&error="+encodeURIComponent(errorText);await chrome.tabs.update(tabId,{url:u});await waitTab(tabId,10000);await sleep(100);return await shot(tabId,full)}
-async function pageInfo(tabId){try{const r=await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},func:()=>{const nav=performance.getEntriesByType?.("navigation")?.[0];return {title:document.title,url:location.href,response_status:Number(nav?.responseStatus||0),text:String(document.body?.innerText||"").slice(0,4000)};}});return r?.[0]?.result||{}}catch{return {}}}
+async function pageInfo(tabId){try{const r=await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},func:()=>{const nav=performance.getEntriesByType?.("navigation")?.[0];return {title:document.title,url:location.href,response_status:Number(nav?.responseStatus||0),login_form:!!document.querySelector('input[type="password"]')};}});return r?.[0]?.result||{}}catch{return {}}}
 // Read-only capture deliberately has no application-specific state handlers.
 async function applyState(tabId,e){
   const instruction=String(e?.action||"").trim();
@@ -43,7 +43,7 @@ async function captureEntry(tabId,e,cfg,folder,index){
     if(expected.origin!==current.origin||cleanPath(expected)!==cleanPath(current))status="unexpected-navigation";
     if(httpStatus>=400)status="http-error";
     state=await applyState(tabId,e);if(cfg.settle_ms)await sleep(Math.min(500,cfg.settle_ms));
-    if(!state.reached)status="state-unreached";else if(state.noData)status="no-data";
+    if(status==="ok"){if(!state.reached)status="state-unreached";else if(state.noData)status="no-data";}
     s=await shot(tabId,cfg.full_page);
   }catch(ex){
     status="capture-error";error=String(ex?.message||ex);
@@ -58,7 +58,36 @@ async function captureEntry(tabId,e,cfg,folder,index){
   if(state.revert)try{await state.revert()}catch{}
   return {index,id:e.id,title_requested:e.title,instruction:e.action,state:(artifactRef&&status==="ok"&&state.reached)?"succeeded":"failed",ok:!!artifactRef&&status==="ok"&&!!state.reached,status,state_reached:!!state.reached,no_data:!!state.noData,requested_url:e.url,url:finalUrl,final_url:finalUrl,title,http_status:httpStatus,capture:cfg.full_page?"full_page":"viewport",synthetic_error_page:syntheticPage,started_at:started,completed_at:Date.now(),error,state_details:state.details,artifact_ref:artifactRef||undefined,human_file:download||undefined};
 }
-async function readJsonArtifact(id){id=String(id||"").toLowerCase();const info=await agentExec(unifiedLocalCommand("artifact.out.info",{id})),bytes=Number(info?.artifact_ref?.bytes||0),chunks=[];let off=0,total=0;while(off<bytes){let part=null;for(let tries=0;tries<3;tries++){part=await agentExec(unifiedLocalCommand("artifact.out.get",{id,offset:off,limit:524288}));if(part?.data_b64&&Number(part?.next_offset)>off)break;await sleep(120*(tries+1))}if(!part?.data_b64||Number(part?.next_offset)<=off)throw E("ARTIFACT_READ_CHUNK_INVALID","Artifact chunk is invalid.");const bin=atob(part.data_b64),u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);chunks.push(u8);total+=u8.length;off=Number(part.next_offset)}const all=new Uint8Array(total);let pos=0;for(const c of chunks){all.set(c,pos);pos+=c.length}return JSON.parse(new TextDecoder().decode(all))}
+async function readJsonArtifact(id){
+  id=String(id||"").toLowerCase();
+  if(!/^[a-f0-9]{64}$/.test(id))throw E("BROWSER_CAPTURE_MAP_ARTIFACT_INVALID","Artifact reference must be a SHA-256 digest.");
+  const info=await agentExec(unifiedLocalCommand("artifact.out.info",{id}));
+  const bytes=Number(info?.artifact_ref?.bytes||0);
+  if(!Number.isSafeInteger(bytes)||bytes<1||bytes>8*1024*1024)
+    throw E("BROWSER_CAPTURE_MAP_ARTIFACT_TOO_LARGE","Imported map JSON must be 1..8 MiB.");
+  const chunks=[];let off=0,total=0;
+  while(off<bytes){
+    let part=null;
+    for(let tries=0;tries<3;tries++){
+      part=await agentExec(unifiedLocalCommand("artifact.out.get",{id,offset:off,limit:524288}));
+      if(part?.data_b64&&Number(part?.next_offset)>off)break;
+      await sleep(120*(tries+1));
+    }
+    const next=Number(part?.next_offset);
+    if(!part?.data_b64||!Number.isSafeInteger(next)||next<=off||next>bytes||next-off>524288)
+      throw E("ARTIFACT_READ_CHUNK_INVALID","Artifact read advanced by an invalid chunk.");
+    const bin=atob(part.data_b64);
+    if(bin.length!==next-off)throw E("ARTIFACT_READ_CHUNK_INVALID","Decoded chunk length mismatch.");
+    const u8=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+    chunks.push(u8);total+=u8.length;off=next;
+  }
+  if(total!==bytes)throw E("ARTIFACT_READ_INCOMPLETE","Imported map truncated.");
+  const all=new Uint8Array(total);let pos=0;
+  for(const chunk of chunks){all.set(chunk,pos);pos+=chunk.length}
+  try{return JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(all))}
+  catch{throw E("BROWSER_CAPTURE_MAP_JSON_INVALID","Imported map must be valid UTF-8 JSON.")}
+}
 if(typeof artifactCollectionGet==="function"){
   const baseCollectionGet=artifactCollectionGet;
   artifactCollectionGet=async function(p={}){try{return await baseCollectionGet(p)}catch(ex){if(!/Unsupported artifact collection schema|ARTIFACT_COLLECTION_SCHEMA_INVALID/i.test(String(ex?.message||ex)))throw ex;const m=await readJsonArtifact(String(p.id||""));if(m?.schema!==SCHEMA||!Array.isArray(m.items))throw ex;const offset=Math.max(0,Number(p.offset)||0),limit=Math.max(1,Math.min(20,Number(p.limit)||10)),page=m.items.slice(offset,offset+limit);return {ok:true,schema:m.schema,summary:{requested:m.requested,attempted:m.attempted,captured:m.captured,failed:m.failed,created_at:m.created_at,capture_id:m.capture_id,map_preset:m.map_preset},offset,limit,total:m.items.length,has_more:offset+page.length<m.items.length,items:page,job_view:VIEW_CACHE.get(String(p.id||"").toLowerCase())||m.job_view||null}}}
@@ -66,7 +95,12 @@ if(typeof artifactCollectionGet==="function"){
 function patchContract(){
   const base=globalThis.__SOKNA_ACTION_CONTRACTS_V1__;if(!base)return;const old=base.describe?.(ACTION);if(!old)return;
   const props={...(old.inputSchema?.properties||{}),map_preset:{type:"string",description:"Optional named profile; Bridge core ships no application-specific presets."},map_artifact_ref:{type:"string",pattern:"^[a-fA-F0-9]{64}$"},map_workers:{type:"integer",minimum:1,maximum:5}};
-  const input={...(old.inputSchema||{}),properties:props,required:["capture_id"],anyOf:[{required:["items"]},{required:["map_preset"]},{required:["map_artifact_ref"]}]};
+  // Preserve the previously registered generic/site-capture modes.
+  const existing=Array.isArray(old.inputSchema?.anyOf)?old.inputSchema.anyOf:[];
+  const alternatives=[...existing,{required:["items"]},{required:["map_preset"]},{required:["map_artifact_ref"]}];
+  const seen=new Set();
+  const anyOf=alternatives.filter(part=>{const k=JSON.stringify(part);if(seen.has(k))return false;seen.add(k);return true});
+  const input={...(old.inputSchema||{}),properties:props,required:["capture_id"],anyOf};
   const contract=Object.freeze({...old,inputSchema:input,description:String(old.description||"")+" Map mode uses explicitly imported, same-origin operator-approved read-only capture recipes; every screenshot, redirect, HTTP error and unreached state has separate evidence."});
   const contracts=Object.freeze({...base.contracts,[ACTION]:Object.freeze({...contract,name:undefined})});
   const describe=name=>String(name||"")===ACTION?contract:base.describe(name);
@@ -79,7 +113,7 @@ async function runMap(command,conversationKey,p){
   if(!entries&&mapRef){
     const imported=await readJsonArtifact(mapRef),raw=Array.isArray(imported)?imported:(Array.isArray(imported?.entries)?imported.entries:null);
     if(!raw||!raw.length||raw.length>500)throw E("BROWSER_CAPTURE_MAP_ARTIFACT_INVALID","Map artifact must contain 1..500 entries.");
-    entries=raw.map((x,i)=>({id:String(x?.id||x?.code||`state-${i+1}`),title:String(x?.title||x?.name||x?.id||""),url:String(x?.url||""),action:String(x?.action||x?.instruction||"")}));
+    entries=raw.map((x,i)=>({id:String(x?.id||x?.code||`state-${i+1}`),title:String(x?.title||x?.name||x?.id||""),url:String(x?.url||""),action:String(x?.action||x?.instruction||""),expected:x?.expected}));
     if(entries.some(x=>!SAFE_ID.test(x.id)||!/^https?:\/\//i.test(x.url)))throw E("BROWSER_CAPTURE_MAP_ARTIFACT_INVALID","Map artifact entries require safe ids and absolute http(s) URLs.");
     const firstOrigin=T.normalizeOrigin(entries[0].url);
     if(entries.some(x=>T.normalizeOrigin(x.url)!==firstOrigin))throw E("BROWSER_CAPTURE_MAP_CROSS_ORIGIN","A capture map must use one approved origin.");
