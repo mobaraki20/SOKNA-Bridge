@@ -25,14 +25,53 @@ async function applyState(tabId,e){
   if(!readOnly)return {reached:false,noData:false,details:[{op:"operator-recipe-required",result:{ok:false,reason:"interactive state requires separately approved browser action"}}],revert:null};
   return {reached:true,noData:false,details:[],revert:null};
 }
+function safeReadOnlyUrl(url){
+  try{
+    const u=new URL(url);
+    if(!["http:","https:"].includes(u.protocol)||u.username||u.password)return false;
+    let decoded=u.pathname+u.search;
+    for(let i=0;i<4;i++){const next=decodeURIComponent(decoded);if(next===decoded)break;decoded=next}
+    if(/(?:^|[/\\?&=._-])(logout|log-out|signout|sign-out|delete|destroy|reset-session|remove-account)(?:$|[/\\?&=._-])/i.test(decoded))return false;
+    const site=globalThis.__SOKNA_BROWSER_SITE_CAPTURE_CORE_V1__;
+    if(typeof site?.isSessionMutatingUrl==="function"&&site.isSessionMutatingUrl(url))return false;
+    return true;
+  }catch{return false}
+}
+function validExpected(expected){
+  if(expected===undefined)return true;
+  if(!expected||typeof expected!=="object"||Array.isArray(expected))return false;
+  const keys=Object.keys(expected);
+  return keys.length>0&&keys.every(k=>["selector","forbidden_selector"].includes(k)&&
+    typeof expected[k]==="string"&&expected[k].trim().length>0&&expected[k].length<=240);
+}
+async function explicitDomAssertion(tabId,expected){
+  if(!validExpected(expected))return {ok:false,reason:"invalid-expected-contract"};
+  try{
+    const result=await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},func:x=>{
+      const visible=e=>{const style=getComputedStyle(e),rect=e.getBoundingClientRect();return style.display!=="none"&&style.visibility!=="hidden"&&rect.width>0&&rect.height>0};
+      try{
+        const matches=x.selector?[...document.querySelectorAll(x.selector)].some(visible):true;
+        const absent=x.forbidden_selector?![...document.querySelectorAll(x.forbidden_selector)].some(visible):true;
+        return {ok:matches&&absent,reason:!matches?"required-selector-not-visible":!absent?"forbidden-selector-visible":"explicit-dom-assertion-passed"};
+      }catch{return {ok:false,reason:"invalid-css-selector"}}
+    },args:[expected]});
+    return result?.[0]?.result||{ok:false,reason:"assertion-result-missing"};
+  }catch{return {ok:false,reason:"assertion-script-error"}}
+}
 async function waitDownload(id,timeout=12000){const end=Date.now()+timeout;let row=null;while(Date.now()<end){try{const a=await chrome.downloads.search({id});row=a?.[0]||null;if(row?.state==="complete")break}catch{}await sleep(100)}return row||{}}
 async function saveDataUrl(dataUrl,filename){const id=await chrome.downloads.download({url:dataUrl,filename,saveAs:false,conflictAction:"overwrite"}),row=await waitDownload(id);return {download_id:id,filename,absolute_path:String(row.filename||""),state:String(row.state||"")}}
 async function saveB64(b64,type,filename){return await saveDataUrl(`data:${type};base64,${b64}`,filename)}
 async function saveText(text,type,filename){return await saveDataUrl(`data:${type};base64,${utf8B64(text)}`,filename)}
 function csv(manifest){const esc=v=>{const s=String(v??"").replace(/\r?\n/g," ");return /[",]/.test(s)?`"${s.replace(/"/g,'""')}"`:s};const rows=[["id","status","state_reached","requested_url","final_url","title","http_status","screenshot","error"]];for(const x of manifest.items)rows.push([x.id,x.status,x.state_reached,x.requested_url,x.final_url,x.title,x.http_status,x.artifact_ref?.name||"",x.error||""]);return rows.map(r=>r.map(esc).join(",")).join("\r\n")+"\r\n"}
 async function captureEntry(tabId,e,cfg,folder,index){
-  let finalUrl=e.url,title="",status="ok",error="",httpStatus=0,syntheticPage=false,state={reached:true,noData:false,details:[],revert:null},s=null;
+  let finalUrl=e.url,title="",status="ok",error="",httpStatus=0,syntheticPage=false,state={reached:true,noData:false,details:[],revert:null},s=null,assertion=null;
   const started=Date.now();
+  if(!safeReadOnlyUrl(e.url)||!validExpected(e.expected)){
+    return {index,id:e.id,title_requested:e.title,instruction:e.action,state:"blocked",ok:false,status:"blocked",
+      reason:!safeReadOnlyUrl(e.url)?"session-mutating-or-unsafe-url":"invalid-dom-assertion",
+      capture_saved:false,assertion_status:"NOT_RUN",assertion_passed:false,qualification:"CAPTURE_ONLY",
+      state_reached:false,requested_url:e.url,final_url:e.url,started_at:started,completed_at:Date.now(),error:"BROWSER_CAPTURE_REQUEST_BLOCKED"};
+  }
   try{
     await chrome.tabs.update(tabId,{url:e.url});let t=await waitTab(tabId,cfg.timeout_ms);if(cfg.settle_ms)await sleep(cfg.settle_ms);t=await chrome.tabs.get(tabId);finalUrl=String(t.url||e.url);title=String(t.title||"");
     const expected=new URL(e.url),actual=new URL(finalUrl);
@@ -44,6 +83,10 @@ async function captureEntry(tabId,e,cfg,folder,index){
     if(httpStatus>=400)status="http-error";
     state=await applyState(tabId,e);if(cfg.settle_ms)await sleep(Math.min(500,cfg.settle_ms));
     if(status==="ok"){if(!state.reached)status="state-unreached";else if(state.noData)status="no-data";}
+    if(status==="ok"&&e.expected!==undefined){
+      assertion=await explicitDomAssertion(tabId,e.expected);
+      if(!assertion?.ok)status="assertion-failed";
+    }
     s=await shot(tabId,cfg.full_page);
   }catch(ex){
     status="capture-error";error=String(ex?.message||ex);
@@ -56,7 +99,7 @@ async function captureEntry(tabId,e,cfg,folder,index){
     try{download=await saveB64(s.data_b64,"image/png",`${folder}/${name}`)}catch(ex){error+=(error?" | ":"")+"human-copy: "+String(ex?.message||ex)}
   }
   if(state.revert)try{await state.revert()}catch{}
-  return {index,id:e.id,title_requested:e.title,instruction:e.action,state:(artifactRef&&status==="ok"&&state.reached)?"succeeded":"failed",ok:!!artifactRef&&status==="ok"&&!!state.reached,status,state_reached:!!state.reached,no_data:!!state.noData,requested_url:e.url,url:finalUrl,final_url:finalUrl,title,http_status:httpStatus,capture:cfg.full_page?"full_page":"viewport",synthetic_error_page:syntheticPage,started_at:started,completed_at:Date.now(),error,state_details:state.details,artifact_ref:artifactRef||undefined,human_file:download||undefined};
+  return {index,id:e.id,title_requested:e.title,instruction:e.action,state:(artifactRef&&status==="ok"&&state.reached)?"succeeded":"failed",ok:!!artifactRef&&status==="ok"&&!!state.reached,status,assertion_status:e.expected===undefined?"NOT_RUN":assertion?.ok?"PASS":assertion?"FAIL":"NOT_RUN",assertion_passed:!!assertion?.ok,qualification:e.expected===undefined?"CAPTURE_ONLY":"EXPLICIT_DOM_ASSERTION",state_reached:!!state.reached,no_data:!!state.noData,requested_url:e.url,url:finalUrl,final_url:finalUrl,title,http_status:httpStatus,capture:cfg.full_page?"full_page":"viewport",synthetic_error_page:syntheticPage,started_at:started,completed_at:Date.now(),error,state_details:state.details,artifact_ref:artifactRef||undefined,human_file:download||undefined};
 }
 async function readJsonArtifact(id){
   id=String(id||"").toLowerCase();
@@ -115,6 +158,8 @@ async function runMap(command,conversationKey,p){
     if(!raw||!raw.length||raw.length>500)throw E("BROWSER_CAPTURE_MAP_ARTIFACT_INVALID","Map artifact must contain 1..500 entries.");
     entries=raw.map((x,i)=>({id:String(x?.id||x?.code||`state-${i+1}`),title:String(x?.title||x?.name||x?.id||""),url:String(x?.url||""),action:String(x?.action||x?.instruction||""),expected:x?.expected}));
     if(entries.some(x=>!SAFE_ID.test(x.id)||!/^https?:\/\//i.test(x.url)))throw E("BROWSER_CAPTURE_MAP_ARTIFACT_INVALID","Map artifact entries require safe ids and absolute http(s) URLs.");
+    if(entries.some(x=>!validExpected(x.expected)))throw E("BROWSER_CAPTURE_MAP_ASSERTION_INVALID","Imported selectors invalid.");
+    if(entries.some(x=>!safeReadOnlyUrl(x.url)))throw E("BROWSER_CAPTURE_SESSION_MUTATION_BLOCKED","Unsafe or session-changing destination.");
     const firstOrigin=T.normalizeOrigin(entries[0].url);
     if(entries.some(x=>T.normalizeOrigin(x.url)!==firstOrigin))throw E("BROWSER_CAPTURE_MAP_CROSS_ORIGIN","A capture map must use one approved origin.");
     mapSource="artifact";
@@ -142,7 +187,8 @@ async function runMap(command,conversationKey,p){
   const view={ok:true,schema:"sokna-browser-human-job-view-v1",job_id:id,folder,absolute_folder:abs,file_count:items.filter(x=>x.human_file).length,manifest:md,summary:sd};
   if(ref?.id)VIEW_CACHE.set(String(ref.id).toLowerCase(),view);
   const passed=items.length===entries.length&&items.every(x=>x.ok&&x.state==="succeeded");
-  const result={ok:passed,schema:RESULT_SCHEMA,capture_id:id,map_preset:mapName,map_source:mapSource,map_artifact_ref:mapRef||undefined,resumed:false,origin,workers:cfg.workers,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,collection_ref:ref,job_view:view};
+  const qaPass=passed&&items.every(x=>x.assertion_status==="PASS");
+  const result={ok:passed,qa_pass:qaPass,qualification:qaPass?"EXPLICIT_UI_QA_PASS":"CAPTURE_ONLY_OR_FAILED",schema:RESULT_SCHEMA,capture_id:id,map_preset:mapName,map_source:mapSource,map_artifact_ref:mapRef||undefined,resumed:false,origin,workers:cfg.workers,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,collection_ref:ref,job_view:view};
   runs[id]={state:"completed",result,updated_at:Date.now()};await chrome.storage.local.set({[STORE]:runs});return result;
 }
 const base=browserSemanticAction;
