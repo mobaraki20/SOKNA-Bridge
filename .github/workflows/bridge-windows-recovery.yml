@@ -57,8 +57,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
+          # A PowerShell script throws on failure; $LASTEXITCODE is sticky across native commands.
+          # The intentionally rejected upgrade leaves a nonzero exit code by design.
           & ./tools/qa/Test-WindowsRepairRollback.ps1 -SetupPath 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe' -PayloadRoot 'artifacts/windows/installer-payload'
-          if($LASTEXITCODE -ne 0){throw 'RECOVERY_E2E_FAILED'}
+          if(-not $?){throw 'RECOVERY_SCRIPT_FAILED'}
+          Write-Host 'CI_RECOVERY_E2E_PASS'
       - name: Qualification scope
         if: success()
         shell: pwsh
