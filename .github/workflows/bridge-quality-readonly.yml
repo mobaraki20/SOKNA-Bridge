@@ -211,6 +211,38 @@ jobs:
           if((git status --porcelain --untracked-files=all).Count -gt 0){throw 'BUILD_MODIFIED_TRACKED_OR_UNTRACKED_SOURCE'}
           Write-Host 'WINDOWS_INSTALLER_PAYLOAD_BUILD_PASS; INNO_INSTALLER_AND_WINDOWS_INSTALLED_UAT_NOT_RUN'
 
+      - name: Maintenance manifest preflight accepts clean and rejects tampering
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $payload=Join-Path $PWD 'artifacts/windows/installer-payload'
+          $maintenance=Join-Path $payload 'Sokna.Agent.Maintenance.exe'
+          $manifest=Join-Path $payload 'manifests/installed-manifest.json'
+          $fixture=Join-Path $env:RUNNER_TEMP 'bridge-preflight-isolated'
+          New-Item -ItemType Directory -Force -Path $fixture | Out-Null
+          function Run-Preflight([string]$manifestPath){
+            & $maintenance preflight --install-root $fixture --manifest $manifestPath --payload-root $payload | Out-Null
+            return $LASTEXITCODE
+          }
+          if((Run-Preflight $manifest) -ne 0){throw 'CLEAN_MAINTENANCE_MANIFEST_REJECTED'}
+          $target=Join-Path $payload 'runtime/AGENT_CAPABILITIES.json'
+          $original=[IO.File]::ReadAllBytes($target)
+          try {
+            [IO.File]::WriteAllText($target,'{"tampered":true}')
+            if((Run-Preflight $manifest) -eq 0){throw 'TAMPERED_PAYLOAD_WAS_ACCEPTED'}
+          } finally {
+            [IO.File]::WriteAllBytes($target,$original)
+          }
+          if((Run-Preflight $manifest) -ne 0){throw 'RECOVERED_PAYLOAD_NOT_ACCEPTED'}
+          $brokenManifest=Join-Path $fixture 'bad-manifest.json'
+          $json=Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
+          $json.files[0].path='../escape-from-payload'
+          $json | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $brokenManifest -Encoding UTF8
+          if((Run-Preflight $brokenManifest) -eq 0){throw 'UNSAFE_MANIFEST_PATH_WAS_ACCEPTED'}
+          if((git status --porcelain --untracked-files=all).Count -gt 0){throw 'PREFLIGHT_TEST_MUTATED_SOURCE'}
+          Write-Host 'WINDOWS_MAINTENANCE_PREFLIGHT_NEGATIVE_PASS'
+          Write-Host 'REPAIR_AND_ROLLBACK_MUTATION_UAT_NOT_RUN'
+
   windows-inno-build:
     name: Inno Setup candidate compilation (no installation or release)
     runs-on: windows-2025
