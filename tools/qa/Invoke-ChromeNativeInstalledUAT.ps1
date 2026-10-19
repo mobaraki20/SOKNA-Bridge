@@ -47,11 +47,11 @@ try{
   Run-Setup $setup $installArgs 'INSTALL'
   $installed=$true
   $ext=Join-Path $install 'extension'
-  $host=Join-Path $install 'native-host\com.sokna.bridge.v3.json'
+  $nativeHostManifest=Join-Path $install 'native-host\com.sokna.bridge.v3.json'
   if(-not(Test-Path -LiteralPath (Join-Path $ext 'manifest.json') -PathType Leaf)){throw 'INSTALLED_EXTENSION_NOT_FOUND'}
-  if(-not(Test-Path -LiteralPath $host -PathType Leaf)){throw 'INSTALLED_HOST_MANIFEST_NOT_FOUND'}
+  if(-not(Test-Path -LiteralPath $nativeHostManifest -PathType Leaf)){throw 'INSTALLED_HOST_MANIFEST_NOT_FOUND'}
   $registryValue=[string](Get-Item -LiteralPath $key -ErrorAction Stop).GetValue('')
-  if([IO.Path]::GetFullPath($registryValue) -ne [IO.Path]::GetFullPath($host)){throw 'INSTALLER_CHROME_REGISTRY_MISMATCH'}
+  if([IO.Path]::GetFullPath($registryValue) -ne [IO.Path]::GetFullPath($nativeHostManifest)){throw 'INSTALLER_CHROME_REGISTRY_MISMATCH'}
   Write-Host 'REAL_INNO_INSTALLED_CHROME_HOST_REGISTRATION_PASS'
   New-Item -ItemType Directory -Force -Path $profile|Out-Null
   $psi=[Diagnostics.ProcessStartInfo]::new()
@@ -65,7 +65,7 @@ try{
   $browserProcess=[Diagnostics.Process]::Start($psi)
   if($null-eq$browserProcess){throw 'CHROME_PROCESS_START_FAILED'}
   $evidence=Join-Path $root 'chrome-native-evidence.json'
-  & node ./tools/qa/chrome_native_installed_uat.mjs --profile $profile --extension $ext --host-manifest $host --evidence $evidence
+  & node ./tools/qa/chrome_native_installed_uat.mjs --profile $profile --extension $ext --host-manifest $nativeHostManifest --evidence $evidence
   if($LASTEXITCODE -ne 0){throw 'CHROME_BROWSER_NATIVE_UAT_FAILED'}
   if(-not(Test-Path -LiteralPath $evidence -PathType Leaf)){throw 'CHROME_NATIVE_EVIDENCE_MISSING'}
 }finally{
