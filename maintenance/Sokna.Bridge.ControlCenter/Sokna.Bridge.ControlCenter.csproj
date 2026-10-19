@@ -15,4 +15,9 @@
     <Version>2.7.1</Version>
     <ApplicationIcon>sokna-bridge.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="fonts\Vazirmatn-Regular.ttf" LogicalName="Sokna.Bridge.ControlCenter.Fonts.Vazirmatn-Regular.ttf" />
+    <EmbeddedResource Include="fonts\Vazirmatn-Bold.ttf" LogicalName="Sokna.Bridge.ControlCenter.Fonts.Vazirmatn-Bold.ttf" />
+    <EmbeddedResource Include="fonts\OFL.txt" LogicalName="Sokna.Bridge.ControlCenter.Fonts.OFL.txt" />
+  </ItemGroup>
 </Project>

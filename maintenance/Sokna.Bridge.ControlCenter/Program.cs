@@ -10,6 +10,13 @@ internal static class Program
     {
         if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
             return SelfTest(args);
+        if (args.Contains("--layout-self-test", StringComparer.OrdinalIgnoreCase))
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            return BridgeUiAudit.Run(GetArg(args, "--output") ??
+                Path.Combine(Path.GetTempPath(), "SOKNA-Bridge-UI-Audit"));
+        }
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
