@@ -11,8 +11,8 @@ if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows' -or [string]:
 $runRoot=Join-Path $env:TEMP ('sokna-real-upgrade-'+[guid]::NewGuid().ToString('N'))
 $evidenceRoot=Join-Path $env:RUNNER_TEMP 'SOKNA-Bridge-RealUpgrade-UAT'
 if(-not $env:TEMP){throw 'WINDOWS_USER_TEMP_MISSING'}
-$install=Join-Path $runRoot 'Installed Bridge App'
-$artifacts=Join-Path $runRoot 'External Operator Artifacts'
+$install=Join-Path $runRoot 'app'
+$artifacts=Join-Path $runRoot 'artifacts'
 $logs=Join-Path $runRoot 'logs'
 $legacy=[IO.Path]::GetFullPath($LegacySetupPath)
 $candidate=[IO.Path]::GetFullPath($CandidateSetupPath)
