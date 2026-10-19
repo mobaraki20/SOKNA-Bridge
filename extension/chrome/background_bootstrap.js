@@ -1,10 +1,12 @@
 (()=>{
 "use strict";
-importScripts("protocol.js","capability_gate.js","terminal_outcome_core.js","origin_registry_core.js","browser_target_core.js","session_gate_state_core.js","action_contracts_core.js");
+importScripts("message_sender_boundary_core.js","protocol.js","capability_gate.js","terminal_outcome_core.js","origin_registry_core.js","browser_target_core.js","session_gate_state_core.js","action_contracts_core.js");
 const PROTO=globalThis.__SOKNA_PROTOCOL_V1__;
 const CAP=globalThis.__SOKNA_CAPABILITY_GATE_V1__;
 const ORIGIN=globalThis.__SOKNA_CHAT_ORIGIN_REGISTRY_V1__;
 const GATECORE=globalThis.__SOKNA_SESSION_GATE_STATE_CORE_V1__;
+const MSGBOUNDARY=globalThis.__SOKNA_MESSAGE_SENDER_BOUNDARY_V1__;
+if(!MSGBOUNDARY?.validate)throw new Error("MESSAGE_SENDER_BOUNDARY_MISSING");
 const HOST="com.sokna.bridge.v3";
 const event=chrome.runtime.onMessage;
 const originalAdd=event.addListener.bind(event);
@@ -207,6 +209,8 @@ function installOutboundNativeInterceptor(){
 }
 installOutboundNativeInterceptor();
 function wrapListener(listener){return function(m,sender,reply){
+  const senderCheck=MSGBOUNDARY?.validate?.(m,sender);
+  if(!senderCheck?.ok){reply({ok:false,code:senderCheck?.code||"SENDER_GATE_FAILED",error:senderCheck?.error||"Message source rejected."});return false}
   if(m?.type==="ACTIVITY_SNAPSHOT"){activitySnapshot(m).then(x=>reply({ok:true,activity:x}),e=>reply({ok:false,error:String(e)}));return true}
   if(m?.type!=="COMMAND")return listener(m,sender,reply);
   if(!m?.semantic)return listener(rejection(m,"SEMANTIC_ROUTE_REQUIRED"),sender,reply);

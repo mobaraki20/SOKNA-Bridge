@@ -1,0 +1,54 @@
+name: Bridge Chrome Security & Release Readiness Audit
+on:
+  pull_request:
+    branches:
+      - release/r14-final
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sender-security-review:
+    name: Native Messaging and sender boundary security acceptance
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check source and security regression gates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          node --check extension/chrome/message_sender_boundary_core.js
+          if($LASTEXITCODE -ne 0){throw 'SENDER_SOURCE_PARSE_FAILED'}
+          node --check extension/chrome/background_bootstrap.js
+          if($LASTEXITCODE -ne 0){throw 'BOOTSTRAP_SOURCE_PARSE_FAILED'}
+          node tools/tests/test_message_sender_boundary.mjs
+          if($LASTEXITCODE -ne 0){throw 'SENDER_TAB_SPOOF_NEGATIVE_TEST_FAILED'}
+          node tools/tests/test_capability_gate.mjs
+          if($LASTEXITCODE -ne 0){throw 'CAPABILITY_POLICY_TEST_FAILED'}
+          node tools/tests/test_browser_target_core.mjs
+          if($LASTEXITCODE -ne 0){throw 'BROWSER_ORIGIN_PERMISSION_TEST_FAILED'}
+          node tools/tests/test_multi_origin_policy.mjs
+          if($LASTEXITCODE -ne 0){throw 'MULTI_ORIGIN_POLICY_FAILED'}
+          node tools/tests/test_session_gate_state.mjs
+          if($LASTEXITCODE -ne 0){throw 'SESSION_GATE_TEST_FAILED'}
+          python tools/tests/test_bridge_p0_security_releases.py
+          if($LASTEXITCODE -ne 0){throw 'P0_SECURITY_OR_RELEASE_RETIRED_GATE_FAILED'}
+          Write-Host 'BRIDGE_SECURITY_SOURCE_NEGATIVE_TESTS_PASS'
+      - name: Generate scrubbed read-only security readiness evidence
+        shell: pwsh
+        run: |
+          node tools/qa/bridge_security_readiness.mjs
+          if($LASTEXITCODE -ne 0){throw 'BRIDGE_SECURITY_READINESS_EVIDENCE_FAILED'}
+      - name: Upload non-sensitive security audit on success
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-security-readiness-evidence
+          path: ${{ runner.temp }}/bridge-security-readiness.json
+          retention-days: 14
+          if-no-files-found: error
