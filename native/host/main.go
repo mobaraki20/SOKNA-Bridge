@@ -27,6 +27,7 @@ type InMsg struct {
 	Params    json.RawMessage `json:"params,omitempty"`
 	Result    json.RawMessage `json:"result,omitempty"`
 	Error     string          `json:"error,omitempty"`
+	CompletionToken string `json:"completion_token,omitempty"`
 }
 
 type OutMsg struct {
