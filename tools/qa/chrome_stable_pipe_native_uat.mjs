@@ -149,7 +149,18 @@ async function main(){
     for(let i=0;i<10;i++){try{version=await b.command('Browser.getVersion');break}catch{await sleep(400)}}
     if(!version||!/^Chrome\//.test(String(version.product||'')))fail('STABLE_RESTART_NOT_READY');
     const again=await b.command('Extensions.getExtensions');
-    if(!(again.extensions||[]).some(x=>x.id===expectedId&&x.enabled))fail('STABLE_EXTENSION_DID_NOT_SURVIVE_RESTART');
+    const profilePersisted=(again.extensions||[]).some(x=>x.id===expectedId&&x.enabled);
+    if(!profilePersisted){
+      // Empirically Chrome 155 discards CDP-loaded unpacked extensions after quit.
+      // A CDP-managed ephemeral install does not prove what Chrome UI "Load unpacked"
+      // does on an operator machine. Never claim automatic profile persistence.
+      console.log('STABLE_CDP_UNPACKED_PROFILE_AUTO_PERSISTENCE_NOT_VERIFIED');
+      const loadedAgain=await b.command('Extensions.loadUnpacked',{path:ext,enableInIncognito:false});
+      assert.equal(loadedAgain.id,expectedId);
+      mark('STABLE_CHROME_DEVTOOLS_RELOAD_AFTER_RESTART');
+    }else{
+      mark('STABLE_CHROME_DEVTOOLS_PROFILE_PERSISTED');
+    }
     const ctx=await extensionContext(b);
     reply=await ctx.native({type:'host.ping',request_id:'stable-restart-5'});
     assert.equal(reply.error,null);assert.equal(reply.response?.ok,true);
@@ -158,7 +169,9 @@ async function main(){
       schema:'sokna-bridge-branded-chrome-pipe-native-e2e-v1',
       evidence_kind:'DISPOSABLE_WINDOWS_SERVER_BRANDED_CHROME_CDP_PIPE',
       browser:chromeVersion,extension_version:manifest.version,extension_id:expectedId,
-      passed,result:'PASS',windows10_client:'NOT_RUN',chrome_manual_ui:'NOT_RUN',
+      passed,result:'PASS',devtools_unpacked_profile_persistence:profilePersisted?'PASS':'NOT_VERIFIED_AFTER_RESTART',
+      browser_restart_reconnect:'PASS_AFTER_DEVTOOLS_RELOAD_IF_NEEDED',
+      windows10_client:'NOT_RUN',chrome_manual_ui:'NOT_RUN',
       maintenance_delta_upgrade:'NOT_RUN',release_ready:false
     },null,2)+'\n',{flag:'wx'});
     console.log('STABLE_BRANDED_CHROME_NATIVE_E2E_PASS');
