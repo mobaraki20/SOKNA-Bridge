@@ -88,6 +88,7 @@ internal sealed class MainForm : Form
         root.Controls.Add(health);
 
         var primary = Card("مدیریت Agent");
+        primary.Name = "BridgeAgentActionsCard";
         var actions = ButtonRow();
         actions.Controls.Add(StyledButton("تازه‌سازی وضعیت", async () => await RefreshAllAsync(), "primary"));
         actions.Controls.Add(StyledButton("شروع Agent", async () => await LifecycleAsync("start"), "secondary"));
@@ -102,6 +103,7 @@ internal sealed class MainForm : Form
         root.Controls.Add(primary);
 
         var details = Card("اطلاعات نصب و اتصال");
+        details.Name = "BridgeAgentDetailsCard";
         var info = new TableLayoutPanel
         {
             Name = "BridgeStatusFacts",
@@ -916,6 +918,9 @@ internal sealed class MainForm : Form
         stack.ControlAdded += (_, e) =>
         {
             if (e.Control is { } child) child.Dock = DockStyle.Top;
+            while (stack.RowStyles.Count < stack.Controls.Count)
+                stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            stack.RowCount = stack.Controls.Count;
         };
         return stack;
     }
@@ -986,7 +991,13 @@ internal sealed class MainForm : Form
             BackColor = BridgeUi.Surface
         };
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        card.ControlAdded += (_, e) => { if (e.Control is { } child) child.Dock = DockStyle.Top; };
+        card.ControlAdded += (_, e) =>
+        {
+            if (e.Control is { } child) child.Dock = DockStyle.Top;
+            while (card.RowStyles.Count < card.Controls.Count)
+                card.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            card.RowCount = card.Controls.Count;
+        };
         card.Controls.Add(new Label
         {
             Text = title, AutoSize = false, Height = 38,

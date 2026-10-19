@@ -73,6 +73,25 @@ internal static class BridgeUiAudit
                         if (!hasVisibleEmptyState)
                             problems.Add(title + ":empty-state-invisible");
                     }
+                    if (i == 0)
+                    {
+                        var actionCard = Descendants(page).FirstOrDefault(c => c.Name == "BridgeAgentActionsCard");
+                        var detailsCard = Descendants(page).FirstOrDefault(c => c.Name == "BridgeAgentDetailsCard");
+                        var actionButton = Descendants(page).OfType<Button>()
+                            .FirstOrDefault(button => button.Text == "تازه‌سازی وضعیت");
+                        var pageBounds = page.RectangleToScreen(page.ClientRectangle);
+                        var buttonBounds = actionButton is null ? Rectangle.Empty :
+                            actionButton.RectangleToScreen(actionButton.ClientRectangle);
+                        File.WriteAllText(Path.Combine(output, title + "-action-visibility.txt"),
+                            $"page={pageBounds}; actionCard={actionCard?.Bounds}; " +
+                            $"detailsCard={detailsCard?.Bounds}; actionButton={buttonBounds}\\n");
+                        if (actionButton is null || !actionButton.Visible ||
+                            buttonBounds.Top < pageBounds.Top ||
+                            buttonBounds.Bottom > pageBounds.Bottom - 4)
+                            problems.Add(title + ":primary-operator-actions-outside-visible-viewport");
+                        if (actionCard is null || detailsCard is null)
+                            problems.Add(title + ":missing-dashboard-action-or-details-card");
+                    }
                     var issues = Check(page).ToArray();
                     File.WriteAllLines(Path.Combine(output, title + ".txt"),
                         issues.Length == 0 ? ["PASS"] : issues);
