@@ -147,5 +147,5 @@ async function runMap(command,conversationKey,p){
 }
 const base=browserSemanticAction;
 browserSemanticAction=async function(command,conversationKey){const p=command?.params||{};if(String(command?.action||"")===ACTION&&(p.map_preset||p.map_artifact_ref))return await runMap(command,conversationKey,p);return await base(command,conversationKey)};
-globalThis.__SOKNA_BROWSER_CAPTURE_MAP_RUNTIME_V1__=Object.freeze({schema:"sokna-browser-capture-map-runtime-v1",version:1,preset:"local18080-ui-audit-v1",states:MAPS.get("local18080-ui-audit-v1")?.length||0,max_workers:5,supports_artifact_map:true});
+globalThis.__SOKNA_BROWSER_CAPTURE_MAP_RUNTIME_V1__=Object.freeze({schema:"sokna-browser-capture-map-runtime-v1",version:1,presets:Object.keys(MAPS.maps||{}),states:0,max_workers:5,supports_artifact_map:true});
 })();
