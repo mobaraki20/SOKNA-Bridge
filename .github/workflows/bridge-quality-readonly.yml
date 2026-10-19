@@ -279,6 +279,23 @@ jobs:
                 throw "INSTALLER_PROCESS_TIMEOUT: $what"
               }
               if($process.ExitCode -ne 0){throw "INSTALLER_EXIT_NONZERO: $what exit=$($process.ExitCode)"}
+            } catch {
+              Write-Host "INSTALLER_DIAGNOSTIC_FAILED_STAGE: $what"
+              foreach($folder in @($logs,(Join-Path $install 'logs'))) {
+                if(Test-Path -LiteralPath $folder -PathType Container){
+                  Get-ChildItem -LiteralPath $folder -Recurse -File -Filter '*.log' |
+                    Sort-Object LastWriteTime -Descending | Select-Object -First 6 | ForEach-Object {
+                      Write-Host "DIAGNOSTIC_FILE: $($_.Name)"
+                      Get-Content -LiteralPath $_.FullName -Tail 45 -ErrorAction SilentlyContinue |
+                        Where-Object { $_ -match 'install|error|exit|launch|initialize|health|runtime|start|process|copy|extract|failed|action|prepare' } |
+                        ForEach-Object {
+                          $line=[regex]::Replace($_,'(?i)(X-Sokna-Token|token)[^\\r\\n]{0,8}[=:][^\\s,;]{8,}', '$1=[REDACTED]')
+                          Write-Host "INSTALL_DIAGNOSTIC: $line"
+                        }
+                    }
+                }
+              }
+              throw
             } finally { $process.Dispose() }
           }
           function Args-For([string]$log,[bool]$withArtifactRoot) {
