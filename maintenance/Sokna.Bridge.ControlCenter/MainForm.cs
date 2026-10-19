@@ -150,7 +150,7 @@ internal sealed class MainForm : Form
 
         var maintenance = Card("عیب‌یابی و پشتیبانی");
         var tools = ButtonRow();
-        tools.Controls.Add(StyledButton("باز کردن Logها", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
+        tools.Controls.Add(StyledButton("باز کردن گزارش‌ها", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
         tools.Controls.Add(StyledButton("باز کردن پوشهٔ فایل‌ها", () => OpenFolder(CurrentArtifactRoot()), "secondary"));
         tools.Controls.Add(StyledButton("ساخت بسته پشتیبانی", CreateSupportBundleAsync, "secondary"));
         tools.Controls.Add(StyledButton("عیب‌یابی", async () => {
@@ -209,7 +209,7 @@ internal sealed class MainForm : Form
         var actions = ButtonRow();
         actions.Controls.Add(StyledButton("تازه‌سازی عیب‌یابی", RefreshDiagnosticsAsync, "primary"));
         actions.Controls.Add(StyledButton("کپی برای پشتیبانی", () => { if (!string.IsNullOrWhiteSpace(_diagnosticsBox.Text)) Clipboard.SetText(_diagnosticsBox.Text); }, "secondary"));
-        actions.Controls.Add(StyledButton("ذخیره JSON", SaveDiagnosticsAsync, "secondary"));
+        actions.Controls.Add(StyledButton("ذخیرهٔ گزارش", SaveDiagnosticsAsync, "secondary"));
         actions.Controls.Add(StyledButton("بسته پشتیبانی", CreateSupportBundleAsync, "secondary"));
         actions.Controls.Add(StyledButton("گزارش‌ها", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
         root.Controls.Add(actions);
@@ -438,7 +438,7 @@ internal sealed class MainForm : Form
     private string BrowserCredentialHelper()
     {
         var p = Path.Combine(_installRoot, "browser", "sokna-browser-qa.exe");
-        if (!File.Exists(p)) throw new FileNotFoundException("Browser credential helper پیدا نشد.", p);
+        if (!File.Exists(p)) throw new FileNotFoundException("ابزار مدیریت اطلاعات دسترسی پیدا نشد.", p);
         return p;
     }
 
@@ -613,15 +613,15 @@ internal sealed class MainForm : Form
             {
                 var ping = await AgentCallAsync("ping", new { });
                 var ok = ping["ok"]?.GetValue<bool>() == true;
-                _status.Text = ok ? "● Agent در حال اجرا" : "● Agent پاسخ سالم نداد";
+                _status.Text = ok ? "● ایجنت در حال اجرا" : "● ایجنت پاسخ معتبر نداد";
                 _statusGuidance.Text = ok
                     ? "اتصال محلی تأیید شد."
-                    : "BR-AGENT-002 — پاسخ Agent نامعتبر است؛ از بخش عیب‌یابی بررسی کن.";
+                    : "BR-AGENT-002 — پاسخ ایجنت معتبر نیست؛ از بخش عیب‌یابی بررسی کن.";
                 _status.ForeColor = ok ? BridgeUi.Good : BridgeUi.Danger;
             }
             catch (Exception ex)
             {
-                _status.Text = "● Agent در دسترس نیست";
+                _status.Text = "● ایجنت در دسترس نیست";
                 _statusGuidance.Text = "BR-AGENT-001 — ابتدا «شروع ایجنت» را بزن؛ اگر مشکل باقی ماند عیب‌یابی را باز کن.";
                 _status.ForeColor = BridgeUi.Danger;
                 _lastError.Text = ex.Message;
@@ -632,7 +632,7 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            _status.Text = "● بررسی Agent کامل نشد";
+            _status.Text = "● بررسی ایجنت کامل نشد";
             _status.ForeColor = BridgeUi.Danger;
             _statusGuidance.Text = "BR-AGENT-003 — تنظیمات نصب خوانده نشد؛ جزئیات را در پنل خطا بررسی کن.";
             ShowError(ex);
@@ -703,9 +703,9 @@ internal sealed class MainForm : Form
 
     private async Task RemoveWorkspaceAsync()
     {
-        if (_workspaces.SelectedItems.Count != 1) { MessageBox.Show(this, "یک Workspace را انتخاب کن.", Text); return; }
+        if (_workspaces.SelectedItems.Count != 1) { MessageBox.Show(this, "ابتدا یک فضای کاری انتخاب کن.", Text); return; }
         var id = _workspaces.SelectedItems[0].Tag?.ToString() ?? "";
-        if (MessageBox.Show(this, $"Workspace «{id}» فقط از Bridge حذف شود؟\nفایل‌های روی دیسک دست‌نخورده می‌مانند.", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        if (MessageBox.Show(this, $"فضای کاری «{id}» فقط از بریج حذف شود؟\nفایل‌های روی دیسک دست‌نخورده می‌مانند.", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         try
         {
             await AgentCallAsync("workspace.unregister", new { id });
@@ -716,7 +716,7 @@ internal sealed class MainForm : Form
 
     private async Task InspectWorkspaceAsync()
     {
-        if (_workspaces.SelectedItems.Count != 1) { MessageBox.Show(this, "یک Workspace را انتخاب کن.", Text); return; }
+        if (_workspaces.SelectedItems.Count != 1) { MessageBox.Show(this, "ابتدا یک فضای کاری انتخاب کن.", Text); return; }
         var id = _workspaces.SelectedItems[0].Tag?.ToString() ?? "";
         try
         {
