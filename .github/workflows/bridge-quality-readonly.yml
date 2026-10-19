@@ -399,59 +399,12 @@ jobs:
           if([string]$after.token -ne $token){throw 'REINSTALL_ROTATED_TOKEN_UNEXPECTEDLY'}
           if([IO.Path]::GetFullPath([string]$after.artifact_root) -ne [IO.Path]::GetFullPath($data)){throw 'REINSTALL_OVERWROTE_CUSTOM_ARTIFACT_ROOT'}
           if(-not(Test-Path -LiteralPath $marker -PathType Leaf)){throw 'REINSTALL_DESTROYED_OPERATOR_DATA'}
-          # True Maintenance repair and automatic rollback on this disposable runner.
-          $maintenance=Join-Path $install 'Sokna.Agent.Maintenance.exe'
-          $payload=Join-Path $PWD 'artifacts/windows/installer-payload'
-          $manifestInput=Join-Path $payload 'manifests/installed-manifest.json'
-          $runtimeFile=Join-Path $install 'runtime/AGENT_CAPABILITIES.json'
-          if(-not(Test-Path -LiteralPath $maintenance -PathType Leaf)){throw 'MAINTENANCE_EXE_MISSING'}
-          $expectedRuntimeHash=(Get-FileHash -LiteralPath (Join-Path $payload 'runtime/AGENT_CAPABILITIES.json') -Algorithm SHA256).Hash
-          $knownGoodHash=(Get-FileHash -LiteralPath $runtimeFile -Algorithm SHA256).Hash
-          if($knownGoodHash -ne $expectedRuntimeHash){throw 'INSTALLED_RUNTIME_NOT_BASELINE'}
-          [IO.File]::WriteAllText($runtimeFile,'{"corrupted_by_disposable_runner_test":true}')
-          if((Get-FileHash -LiteralPath $runtimeFile -Algorithm SHA256).Hash -eq $knownGoodHash){throw 'REPAIR_FIXTURE_NOT_CORRUPTED'}
-          & $maintenance repair --install-root $install --manifest $manifestInput --payload-root $payload | Out-Host
-          if($LASTEXITCODE -ne 0){
-            Write-Host 'MAINTENANCE_REPAIR_FAILURE_DIAGNOSTICS'
-            $runLogs=Join-Path $install 'logs/runtime'
-            if(Test-Path -LiteralPath $runLogs -PathType Container){
-              Get-ChildItem -LiteralPath $runLogs -File | Sort-Object LastWriteTime -Descending | Select-Object -First 6 | ForEach-Object {
-                Write-Host "RUNTIME_LOG_FILE: $($_.Name) bytes=$($_.Length)"
-                Get-Content -LiteralPath $_.FullName -Tail 45 -ErrorAction SilentlyContinue |
-                  Where-Object { $_ -match 'error|fail|exception|launch|port|bind|listen|missing|exit|denied|not found|line ' } |
-                  ForEach-Object { Write-Host "RUNTIME_ERROR_CONTEXT: $($_.Substring(0,[Math]::Min($_.Length,300)))" }
-              }
-            }else{Write-Host 'RUNTIME_LOG_DIRECTORY_MISSING'}
-            Get-ChildItem -LiteralPath (Join-Path $install 'state') -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -match 'ownership|launcher' } |
-              ForEach-Object { Write-Host "STATE_FILE_PRESENT: $($_.Name) bytes=$($_.Length)" }
-            $tcp=Get-NetTCPConnection -LocalPort 8766 -State Listen -ErrorAction SilentlyContinue
-            Write-Host "RUNTIME_LISTENERS_ON_PORT_8766: $(@($tcp).Count)"
-            throw 'MAINTENANCE_REPAIR_FAILED'
-          }
-          if((Get-FileHash -LiteralPath $runtimeFile -Algorithm SHA256).Hash -ne $knownGoodHash){throw 'MAINTENANCE_REPAIR_NOT_RESTORED'}
-          if(-not(Test-Path -LiteralPath $marker -PathType Leaf)){throw 'MAINTENANCE_REPAIR_LOST_EXTERNAL_DATA'}
-          Write-Host 'WINDOWS_MAINTENANCE_REPAIR_E2E_PASS'
-          # A version-only mismatch forces the post-switch health check to fail.
-          # This must roll back automatically rather than leaving an unknown version.
-          $faultManifest=Join-Path $testRoot 'intentional-version-mismatch.json'
-          $fault=Get-Content -LiteralPath $manifestInput -Raw | ConvertFrom-Json
-          $fault.product_version='2.7.1-no-matching-runtime'
-          [IO.File]::WriteAllText($faultManifest,($fault|ConvertTo-Json -Depth 20))
-          & $maintenance upgrade --install-root $install --manifest $faultManifest --payload-root $payload | Out-Host
-          if($LASTEXITCODE -eq 0){throw 'UPGRADE_WITH_MISMATCHED_RUNTIME_UNEXPECTED_SUCCESS'}
-          $finalManifest=Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
-          if([string]$finalManifest.product_version -ne '2.7.1'){throw 'AUTOMATIC_ROLLBACK_DID_NOT_RESTORE_MANIFEST'}
-          $ownership=Get-Content -LiteralPath (Join-Path $install 'state/runtime-ownership.json') -Raw | ConvertFrom-Json
-          if([string]$ownership.active_version -ne '2.7.1'){throw 'AUTOMATIC_ROLLBACK_DID_NOT_RESTORE_ACTIVE_VERSION'}
-          if([string]$ownership.last_health -ne 'rollback-pass'){throw 'AUTOMATIC_ROLLBACK_HEALTH_NOT_VERIFIED'}
-          if((Get-FileHash -LiteralPath $runtimeFile -Algorithm SHA256).Hash -ne $knownGoodHash){throw 'AUTOMATIC_ROLLBACK_LOST_BASELINE_RUNTIME'}
-          if(-not(Test-Path -LiteralPath $marker -PathType Leaf)){throw 'AUTOMATIC_ROLLBACK_LOST_OPERATOR_DATA'}
-          Write-Host 'WINDOWS_MAINTENANCE_AUTO_ROLLBACK_E2E_PASS'
+          # Repair/rollback is qualified separately by bridge-windows-recovery.yml.
+          # Do not let fault-injected Runtime health delay generic source/installer CI.
           $uninstaller=Join-Path $install 'unins000.exe'
           if(-not(Test-Path -LiteralPath $uninstaller -PathType Leaf)){throw 'INSTALLER_UNINSTALLER_MISSING'}
           Invoke-Setup $uninstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',
             ('/LOG="'+(Join-Path $logs 'uninstall.log')+'"')) 'uninstall'
           if(-not(Test-Path -LiteralPath $marker -PathType Leaf)){throw 'UNINSTALL_REMOVED_UNOWNED_DATA'}
           Write-Host 'WINDOWS_INSTALL_REINSTALL_UNINSTALL_E2E_PASS'
-          Write-Host 'STILL_NOT_TESTED: older-version real upgrade migration, intentional process-crash repair, Chrome/Edge extension clicks'
+          Write-Host 'RECOVERY_GATE_SEPARATE; old-version upgrades and Chrome/Edge live extension UAT NOT RUN'
