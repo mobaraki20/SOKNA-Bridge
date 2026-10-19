@@ -265,12 +265,14 @@ jobs:
           $data=Join-Path $testRoot 'Unrelated Software Artifacts'
           $logs=Join-Path $testRoot 'test-logs'
           New-Item -ItemType Directory -Force -Path $testRoot,$logs,$data|Out-Null
-          function Invoke-Setup([string]$exe,[string[]]$args,[string]$what) {
+          function Invoke-Setup([string]$exe,[string[]]$setupArguments,[string]$what) {
+            if(@($setupArguments).Count -lt 5 -or @($setupArguments | Where-Object { $_ -eq '/VERYSILENT' }).Count -ne 1 -or @($setupArguments | Where-Object { $_ -like '/LOG=*' }).Count -ne 1){ throw "SETUP_REQUIRED_SILENT_ARGUMENTS_MISSING: $what" }
+            Write-Host "SETUP_SILENT_ARGUMENTS_VERIFIED: $what count=$(@($setupArguments).Count)"
             $psi=[Diagnostics.ProcessStartInfo]::new()
             $psi.FileName=$exe
             $psi.UseShellExecute=$false
             $psi.CreateNoWindow=$true
-            foreach($arg in $args){[void]$psi.ArgumentList.Add($arg)}
+            foreach($argument in $setupArguments){[void]$psi.ArgumentList.Add($argument)}
             $process=[Diagnostics.Process]::Start($psi)
             if($null -eq $process){throw "INSTALLER_PROCESS_NOT_STARTED: $what"}
             try {
@@ -299,10 +301,10 @@ jobs:
             } finally { $process.Dispose() }
           }
           function Args-For([string]$log,[bool]$withArtifactRoot) {
-            $args=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/NOICONS',
+            $setupArguments=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/NOICONS',
               ('/DIR="'+$install+'"'),('/LOG="'+$log+'"'))
-            if($withArtifactRoot){$args+=('/ArtifactRoot="'+$data+'"')}
-            return ,$args
+            if($withArtifactRoot){$setupArguments+=('/ArtifactRoot="'+$data+'"')}
+            return ,$setupArguments
           }
           $firstLog=Join-Path $logs 'install-first.log'
           Invoke-Setup $setup (Args-For $firstLog $true) 'fresh-install'
