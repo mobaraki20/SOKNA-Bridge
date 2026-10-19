@@ -113,8 +113,14 @@ func TestExternalLedgerRoundTrip(t *testing.T) {
 	if json.Unmarshal(begin.Result,&bp) != nil || bp["duplicate"] != false || bp["state"] != "running" {
 		t.Fatalf("external begin payload invalid: %s", string(begin.Result))
 	}
-	result := json.RawMessage(`{"ok":true,"diagnostic":"done"}`)
-	done := handleExternalLedgerComplete(InMsg{Type:"ledger.external.complete", RequestID:"r2", Command:raw, Result:result})
+	token, _ := bp["completion_token"].(string)
+    if len(token)!=32 {t.Fatalf("begin did not return a completion capability: %s",string(begin.Result))}
+    result := json.RawMessage(`{"ok":true,"diagnostic":"done"}`)
+    unauth := handleExternalLedgerComplete(InMsg{Type:"ledger.external.complete",RequestID:"bad",Command:raw,Result:result})
+    if unauth.OK {t.Fatal("missing token was accepted")}
+    bad := handleExternalLedgerComplete(InMsg{Type:"ledger.external.complete",RequestID:"wrong",Command:raw,Result:result,CompletionToken:"00000000000000000000000000000000"})
+    if bad.OK {t.Fatal("incorrect completion token accepted")}
+    done := handleExternalLedgerComplete(InMsg{Type:"ledger.external.complete", RequestID:"r2", Command:raw, Result:result,CompletionToken:token})
 	if !done.OK {
 		t.Fatalf("external complete failed: %+v", done)
 	}
