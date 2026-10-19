@@ -64,12 +64,12 @@ try{
     Require (Test-Path -LiteralPath $key) 'NATIVE_HOST_REGISTRY_MISSING'
     $hPath=[string](Get-Item -LiteralPath $key).GetValue('')
     Require (Test-Path -LiteralPath $hPath -PathType Leaf) 'NATIVE_HOST_MANIFEST_MISSING'
-    $host=Get-Content -LiteralPath $hPath -Raw -Encoding UTF8|ConvertFrom-Json
-    Require ([string]$host.name -eq 'com.sokna.bridge.v3') 'NATIVE_HOST_ID_WRONG'
+    $nativeHost=Get-Content -LiteralPath $hPath -Raw -Encoding UTF8|ConvertFrom-Json
+    Require ([string]$nativeHost.name -eq 'com.sokna.bridge.v3') 'NATIVE_HOST_ID_WRONG'
     $nativeDir=Split-Path -Parent (Canon $hPath)
     $root=Split-Path -Parent $nativeDir
     $nativeExe=Join-Path $nativeDir 'sokna-bridge-native-host.exe'
-    Require (Same (Canon ([string]$host.path)) (Canon $nativeExe)) 'NATIVE_HOST_PATH_WRONG'
+    Require (Same (Canon ([string]$nativeHost.path)) (Canon $nativeExe)) 'NATIVE_HOST_PATH_WRONG'
     Require (Test-Path -LiteralPath $nativeExe -PathType Leaf) 'NATIVE_HOST_EXE_MISSING'
     $installedManifest=Join-Path $root 'manifests\installed-manifest.json'
     $extensionFile=Join-Path $root 'extension\manifest.json'
@@ -87,7 +87,7 @@ try{
     $id=ExtensionId ([string]$ext.key)
     Require ([string]$ext.version -eq '3.14.2') 'EXTENSION_VERSION_WRONG'
     Require (@($ext.permissions) -contains 'nativeMessaging') 'EXTENSION_NATIVE_PERMISSION_MISSING'
-    Require (@($host.allowed_origins).Count -eq 1 -and [string]$host.allowed_origins[0] -eq ('chrome-extension://'+$id+'/')) 'NATIVE_ALLOWED_ORIGIN_WRONG'
+    Require (@($nativeHost.allowed_origins).Count -eq 1 -and [string]$nativeHost.allowed_origins[0] -eq ('chrome-extension://'+$id+'/')) 'NATIVE_ALLOWED_ORIGIN_WRONG'
     Pass 'INSTALLED_NATIVE_HOST_AND_EXTENSION'
     $result.extension_id=$id
     $result.extension_version=[string]$ext.version
