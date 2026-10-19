@@ -44,15 +44,19 @@ internal static class BridgeUiAudit
                 if (!form.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
                     problems.Add("actual-form-font-is-not-vazirmatn");
                 Application.DoEvents();
-                var tabs = form.Controls.OfType<TabControl>().Single();
-                if (tabs.DrawMode != TabDrawMode.OwnerDrawFixed || tabs.ItemSize.Height < 42)
-                    problems.Add("navigation-not-custom-painted-or-too-small");
-                for (var i = 0; i < tabs.TabPages.Count; i++)
+                // Ensure standard native caption placement, not the mirrored HWND
+                // which moves close/maximize/minimize to the left in Windows.
+                if (form.RightToLeftLayout || form.RightToLeft != RightToLeft.Yes)
+                    problems.Add("window-caption-native-rtl-mirroring-regression");
+                var navigation = Descendants(form).OfType<BridgeNavigationShell>().SingleOrDefault();
+                if (navigation is null || form.AuditPages.Count != 6)
+                    problems.Add("missing-custom-persian-navigation-shell");
+                for (var i = 0; i < form.AuditPages.Count; i++)
                 {
-                    tabs.SelectedIndex = i;
+                    form.SelectAuditPage(i);
                     form.PerformLayout();
                     Application.DoEvents();
-                    var page = tabs.TabPages[i];
+                    var page = form.ActiveAuditPage;
                     var title = $"{size.Width}x{size.Height}-tab{i + 1}";
                     // A scrollable page is intentional at 960x600; horizontal
                     // overflow and action/control clipping are never intentional.
@@ -120,10 +124,10 @@ internal static class BridgeUiAudit
                     if (nonCanvas < 250) problems.Add(title + ":empty-painted-bitmap");
                 }
                 form.ShowLayoutError();
-                tabs.SelectedIndex = 0;
+                form.SelectAuditPage(0);
                 form.PerformLayout();
                 Application.DoEvents();
-                problems.AddRange(Check(tabs.TabPages[0]).Select(issue =>
+                problems.AddRange(Check(form.ActiveAuditPage).Select(issue =>
                     $"{size.Width}x{size.Height}-error:" + issue));
                 using (var errorImage = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb))
                 {
@@ -143,6 +147,8 @@ internal static class BridgeUiAudit
                 dialog.Location = new Point(20, 20);
                 dialog.Show();
                 Application.DoEvents();
+                if (dialog.RightToLeftLayout)
+                    problems.Add(fixture.name + ":caption-buttons-mirrored-left");
                 problems.AddRange(Check(dialog).Select(issue => fixture.name + ":" + issue));
                 using var image = new Bitmap(dialog.Width, dialog.Height, PixelFormat.Format32bppArgb);
                 dialog.DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));
@@ -156,7 +162,7 @@ internal static class BridgeUiAudit
                 foreach (var problem in problems) Console.Error.WriteLine("BRIDGE_UI_AUDIT: " + problem);
                 return 1;
             }
-            Console.WriteLine("BRIDGE_CONTROL_CENTER_REAL_PAINTED_UI_23_SCREENSHOTS_PASS");
+            Console.WriteLine("BRIDGE_CONTROL_CENTER_SIDEBAR_GUI_23_SCREENSHOTS_PASS");
             Console.WriteLine("BRIDGE_UI_CONTRAST_BIDI_LAYOUT_STATIC_GATES_PASS");
             return 0;
         }
