@@ -1,0 +1,57 @@
+name: Bridge Control Center Real Painted UI Qualification
+on:
+  push:
+    branches:
+      - work/bridge-control-center-ui-20261019
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ui:
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build real WinForms application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'bridge-ui-build'
+          dotnet publish maintenance/Sokna.Bridge.ControlCenter/Sokna.Bridge.ControlCenter.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o $out
+          if ($LASTEXITCODE -ne 0) { throw 'UI_COMPILE_FAIL' }
+          if (-not (Test-Path (Join-Path $out 'Sokna.Bridge.ControlCenter.exe'))) { throw 'EXE_MISSING' }
+          Write-Host 'BRIDGE_CONTROL_CENTER_BUILD_PASS'
+      - name: Actual entrypoint painted screenshot regression
+        shell: pwsh
+        timeout-minutes: 4
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $env:RUNNER_TEMP 'bridge-ui-build/Sokna.Bridge.ControlCenter.exe'
+          $out = Join-Path $env:RUNNER_TEMP 'bridge-ui-painted'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $arguments = @('--layout-self-test', '--output', ('"' + $out + '"'))
+          $process = Start-Process -FilePath $exe -ArgumentList $arguments -PassThru
+          if (-not $process.WaitForExit(90000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw 'BRIDGE_UI_PAINT_TIMEOUT'
+          }
+          if ($process.ExitCode -ne 0) {
+            Get-ChildItem $out -Filter '*.txt' | ForEach-Object { Write-Host $_.Name; Get-Content $_.FullName | Out-Host }
+            throw 'BRIDGE_UI_PAINT_REGRESSION'
+          }
+          $images = @(Get-ChildItem $out -Filter '*.png')
+          if ($images.Count -ne 18) { throw 'BRIDGE_UI_MISSING_PAINTED_IMAGES' }
+          Write-Host 'BRIDGE_REAL_PAINTED_UI_18_SCREENSHOTS_PASS'
+      - name: Preserve UI screenshots including failure cases
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-control-center-painted-ui-evidence
+          path: ${{ runner.temp }}/bridge-ui-painted/
+          retention-days: 14
+          if-no-files-found: warn
