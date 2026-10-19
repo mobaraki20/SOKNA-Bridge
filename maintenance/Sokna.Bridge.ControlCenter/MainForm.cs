@@ -51,7 +51,14 @@ internal sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         BridgeUi.Prepare(this);
 
-        var tabs = new TabControl { Dock = DockStyle.Fill, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, Padding = new Point(17, 8), Font = BridgeUi.Font(10.7f, FontStyle.Bold) };
+        var tabs = new TabControl
+        {
+            Dock = DockStyle.Fill, RightToLeft = RightToLeft.Yes,
+            RightToLeftLayout = true, Font = BridgeUi.Font(11f, FontStyle.Bold),
+            DrawMode = TabDrawMode.OwnerDrawFixed, SizeMode = TabSizeMode.Fixed,
+            ItemSize = new Size(124, 46), Padding = new Point(10, 8)
+        };
+        tabs.DrawItem += DrawNavigationTab;
         tabs.TabPages.Add(BuildHomeTab());
         tabs.TabPages.Add(BuildWorkspaceTab());
         tabs.TabPages.Add(BuildCredentialsTab());
@@ -63,19 +70,45 @@ internal sealed class MainForm : Form
         if (!layoutTestMode) Shown += async (_, _) => await RefreshAllAsync();
     }
 
+    private static void DrawNavigationTab(object? sender, DrawItemEventArgs e)
+    {
+        if (sender is not TabControl nav || e.Index < 0) return;
+        var selected = nav.SelectedIndex == e.Index;
+        var bounds = e.Bounds;
+        using var background = new SolidBrush(selected ? BridgeUi.Surface : BridgeUi.Canvas);
+        using var ink = new SolidBrush(selected ? BridgeUi.BrandDark : BridgeUi.Muted);
+        e.Graphics.FillRectangle(background, bounds);
+        e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        using var font = BridgeUi.Font(10.8f, selected ? FontStyle.Bold : FontStyle.Regular);
+        using var format = new StringFormat
+        {
+            Alignment = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center,
+            FormatFlags = StringFormatFlags.DirectionRightToLeft
+        };
+        e.Graphics.DrawString(nav.TabPages[e.Index].Text, font, ink,
+            new RectangleF(bounds.X + 4, bounds.Y + 2, bounds.Width - 8, bounds.Height - 6), format);
+        if (selected)
+        {
+            using var accent = new SolidBrush(BridgeUi.Brand);
+            e.Graphics.FillRectangle(accent, bounds.Left + 9, bounds.Bottom - 4,
+                Math.Max(0, bounds.Width - 18), 3);
+        }
+    }
+
     private TabPage BuildHomeTab()
     {
         var page = NewPage("وضعیت");
         var root = Stack();
 
         root.Controls.Add(new Label { Text = "مرکز کنترل بریج سکنا", AutoSize = true, Font = BridgeUi.Font(19f, FontStyle.Bold), ForeColor = BridgeUi.BrandDark, Margin = new Padding(8, 12, 8, 3) });
-        root.Controls.Add(new Label { Text = "وضعیت Agent، مدیریت دسترسی‌ها و پشتیبانی — SOKNA Bridge", AutoSize = true, Font = BridgeUi.Font(10.6f), ForeColor = BridgeUi.Muted, Margin = new Padding(8, 0, 8, 16) });
+        root.Controls.Add(new Label { Text = "مدیریت اتصال، دسترسی‌ها و گزارش‌های پشتیبانی", AutoSize = true, Font = BridgeUi.Font(10.6f), ForeColor = BridgeUi.Muted, Margin = new Padding(8, 0, 8, 16) });
 
-        var health = Card("وضعیت Agent");
+        var health = Card("وضعیت ایجنت");
         health.Name = "BridgeAgentHealthCard";
         _status.AutoSize = true;
         _status.Font = BridgeUi.Font(14f, FontStyle.Bold);
-        _status.Text = "هنوز وضعیت Agent بررسی نشده است";
+        _status.Text = "هنوز وضعیت ایجنت بررسی نشده است";
         _status.ForeColor = BridgeUi.Warning;
         _status.Margin = new Padding(7, 4, 7, 6);
         health.Controls.Add(_status);
@@ -87,28 +120,28 @@ internal sealed class MainForm : Form
         health.Controls.Add(_statusGuidance);
         root.Controls.Add(health);
 
-        var primary = Card("مدیریت Agent");
+        var primary = Card("عملیات ایجنت");
         primary.Name = "BridgeAgentActionsCard";
         var actions = ButtonRow();
         actions.Controls.Add(StyledButton("تازه‌سازی وضعیت", async () => await RefreshAllAsync(), "primary"));
-        actions.Controls.Add(StyledButton("شروع Agent", async () => await LifecycleAsync("start"), "secondary"));
+        actions.Controls.Add(StyledButton("شروع ایجنت", async () => await LifecycleAsync("start"), "secondary"));
         actions.Controls.Add(StyledButton("راه‌اندازی مجدد", async () => {
-            if (MessageBox.Show(this, "Agent متوقف و دوباره راه‌اندازی شود؟", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (MessageBox.Show(this, "ایجنت متوقف و دوباره راه‌اندازی شود؟", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             await RunMaintenanceAsync("stop");
             await RunMaintenanceAsync("start", "--expected-version", ReadProductVersion());
             await RefreshAllAsync();
         }, "secondary"));
-        actions.Controls.Add(StyledButton("توقف Agent", async () => await LifecycleAsync("stop"), "danger"));
+        actions.Controls.Add(StyledButton("توقف ایجنت", async () => await LifecycleAsync("stop"), "danger"));
         primary.Controls.Add(actions);
         // Keep everyday controls visible without scrolling in a 960x600 window.
         // Auto-sized WinForms TableLayoutPanel can otherwise take the rest of
         // the viewport and leave several hundred pixels of empty space.
         primary.AutoSize = false;
-        primary.Height = 148;
+        primary.Height = 116;
         primary.RowCount = 2;
         primary.RowStyles.Clear();
-        primary.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        primary.RowStyles.Add(new RowStyle(SizeType.Absolute, 69));
+        primary.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
+        primary.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
         root.Controls.Add(primary);
 
         var details = Card("اطلاعات نصب و اتصال");
@@ -133,7 +166,7 @@ internal sealed class MainForm : Form
         for (var row = 0; row < 3; row++)
             info.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         AddStatusMetric(info, 0, 0, "کنترل‌پنل", _shellVersion);
-        AddStatusMetric(info, 0, 2, "Agent نصب‌شده", _version);
+        AddStatusMetric(info, 0, 2, "نسخهٔ ایجنت", _version);
         AddStatusMetric(info, 1, 0, "پورت محلی", _port);
         AddStatusMetric(info, 1, 2, "فضاهای کاری", _workspaceCount);
         AddStatusMetric(info, 2, 0, "محل فایل‌ها", _artifact);
@@ -145,7 +178,7 @@ internal sealed class MainForm : Form
         var maintenance = Card("عیب‌یابی و پشتیبانی");
         var tools = ButtonRow();
         tools.Controls.Add(StyledButton("باز کردن Logها", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
-        tools.Controls.Add(StyledButton("باز کردن ArtifactRoot", () => OpenFolder(CurrentArtifactRoot()), "secondary"));
+        tools.Controls.Add(StyledButton("باز کردن پوشهٔ فایل‌ها", () => OpenFolder(CurrentArtifactRoot()), "secondary"));
         tools.Controls.Add(StyledButton("ساخت بسته پشتیبانی", CreateSupportBundleAsync, "secondary"));
         tools.Controls.Add(StyledButton("عیب‌یابی", async () => {
             await RefreshDiagnosticsAsync();
@@ -200,7 +233,7 @@ internal sealed class MainForm : Form
         var page = NewPage("عیب‌یابی");
         var root = Stack();
         root.Controls.Add(SectionTitle("عیب‌یابی و گزارش پشتیبانی"));
-        root.Controls.Add(new Label { Text = "ابتدا وضعیت بررسی را بخوان. فقط هنگام نیاز، گزارش فنی را برای پشتیبانی ذخیره کن. رمزها و Token نباید در خروجی ظاهر شوند.", AutoSize = true, Font = BridgeUi.Font(10.5f), ForeColor = BridgeUi.Muted, Margin = new Padding(8) });
+        root.Controls.Add(new Label { Text = "ابتدا وضعیت بررسی را بخوان. فقط هنگام نیاز، گزارش فنی را برای پشتیبانی ذخیره کن. رمزها و توکن نباید در خروجی ظاهر شوند.", AutoSize = true, Font = BridgeUi.Font(10.5f), ForeColor = BridgeUi.Muted, Margin = new Padding(8) });
         var actions = ButtonRow();
         actions.Controls.Add(StyledButton("تازه‌سازی عیب‌یابی", RefreshDiagnosticsAsync, "primary"));
         actions.Controls.Add(StyledButton("کپی برای پشتیبانی", () => { if (!string.IsNullOrWhiteSpace(_diagnosticsBox.Text)) Clipboard.SetText(_diagnosticsBox.Text); }, "secondary"));
@@ -231,11 +264,11 @@ internal sealed class MainForm : Form
     {
         var page = NewPage("تنظیمات");
         var root = Stack();
-        root.Controls.Add(SectionTitle("تنظیمات Agent"));
+        root.Controls.Add(SectionTitle("تنظیمات ایجنت"));
 
         var settingsCard = Card("اتصال و مسیر ذخیره‌سازی");
         settingsCard.Controls.Add(BridgeUi.Caption(
-            "این تنظیمات فقط روی Agent همین رایانه اثر می‌گذارند."));
+            "این تنظیمات فقط روی ایجنت همین رایانه اثر می‌گذارند."));
 
         var portArea = new FlowLayoutPanel
         {
@@ -244,7 +277,7 @@ internal sealed class MainForm : Form
             RightToLeft = RightToLeft.No,
             WrapContents = false, Margin = new Padding(5, 7, 5, 10)
         };
-        portArea.Controls.Add(BridgeUi.FieldLabel("پورت محلی Agent"));
+        portArea.Controls.Add(BridgeUi.FieldLabel("پورت ارتباط محلی"));
         _portInput.Minimum = 1024;
         _portInput.Maximum = 65535;
         _portInput.Value = 8766;
@@ -253,7 +286,7 @@ internal sealed class MainForm : Form
         portArea.Controls.Add(_portInput);
         settingsCard.Controls.Add(portArea);
 
-        settingsCard.Controls.Add(BridgeUi.FieldLabel("محل نگهداری فایل‌ها (ArtifactRoot)"));
+        settingsCard.Controls.Add(BridgeUi.FieldLabel("پوشهٔ نگهداری فایل‌ها"));
         var artifactArea = new TableLayoutPanel
         {
             Dock = DockStyle.Top, Height = 48, ColumnCount = 2,
@@ -272,7 +305,7 @@ internal sealed class MainForm : Form
         artifactArea.Controls.Add(browse, 1, 0);
         settingsCard.Controls.Add(artifactArea);
 
-        _autostart.Text = "اجرای خودکار Agent هنگام ورود به ویندوز";
+        _autostart.Text = "اجرای خودکار ایجنت هنگام ورود به ویندوز";
         _autostart.AutoSize = true;
         _autostart.Font = BridgeUi.Font(10.5f);
         _autostart.Margin = new Padding(7, 12, 7, 8);
@@ -281,7 +314,7 @@ internal sealed class MainForm : Form
         settingsCard.Controls.Add(BridgeUi.Caption(
             "تغییر محل ذخیره‌سازی، فایل‌های قبلی را جابه‌جا نمی‌کند. داده‌های بعدی در مسیر جدید ذخیره می‌شوند."));
 
-        _saveSettings.Text = "ذخیره و راه‌اندازی مجدد Agent";
+        _saveSettings.Text = "ذخیرهٔ تنظیمات و راه‌اندازی مجدد";
         BridgeUi.Button(_saveSettings, "primary");
         _saveSettings.Click += async (_, _) => await SaveSettingsAsync();
         var saveArea = ButtonRow();
@@ -292,7 +325,7 @@ internal sealed class MainForm : Form
         var securityCard = Card("حفاظت از اطلاعات");
         securityCard.Controls.Add(BridgeUi.Caption(
             "رمز اتصال و اطلاعات محرمانه در این پنل نمایش داده نمی‌شوند. " +
-            "دسترسی Agent فقط از طریق فضاهای کاری و مجوزهایی است که مشخص می‌کنی."));
+            "دسترسی ایجنت فقط به فضاهای کاری و مجوزهایی محدود است که مشخص می‌کنی."));
         root.Controls.Add(securityCard);
 
         page.Controls.Add(root);
@@ -302,7 +335,7 @@ internal sealed class MainForm : Form
     private TabPage BuildWorkspaceTab()
     {
         var page = NewPage("فضاهای کاری");
-        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16), BackColor = BridgeUi.Surface };
+        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(15), BackColor = BridgeUi.Canvas };
 
         _workspaces.Dock = DockStyle.Fill;
         _workspaces.Visible = false; // The empty-state label owns the surface until real rows arrive.
@@ -314,20 +347,23 @@ internal sealed class MainForm : Form
         _workspaces.Columns.Add("دسترسی", 135);
         _workspaces.Columns.Add("ابزارها", 140);
         _workspaces.Columns.Add("وضعیت", 90);
-        var workspaceList = new Panel { Dock = DockStyle.Fill, BackColor = BridgeUi.Surface };
+        var workspaceList = new Panel { Dock = DockStyle.Fill, BackColor = BridgeUi.Canvas, Padding = new Padding(4, 12, 4, 0) };
         workspaceList.Controls.Add(_workspaces);
-        _workspacesEmpty.Dock = DockStyle.Fill;
-        _workspacesEmpty.BackColor = BridgeUi.Surface;
-        _workspacesEmpty.ForeColor = BridgeUi.Muted;
-        _workspacesEmpty.Font = BridgeUi.Font(11.5f);
-        _workspacesEmpty.TextAlign = ContentAlignment.MiddleCenter;
-        _workspacesEmpty.Text = "هنوز فضای کاری ثبت نشده است.\nبرای شروع، «افزودن فضای کاری» را انتخاب کن.";
+        _workspacesEmpty.Dock = DockStyle.Top;
+        _workspacesEmpty.Height = 128;
+        _workspacesEmpty.Padding = new Padding(24, 18, 24, 18);
+        _workspacesEmpty.BackColor = BridgeUi.BrandSoft;
+        _workspacesEmpty.ForeColor = BridgeUi.BrandDark;
+        _workspacesEmpty.Font = BridgeUi.Font(12f);
+        _workspacesEmpty.UseCompatibleTextRendering = true;
+        _workspacesEmpty.TextAlign = ContentAlignment.MiddleRight;
+        _workspacesEmpty.Text = "هنوز فضای کاری اضافه نکرده‌ای.\nبرای دسترسی ایمن بریج به پوشه‌ها، از «افزودن فضای کاری» شروع کن.";
         workspaceList.Controls.Add(_workspacesEmpty);
         _workspacesEmpty.BringToFront();
         panel.Controls.Add(workspaceList);
 
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
-        top.Controls.Add(ActionButton("افزودن فضای کاری", AddWorkspaceAsync));
+        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, RightToLeft = RightToLeft.No, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
+        top.Controls.Add(Style(ActionButton("افزودن فضای کاری", AddWorkspaceAsync), "primary"));
         top.Controls.Add(ActionButton("حذف دسترسی", RemoveWorkspaceAsync));
         top.Controls.Add(ActionButton("تازه‌سازی", async () => await RefreshWorkspacesAsync()));
         top.Controls.Add(ActionButton("بررسی انتخاب‌شده", InspectWorkspaceAsync));
@@ -362,20 +398,23 @@ internal sealed class MainForm : Form
         _credentials.Columns.Add("شناسه", 200);
         _credentials.Columns.Add("نام کاربری", 300);
         _credentials.Columns.Add("ذخیره‌سازی", 150);
-        var credentialList = new Panel { Dock = DockStyle.Fill, BackColor = BridgeUi.Surface };
+        var credentialList = new Panel { Dock = DockStyle.Fill, BackColor = BridgeUi.Canvas, Padding = new Padding(4, 12, 4, 0) };
         credentialList.Controls.Add(_credentials);
-        _credentialsEmpty.Dock = DockStyle.Fill;
-        _credentialsEmpty.BackColor = BridgeUi.Surface;
-        _credentialsEmpty.ForeColor = BridgeUi.Muted;
-        _credentialsEmpty.Font = BridgeUi.Font(11.5f);
-        _credentialsEmpty.TextAlign = ContentAlignment.MiddleCenter;
-        _credentialsEmpty.Text = "هنوز اعتبارنامه‌ای ثبت نشده است.\nبرای افزودن امن رمز، دکمهٔ «افزودن» را انتخاب کن.";
+        _credentialsEmpty.Dock = DockStyle.Top;
+        _credentialsEmpty.Height = 128;
+        _credentialsEmpty.Padding = new Padding(24, 18, 24, 18);
+        _credentialsEmpty.BackColor = BridgeUi.BrandSoft;
+        _credentialsEmpty.ForeColor = BridgeUi.BrandDark;
+        _credentialsEmpty.Font = BridgeUi.Font(12f);
+        _credentialsEmpty.UseCompatibleTextRendering = true;
+        _credentialsEmpty.TextAlign = ContentAlignment.MiddleRight;
+        _credentialsEmpty.Text = "هنوز اطلاعات دسترسی ذخیره نشده است.\nاگر به ورود ایمن نیاز داری، «افزودن» را انتخاب کن.";
         credentialList.Controls.Add(_credentialsEmpty);
         _credentialsEmpty.BringToFront();
         panel.Controls.Add(credentialList);
 
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
-        top.Controls.Add(ActionButton("افزودن", AddCredentialAsync));
+        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, RightToLeft = RightToLeft.No, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
+        top.Controls.Add(Style(ActionButton("افزودن", AddCredentialAsync), "primary"));
         top.Controls.Add(ActionButton("ویرایش", EditCredentialAsync));
         top.Controls.Add(ActionButton("حذف", DeleteCredentialAsync));
         top.Controls.Add(ActionButton("تازه‌سازی", RefreshCredentialsAsync));
@@ -507,8 +546,8 @@ internal sealed class MainForm : Form
 
         root.Controls.Add(SectionTitle("راهنمای راه‌اندازی و اتصال بریج"));
 
-        root.Controls.Add(Step("۱", "از وضعیت Agent مطمئن شو", "در بخش «وضعیت»، اتصال Agent را بررسی کن. اگر در دسترس نبود، آن را راه‌اندازی کن."));
-        root.Controls.Add(Step("۲", "افزونهٔ Chrome را نصب کن", "در مرورگر Chrome صفحهٔ chrome://extensions را باز کن. حالت Developer mode را فعال کن، سپس Load unpacked را بزن و پوشهٔ افزونهٔ نصب‌شده را انتخاب کن."));
+        root.Controls.Add(Step("۱", "از وضعیت ایجنت مطمئن شو", "در بخش «وضعیت»، اتصال ایجنت را بررسی کن. اگر در دسترس نبود، آن را راه‌اندازی کن."));
+        root.Controls.Add(Step("۲", "افزونهٔ کروم را نصب کن", "در مرورگر کروم صفحهٔ chrome://extensions را باز کن. حالت توسعه‌دهنده (Developer mode) را فعال کن، سپس «بارگذاری پوشهٔ افزونه» (Load unpacked) را بزن و پوشهٔ افزونهٔ نصب‌شده را انتخاب کن."));
         root.Controls.Add(Step("۳", "فضای کاری تعریف کن", "از تب «فضاهای کاری» پوشهٔ مجاز را ثبت کن. دسترسی نوشتن فقط برای پروژه‌های مورد اعتماد مناسب است."));
         root.Controls.Add(Step("۴", "گفتگو را به بریج متصل کن", "در گفتگوی ChatGPT روی افزونهٔ بریج بزن و گزینهٔ Connect this Chat را انتخاب کن. پس از آن باید اتصال نهایی تأیید شود."));
         root.Controls.Add(Step("۵", "در صورت مشکل، عیب‌یابی را باز کن", "از بخش عیب‌یابی همین پنل شروع کن؛ تنها اگر لازم بود بستهٔ پشتیبانی بساز."));
@@ -533,7 +572,7 @@ internal sealed class MainForm : Form
 
         root.Controls.Add(new Label
         {
-            Text = "نکته: خود SOKNA Bridge جای ChatGPT نیست. Control Center وضعیت و دسترسی‌های محلی را مدیریت می‌کند؛ ارتباط گفتگو با Agent از طریق Extension مرورگر و Native Host انجام می‌شود.",
+            Text = "نکته: خود SOKNA Bridge جای ChatGPT نیست. Control Center وضعیت و دسترسی‌های محلی را مدیریت می‌کند؛ ارتباط گفتگو با ایجنت از طریق افزونهٔ مرورگر و میزبان محلی انجام می‌شود.",
             AutoSize = true,
             MaximumSize = new Size(850, 0),
             Margin = new Padding(8, 20, 8, 8)
@@ -583,7 +622,7 @@ internal sealed class MainForm : Form
             catch (Exception ex)
             {
                 _status.Text = "● Agent در دسترس نیست";
-                _statusGuidance.Text = "BR-AGENT-001 — ابتدا «شروع Agent» را بزن؛ اگر مشکل باقی ماند عیب‌یابی را باز کن.";
+                _statusGuidance.Text = "BR-AGENT-001 — ابتدا «شروع ایجنت» را بزن؛ اگر مشکل باقی ماند عیب‌یابی را باز کن.";
                 _status.ForeColor = BridgeUi.Danger;
                 _lastError.Text = ex.Message;
             }
@@ -633,7 +672,7 @@ internal sealed class MainForm : Form
         catch (Exception ex)
         {
             _workspaceCount.Text = "—";
-            _workspacesEmpty.Text = "فهرست فضاهای کاری در دسترس نیست. اتصال Agent را بررسی کن.";
+            _workspacesEmpty.Text = "فهرست فضاهای کاری در دسترس نیست. اتصال ایجنت را بررسی کن.";
             _workspacesEmpty.Visible = true;
             _workspaces.Visible = false;
             if (!silent) ShowError(ex);
@@ -748,7 +787,7 @@ internal sealed class MainForm : Form
         {
             if (action == "stop" && MessageBox.Show(this,
                 "Agent متوقف شود؟ تا شروع مجدد، درخواست‌های محلی پاسخ داده نمی‌شوند.",
-                "تأیید توقف Agent", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+                "تأیید توقف ایجنت", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
             if (action == "start") await RunMaintenanceAsync("start", "--expected-version", ReadProductVersion());
             else await RunMaintenanceAsync(action);
             await RefreshAllAsync();
@@ -907,7 +946,7 @@ internal sealed class MainForm : Form
             scroll.ScrollControlIntoView(_errorPanel);
     }
 
-    private static TabPage NewPage(string title) => new(title) { Padding = new Padding(8), BackColor = BridgeUi.Canvas };
+    private static TabPage NewPage(string title) => new(title) { Padding = new Padding(6), BackColor = BridgeUi.Canvas };
 
     // A single-column TableLayoutPanel fills available horizontal space.
     // The former nested FlowLayoutPanels collapsed cards toward the right
@@ -921,7 +960,7 @@ internal sealed class MainForm : Form
             ColumnCount = 1,
             GrowStyle = TableLayoutPanelGrowStyle.AddRows,
             BackColor = BridgeUi.Canvas,
-            Padding = new Padding(18, 13, 18, 14)
+            Padding = new Padding(14, 11, 14, 12)
         };
         stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         stack.ControlAdded += (_, e) =>
@@ -981,7 +1020,7 @@ internal sealed class MainForm : Form
         Text = text,
         AutoSize = true,
         Font = BridgeUi.Font(14.5f, FontStyle.Bold),
-        Margin = new Padding(8, 22, 8, 10)
+        Margin = new Padding(8, 8, 8, 10)
     };
 
     private static TableLayoutPanel Card(string title)
@@ -993,11 +1032,17 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Top,
             ColumnCount = 1,
             GrowStyle = TableLayoutPanelGrowStyle.AddRows,
-            Padding = new Padding(14, 12, 14, 14),
-            Margin = new Padding(7, 5, 7, 9),
-            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(16, 12, 16, 12),
+            Margin = new Padding(5, 4, 5, 8),
+            BorderStyle = BorderStyle.None,
             RightToLeft = RightToLeft.Yes,
             BackColor = BridgeUi.Surface
+        };
+        card.Paint += (_, e) =>
+        {
+            using var stroke = new Pen(BridgeUi.Border);
+            e.Graphics.DrawRectangle(stroke, 0, 0, card.ClientSize.Width - 1,
+                card.ClientSize.Height - 1);
         };
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         card.ControlAdded += (_, e) =>
@@ -1009,13 +1054,14 @@ internal sealed class MainForm : Form
         };
         card.Controls.Add(new Label
         {
-            Text = title, AutoSize = false, Height = 38,
-            Font = BridgeUi.Font(12.2f, FontStyle.Bold),
+            Text = title, AutoSize = false, Height = 30,
+            Font = BridgeUi.Font(12f, FontStyle.Bold),
+            UseCompatibleTextRendering = true,
             ForeColor = BridgeUi.BrandDark,
             RightToLeft = RightToLeft.Yes,
             // WinForms mirrors TextAlign under RTL; MiddleLeft paints on the visual right.
             TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(5, 2, 5, 12)
+            Margin = new Padding(5, 0, 5, 7)
         });
         return card;
     }
