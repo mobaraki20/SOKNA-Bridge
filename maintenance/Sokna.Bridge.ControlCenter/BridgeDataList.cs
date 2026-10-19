@@ -46,7 +46,7 @@ internal sealed class BridgeDataList : ListView
         using var f = BridgeUi.Font(10.3f, FontStyle.Bold);
         using var format = Format(!technical);
         var inset = Rectangle.Inflate(e.Bounds, -8, -2);
-        g.DrawString(e.Header.Text, f, ink, inset, format);
+        DrawUnmirrored(g, e.Header.Text, f, ink, inset, format);
     }
 
     protected override void OnDrawItem(DrawListViewItemEventArgs e)
@@ -75,7 +75,20 @@ internal sealed class BridgeDataList : ListView
         using var f = BridgeUi.Font(10.5f);
         using var format = Format(!leftToRight);
         var inset = Rectangle.Inflate(e.Bounds, -8, -3);
-        g.DrawString(content, f, ink, inset, format);
+        DrawUnmirrored(g, content, f, ink, inset, format);
+    }
+
+    // RightToLeftLayout mirrors the native list HWND and therefore the
+    // GDI drawing context. GDI+ DrawString otherwise paints each glyph
+    // backwards even when the font and unicode contents are valid.
+    private static void DrawUnmirrored(Graphics g, string value, Font font,
+        Brush brush, Rectangle bounds, StringFormat format)
+    {
+        var state = g.Save();
+        g.TranslateTransform(bounds.Left + bounds.Right, 0);
+        g.ScaleTransform(-1f, 1f);
+        g.DrawString(value, font, brush, bounds, format);
+        g.Restore(state);
     }
 
     private static StringFormat Format(bool rtl)
