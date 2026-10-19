@@ -724,7 +724,8 @@ internal sealed class MainForm : Form
             _diagnosticsBox.Text = r.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
             _diagnosticsEmpty.Visible = false;
             _diagnosticsBox.Visible = true;
-            _diagnosticsStatus.Text = "جزئیات Workspace «" + id + "» در تب Diagnostics آماده است.";
+            _diagnosticsStatus.Text = "جزئیات فضای کاری «" + id + "» آماده است.";
+            _navigation?.SelectPage(4);
         }
         catch (Exception ex) { ShowError(ex); }
     }
