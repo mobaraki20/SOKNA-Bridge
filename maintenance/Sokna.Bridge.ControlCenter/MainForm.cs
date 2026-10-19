@@ -12,6 +12,8 @@ internal sealed class MainForm : Form
     private readonly string _installRoot = Path.GetFullPath(AppContext.BaseDirectory);
     private readonly Label _status = new();
     private readonly Label _version = new();
+    private readonly Label _shellVersion = new();
+    private readonly Label _statusGuidance = new();
     private readonly Label _port = new();
     private readonly Label _artifact = new();
     private readonly Label _workspaceCount = new();
@@ -38,18 +40,15 @@ internal sealed class MainForm : Form
         "pwsh","pwsh.exe","cmd","cmd.exe","php","php.exe","composer","composer.bat","browser"
     ];
 
-    internal MainForm()
+    internal MainForm(bool layoutTestMode = false)
     {
         Text = "SOKNA Bridge Control Center";
-        Width = 1020;
-        Height = 740;
-        MinimumSize = new Size(900, 620);
+        ClientSize = new Size(1100, 720);
+        MinimumSize = new Size(840, 560);
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Tahoma", 10f);
-        RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = true;
+        BridgeUi.Prepare(this);
 
-        var tabs = new TabControl { Dock = DockStyle.Fill, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, Padding = new Point(14, 6) };
+        var tabs = new TabControl { Dock = DockStyle.Fill, RightToLeft = RightToLeft.Yes, RightToLeftLayout = true, Padding = new Point(14, 6), Font = BridgeUi.Font(9.5f, FontStyle.Bold) };
         tabs.TabPages.Add(BuildHomeTab());
         tabs.TabPages.Add(BuildWorkspaceTab());
         tabs.TabPages.Add(BuildCredentialsTab());
@@ -57,8 +56,8 @@ internal sealed class MainForm : Form
         tabs.TabPages.Add(BuildDiagnosticsTab());
         tabs.TabPages.Add(BuildGettingStartedTab());
         Controls.Add(tabs);
-
-        Shown += async (_, _) => await RefreshAllAsync();
+        BridgeUi.Fields(tabs);
+        if (!layoutTestMode) Shown += async (_, _) => await RefreshAllAsync();
     }
 
     private TabPage BuildHomeTab()
@@ -67,22 +66,36 @@ internal sealed class MainForm : Form
         var root = Stack();
 
         root.Controls.Add(new Label { Text = "SOKNA Bridge", AutoSize = true, Font = new Font(Font.FontFamily, 22f, FontStyle.Bold), Margin = new Padding(8, 14, 8, 2) });
-        root.Controls.Add(new Label { Text = "وضعیت کلی، عملیات اصلی و آخرین خطای قابل اقدام را از این صفحه ببین.", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8, 0, 8, 16) });
+        root.Controls.Add(new Label { Text = "وضعیت کلی، عملیات اصلی و آخرین خطای قابل اقدام را از این صفحه ببین.", AutoSize = true, ForeColor = BridgeUi.Muted, Margin = new Padding(8, 0, 8, 16) });
 
         var health = Card("سلامت Agent");
         _status.AutoSize = true; _status.Font = new Font(Font.FontFamily, 14f, FontStyle.Bold); _status.Text = "در حال بررسی…"; _status.Margin = new Padding(8, 8, 8, 12);
         health.Controls.Add(_status);
-        var info = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Padding = new Padding(8), Margin = new Padding(8), Width = 860 };
+        _statusGuidance.Text = "آخرین وضعیت هنوز بررسی نشده است. برای بررسی «تازه‌سازی» را بزن.";
+        _statusGuidance.ForeColor = BridgeUi.Muted;
+        _statusGuidance.AutoSize = true;
+        _statusGuidance.Margin = new Padding(8, 0, 8, 8);
+        health.Controls.Add(_statusGuidance);
+        var info = new TableLayoutPanel { Name = "BridgeStatusFacts", AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Padding = new Padding(8), Margin = new Padding(8), Width = 720, BackColor = BridgeUi.Surface };
         info.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220)); info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddInfo(info, 0, "نسخه", _version); AddInfo(info, 1, "پورت محلی", _port); AddInfo(info, 2, "ArtifactRoot", _artifact); AddInfo(info, 3, "تعداد Workspace", _workspaceCount);
+        AddInfo(info, 0, "نسخه کنترل‌پنل", _shellVersion);
+        AddInfo(info, 1, "نسخه Agent نصب‌شده", _version);
+        AddInfo(info, 2, "پورت محلی", _port);
+        AddInfo(info, 3, "محل فایل‌ها", _artifact);
+        AddInfo(info, 4, "تعداد فضای کاری", _workspaceCount);
         health.Controls.Add(info);
         root.Controls.Add(health);
 
         var primary = Card("عملیات اصلی");
         var actions = ButtonRow();
-        actions.Controls.Add(StyledButton("تازه‌سازی", async () => await RefreshAllAsync(), "primary"));
+        actions.Controls.Add(StyledButton("تازه‌سازی وضعیت", async () => await RefreshAllAsync(), "primary"));
         actions.Controls.Add(StyledButton("شروع Agent", async () => await LifecycleAsync("start"), "secondary"));
-        actions.Controls.Add(StyledButton("راه‌اندازی مجدد", async () => { await RunMaintenanceAsync("stop"); await RunMaintenanceAsync("start", "--expected-version", ReadProductVersion()); await RefreshAllAsync(); }, "secondary"));
+        actions.Controls.Add(StyledButton("راه‌اندازی مجدد", async () => {
+            if (MessageBox.Show(this, "Agent متوقف و دوباره راه‌اندازی شود؟", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            await RunMaintenanceAsync("stop");
+            await RunMaintenanceAsync("start", "--expected-version", ReadProductVersion());
+            await RefreshAllAsync();
+        }, "secondary"));
         actions.Controls.Add(StyledButton("توقف Agent", async () => await LifecycleAsync("stop"), "danger"));
         primary.Controls.Add(actions);
         root.Controls.Add(primary);
@@ -91,13 +104,17 @@ internal sealed class MainForm : Form
         var tools = ButtonRow();
         tools.Controls.Add(StyledButton("باز کردن Logها", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
         tools.Controls.Add(StyledButton("باز کردن ArtifactRoot", () => OpenFolder(CurrentArtifactRoot()), "secondary"));
-        tools.Controls.Add(StyledButton("ساخت Support Bundle", CreateSupportBundleAsync, "secondary"));
-        tools.Controls.Add(StyledButton("Diagnostics", async () => await RefreshDiagnosticsAsync(), "secondary"));
+        tools.Controls.Add(StyledButton("ساخت بسته پشتیبانی", CreateSupportBundleAsync, "secondary"));
+        tools.Controls.Add(StyledButton("عیب‌یابی", async () => {
+            await RefreshDiagnosticsAsync();
+            if (Controls.OfType<TabControl>().FirstOrDefault() is { } tabs)
+                tabs.SelectedTab = tabs.TabPages.Cast<TabPage>().FirstOrDefault(p => p.Text == "عیب‌یابی");
+        }, "primary"));
         maintenance.Controls.Add(tools);
         root.Controls.Add(maintenance);
 
         _errorPanel.AutoSize = true; _errorPanel.Width = 900; _errorPanel.Padding = new Padding(12); _errorPanel.Margin = new Padding(8); _errorPanel.BorderStyle = BorderStyle.FixedSingle; _errorPanel.Visible = false;
-        var errorTitle = new Label { Text = "آخرین عملیات ناموفق بود", AutoSize = true, Font = new Font(Font.FontFamily, 12f, FontStyle.Bold), ForeColor = Color.Firebrick, Top = 10, Left = 690 };
+        var errorTitle = new Label { Text = "آخرین عملیات ناموفق بود", AutoSize = true, Font = new Font(Font.FontFamily, 12f, FontStyle.Bold), ForeColor = BridgeUi.Danger, Top = 10, Left = 690 };
         _lastError.AutoSize = false; _lastError.Width = 840; _lastError.Height = 46; _lastError.Top = 40; _lastError.Left = 20; _lastError.TextAlign = ContentAlignment.TopRight;
         _errorDetails.Multiline = true; _errorDetails.ReadOnly = true; _errorDetails.ScrollBars = ScrollBars.Vertical; _errorDetails.Width = 840; _errorDetails.Height = 110; _errorDetails.Top = 92; _errorDetails.Left = 20; _errorDetails.RightToLeft = RightToLeft.No; _errorDetails.Font = new Font("Consolas", 9f);
         var errButtons = new FlowLayoutPanel { Width = 840, Height = 48, Top = 208, Left = 20, FlowDirection = FlowDirection.RightToLeft };
@@ -114,26 +131,26 @@ internal sealed class MainForm : Form
 
     private TabPage BuildDiagnosticsTab()
     {
-        var page = NewPage("Diagnostics");
+        var page = NewPage("عیب‌یابی");
         var root = Stack();
-        root.Controls.Add(SectionTitle("Diagnostics و خروجی پشتیبانی"));
-        root.Controls.Add(new Label { Text = "این بخش برای عیب‌یابی است. خروجی‌ها Token و secret را نمایش نمی‌دهند.", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8) });
+        root.Controls.Add(SectionTitle("عیب‌یابی و گزارش پشتیبانی"));
+        root.Controls.Add(new Label { Text = "این بخش برای عیب‌یابی است. خروجی‌ها Token و secret را نمایش نمی‌دهند.", AutoSize = true, ForeColor = BridgeUi.Muted, Margin = new Padding(8) });
         var actions = ButtonRow();
-        actions.Controls.Add(StyledButton("Refresh Diagnostics", RefreshDiagnosticsAsync, "primary"));
-        actions.Controls.Add(StyledButton("Copy for AI", () => { if (!string.IsNullOrWhiteSpace(_diagnosticsBox.Text)) Clipboard.SetText(_diagnosticsBox.Text); }, "secondary"));
-        actions.Controls.Add(StyledButton("Save JSON", SaveDiagnosticsAsync, "secondary"));
-        actions.Controls.Add(StyledButton("Support Bundle", CreateSupportBundleAsync, "secondary"));
-        actions.Controls.Add(StyledButton("Open Logs", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
+        actions.Controls.Add(StyledButton("تازه‌سازی عیب‌یابی", RefreshDiagnosticsAsync, "primary"));
+        actions.Controls.Add(StyledButton("کپی برای پشتیبانی", () => { if (!string.IsNullOrWhiteSpace(_diagnosticsBox.Text)) Clipboard.SetText(_diagnosticsBox.Text); }, "secondary"));
+        actions.Controls.Add(StyledButton("ذخیره JSON", SaveDiagnosticsAsync, "secondary"));
+        actions.Controls.Add(StyledButton("بسته پشتیبانی", CreateSupportBundleAsync, "secondary"));
+        actions.Controls.Add(StyledButton("گزارش‌ها", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
         root.Controls.Add(actions);
         _diagnosticsStatus.AutoSize = true; _diagnosticsStatus.Margin = new Padding(8); root.Controls.Add(_diagnosticsStatus);
-        _diagnosticsBox.Multiline = true; _diagnosticsBox.ReadOnly = true; _diagnosticsBox.ScrollBars = ScrollBars.Both; _diagnosticsBox.WordWrap = false; _diagnosticsBox.RightToLeft = RightToLeft.No; _diagnosticsBox.Font = new Font("Consolas", 9f); _diagnosticsBox.Width = 900; _diagnosticsBox.Height = 430; _diagnosticsBox.Margin = new Padding(8);
+        _diagnosticsBox.Multiline = true; _diagnosticsBox.ReadOnly = true; _diagnosticsBox.ScrollBars = ScrollBars.Both; _diagnosticsBox.WordWrap = false; _diagnosticsBox.RightToLeft = RightToLeft.No; _diagnosticsBox.Font = new Font("Consolas", 9f); _diagnosticsBox.Width = 720; _diagnosticsBox.Height = 400; _diagnosticsBox.Margin = new Padding(8);
         root.Controls.Add(_diagnosticsBox);
         page.Controls.Add(root); return page;
     }
 
     private TabPage BuildSettingsTab()
     {
-        var page = NewPage("تنظیمات / Settings");
+        var page = NewPage("تنظیمات");
         var root = Stack();
 
         root.Controls.Add(SectionTitle("تنظیمات Agent"));
@@ -149,7 +166,7 @@ internal sealed class MainForm : Form
 
         var artifactPanel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(8) };
         artifactPanel.Controls.Add(new Label { Text = "ArtifactRoot:", AutoSize = true, Margin = new Padding(8) });
-        _artifactInput.Width = 560;
+        _artifactInput.Width = 460;
         artifactPanel.Controls.Add(_artifactInput);
         artifactPanel.Controls.Add(ActionButton("انتخاب پوشه", ChooseArtifactRoot));
         root.Controls.Add(artifactPanel);
@@ -190,8 +207,8 @@ internal sealed class MainForm : Form
 
     private TabPage BuildWorkspaceTab()
     {
-        var page = NewPage("Workspaceها");
-        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16) };
+        var page = NewPage("فضاهای کاری");
+        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16), BackColor = BridgeUi.Surface };
 
         _workspaces.Dock = DockStyle.Fill;
         _workspaces.View = View.Details;
@@ -204,7 +221,7 @@ internal sealed class MainForm : Form
         _workspaces.Columns.Add("وضعیت", 100);
         panel.Controls.Add(_workspaces);
 
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 58, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 8) };
+        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
         top.Controls.Add(ActionButton("افزودن Workspace", AddWorkspaceAsync));
         top.Controls.Add(ActionButton("حذف از Bridge", RemoveWorkspaceAsync));
         top.Controls.Add(ActionButton("تازه‌سازی", async () => await RefreshWorkspacesAsync()));
@@ -227,8 +244,8 @@ internal sealed class MainForm : Form
 
     private TabPage BuildCredentialsTab()
     {
-        var page = NewPage("Credentialها");
-        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16) };
+        var page = NewPage("اعتبارنامه‌ها");
+        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16), BackColor = BridgeUi.Surface };
 
         _credentials.Dock = DockStyle.Fill;
         _credentials.View = View.Details;
@@ -239,7 +256,7 @@ internal sealed class MainForm : Form
         _credentials.Columns.Add("ذخیره‌سازی", 160);
         panel.Controls.Add(_credentials);
 
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 58, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 8) };
+        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
         top.Controls.Add(ActionButton("افزودن", AddCredentialAsync));
         top.Controls.Add(ActionButton("ویرایش", EditCredentialAsync));
         top.Controls.Add(ActionButton("حذف", DeleteCredentialAsync));
@@ -363,13 +380,13 @@ internal sealed class MainForm : Form
 
     private TabPage BuildGettingStartedTab()
     {
-        var page = NewPage("شروع کار / Getting Started");
+        var page = NewPage("راهنمای شروع");
         var root = Stack();
 
         root.Controls.Add(SectionTitle("برای استفاده از SOKNA Bridge این مراحل را انجام بده"));
 
         root.Controls.Add(Step("۱", "Agent باید Healthy باشد", "در تب Status وضعیت Agent باید سبز باشد. اگر نیست، دکمه «شروع Agent» را بزن."));
-        root.Controls.Add(Step("۲", "Extension مرورگر را Load کن", "Chrome یا Edge را باز کن، Developer mode را روشن کن، Load unpacked را بزن و پوشه Extension نصب‌شده را انتخاب کن."));
+        root.Controls.Add(Step("۲", "Extension مرورگر را Load کن", "در Google Chrome به chrome://extensions برو؛ Developer mode را روشن کن، Load unpacked را بزن و پوشه دائمی افزونه نصب‌شده را انتخاب کن."));
         root.Controls.Add(Step("۳", "Workspace تعریف کن", "در تب Workspace پوشه‌ای را که ChatGPT اجازه کار روی آن دارد اضافه کن. برای پروژه نرم‌افزاری می‌توانی preset توسعه را انتخاب کنی."));
         root.Controls.Add(Step("۴", "ChatGPT را باز و همان Chat را Connect کن", "در chatgpt.com روی آیکن SOKNA Bridge بزن و Connect this Chat را انتخاب کن. سبز کامل فقط بعد از End-to-End Verify نمایش داده می‌شود."));
         root.Controls.Add(Step("۵", "در صورت خطا Diagnostics را بگیر", "از Popup بخش Advanced Diagnostics یا تب Diagnostics همین برنامه استفاده کن؛ raw خطا را لازم نیست دستی پیدا کنی."));
@@ -382,10 +399,10 @@ internal sealed class MainForm : Form
         root.Controls.Add(_extensionInfo);
 
         var extButtons = ButtonRow();
-        extButtons.Controls.Add(ActionButton("باز کردن پوشه Extension", () => OpenFolder(extPath)));
-        extButtons.Controls.Add(ActionButton("کپی مسیر Extension", () => Clipboard.SetText(extPath)));
-        extButtons.Controls.Add(ActionButton("Chrome Extensions", () => OpenBrowserExtensions("chrome.exe", "chrome://extensions")));
-        extButtons.Controls.Add(ActionButton("Edge Extensions", () => OpenBrowserExtensions("msedge.exe", "edge://extensions")));
+        extButtons.Controls.Add(ActionButton("باز کردن پوشه افزونه", () => OpenFolder(extPath)));
+        extButtons.Controls.Add(ActionButton("کپی مسیر افزونه", () => Clipboard.SetText(extPath)));
+        extButtons.Controls.Add(ActionButton("افزونه‌های Chrome", () => OpenBrowserExtensions("chrome.exe", "chrome://extensions")));
+        // Edge excluded from supported operator workflow.
         root.Controls.Add(extButtons);
 
         var chatButtons = ButtonRow();
@@ -418,6 +435,7 @@ internal sealed class MainForm : Form
             _artifactInput.Text = artifact;
             _autostart.Checked = IsAutostartEnabled();
 
+            _shellVersion.Text = Application.ProductVersion;
             _version.Text = ReadProductVersion();
             _port.Text = port.ToString();
             _artifact.Text = artifact;
@@ -426,13 +444,17 @@ internal sealed class MainForm : Form
             {
                 var ping = await AgentCallAsync("ping", new { });
                 var ok = ping["ok"]?.GetValue<bool>() == true;
-                _status.Text = ok ? "● Agent فعال و قابل دسترس است" : "● Agent پاسخ سالم نداد";
-                _status.ForeColor = ok ? Color.SeaGreen : Color.Firebrick;
+                _status.Text = ok ? "● Agent در حال اجرا" : "● Agent پاسخ سالم نداد";
+                _statusGuidance.Text = ok
+                    ? "اتصال محلی تأیید شد."
+                    : "BR-AGENT-002 — پاسخ Agent نامعتبر است؛ از بخش عیب‌یابی بررسی کن.";
+                _status.ForeColor = ok ? BridgeUi.Good : BridgeUi.Danger;
             }
             catch (Exception ex)
             {
                 _status.Text = "● Agent در دسترس نیست";
-                _status.ForeColor = Color.Firebrick;
+                _statusGuidance.Text = "BR-AGENT-001 — ابتدا «شروع Agent» را بزن؛ اگر مشکل باقی ماند عیب‌یابی را باز کن.";
+                _status.ForeColor = BridgeUi.Danger;
                 _lastError.Text = ex.Message;
             }
 
@@ -576,6 +598,9 @@ internal sealed class MainForm : Form
     {
         try
         {
+            if (action == "stop" && MessageBox.Show(this,
+                "Agent متوقف شود؟ تا شروع مجدد، درخواست‌های محلی پاسخ داده نمی‌شوند.",
+                "تأیید توقف Agent", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
             if (action == "start") await RunMaintenanceAsync("start", "--expected-version", ReadProductVersion());
             else await RunMaintenanceAsync(action);
             await RefreshAllAsync();
@@ -622,7 +647,7 @@ internal sealed class MainForm : Form
             var data = op?["data"] as JsonObject;
             var partial = data?["partial"]?.GetValue<bool>() == true;
             var count = data?["error_count"]?.GetValue<int>() ?? 0;
-            MessageBox.Show(this, partial ? $"Support Bundle ساخته شد، اما {count} فایل قابل خواندن نبود و در bundle-errors.json ثبت شد.\n{dlg.FileName}" : "Support Bundle کامل ساخته شد:\n" + dlg.FileName, Text, MessageBoxButtons.OK, partial ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+            MessageBox.Show(this, partial ? $"بسته پشتیبانی ساخته شد، اما {count} فایل قابل خواندن نبود و در bundle-errors.json ثبت شد.\n{dlg.FileName}" : "بسته پشتیبانی کامل ساخته شد:\n" + dlg.FileName, Text, MessageBoxButtons.OK, partial ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
         }
         catch (Exception ex) { ShowError(ex); }
     }
@@ -730,35 +755,60 @@ internal sealed class MainForm : Form
         MessageBox.Show(this, summary, "SOKNA Bridge — عملیات ناموفق", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
 
-    private static TabPage NewPage(string title) => new(title) { Padding = new Padding(8) };
+    private static TabPage NewPage(string title) => new(title) { Padding = new Padding(8), BackColor = BridgeUi.Canvas };
 
-    private static FlowLayoutPanel Stack() => new()
+    private static FlowLayoutPanel Stack()
     {
-        Dock = DockStyle.Fill,
-        AutoScroll = true,
-        FlowDirection = FlowDirection.TopDown,
-        WrapContents = false,
-        Padding = new Padding(18)
-    };
+        var flow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill, AutoScroll = true,
+            FlowDirection = FlowDirection.TopDown, WrapContents = false,
+            Padding = new Padding(15, 12, 15, 14),
+            BackColor = BridgeUi.Canvas
+        };
+        var resizing = false;
+        void UpdateWidths()
+        {
+            if (resizing || flow.IsDisposed) return;
+            resizing = true;
+            try
+            {
+                var available = Math.Max(200, flow.ClientSize.Width -
+                    flow.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth - 18);
+                foreach (Control child in flow.Controls)
+                {
+                    if (child is Label { AutoSize: true }) continue;
+                    var width = Math.Max(150, available - child.Margin.Horizontal);
+                    if (child.Width != width) child.Width = width;
+                }
+            }
+            finally { resizing = false; }
+        }
+        flow.SizeChanged += (_, _) => UpdateWidths();
+        flow.ControlAdded += (_, _) => UpdateWidths();
+        return flow;
+    }
 
     private static FlowLayoutPanel ButtonRow() => new()
     {
         AutoSize = true,
         FlowDirection = FlowDirection.RightToLeft,
         WrapContents = true,
-        Margin = new Padding(8)
+        Margin = new Padding(8, 4, 8, 8)
     };
 
     private Button ActionButton(string text, Action action)
     {
-        var b = new Button { Text = text, AutoSize = true, Padding = new Padding(10, 5, 10, 5), Margin = new Padding(5) };
+        var b = new Button { Text = text };
+        BridgeUi.Button(b);
         b.Click += (_, _) => { try { action(); } catch (Exception ex) { ShowError(ex); } };
         return b;
     }
 
     private Button ActionButton(string text, Func<Task> action)
     {
-        var b = new Button { Text = text, AutoSize = true, Padding = new Padding(10, 5, 10, 5), Margin = new Padding(5) };
+        var b = new Button { Text = text };
+        BridgeUi.Button(b);
         b.Click += async (_, _) =>
         {
             b.Enabled = false;
@@ -771,7 +821,7 @@ internal sealed class MainForm : Form
     private static Control InfoRow(string name, Label value)
     {
         var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(8, 4, 8, 4) };
-        row.Controls.Add(new Label { Text = name + ":", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(5) });
+        row.Controls.Add(new Label { Text = name + ":", AutoSize = true, Font = BridgeUi.Font(10f, FontStyle.Bold), Margin = new Padding(5) });
         value.Text = "—";
         value.AutoSize = true;
         value.MaximumSize = new Size(720, 0);
@@ -784,21 +834,48 @@ internal sealed class MainForm : Form
     {
         Text = text,
         AutoSize = true,
-        Font = new Font("Segoe UI", 15f, FontStyle.Bold),
+        Font = BridgeUi.Font(14.5f, FontStyle.Bold),
         Margin = new Padding(8, 22, 8, 10)
     };
 
     private static FlowLayoutPanel Card(string title)
     {
-        var g = new FlowLayoutPanel { AutoSize = true, Width = 900, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(12), Margin = new Padding(8), BorderStyle = BorderStyle.FixedSingle, RightToLeft = RightToLeft.Yes };
-        g.Controls.Add(new Label { Text = title, AutoSize = true, Font = new Font("Tahoma", 12f, FontStyle.Bold), Margin = new Padding(8, 4, 8, 8) });
-        return g;
+        var card = new FlowLayoutPanel
+        {
+            AutoSize = true, Width = 720,
+            FlowDirection = FlowDirection.TopDown, WrapContents = false,
+            Padding = new Padding(12), Margin = new Padding(8),
+            BorderStyle = BorderStyle.FixedSingle,
+            RightToLeft = RightToLeft.Yes, BackColor = BridgeUi.Surface
+        };
+        card.Controls.Add(new Label
+        {
+            Text = title, AutoSize = true, Font = BridgeUi.Font(11f, FontStyle.Bold),
+            ForeColor = BridgeUi.BrandDark, Margin = new Padding(8, 4, 8, 10)
+        });
+        bool adjusting = false;
+        card.SizeChanged += (_, _) =>
+        {
+            if (adjusting || card.IsDisposed) return;
+            adjusting = true;
+            try
+            {
+                var available = Math.Max(160, card.ClientSize.Width - card.Padding.Horizontal - 22);
+                foreach (Control child in card.Controls)
+                {
+                    if (child is Label { AutoSize: true }) continue;
+                    if (child.Width != available) child.Width = available;
+                }
+            }
+            finally { adjusting = false; }
+        };
+        return card;
     }
 
     private static void AddInfo(TableLayoutPanel table, int row, string name, Label value)
     {
         while (table.RowCount <= row) { table.RowStyles.Add(new RowStyle(SizeType.AutoSize)); table.RowCount++; }
-        table.Controls.Add(new Label { Text = name, AutoSize = true, Font = new Font("Tahoma", 9.5f, FontStyle.Bold), Margin = new Padding(6) }, 0, row);
+        table.Controls.Add(new Label { Text = name, AutoSize = true, Font = BridgeUi.Font(9.5f, FontStyle.Bold), Margin = new Padding(6) }, 0, row);
         value.Text = "—"; value.AutoSize = true; value.MaximumSize = new Size(620, 0); value.Margin = new Padding(6);
         table.Controls.Add(value, 1, row);
     }
@@ -807,20 +884,17 @@ internal sealed class MainForm : Form
     private Button StyledButton(string text, Func<Task> action, string style) => Style(ActionButton(text, action), style);
     private static Button Style(Button b, string style)
     {
-        b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderSize = 1;
-        if (style == "primary") { b.BackColor = Color.FromArgb(34, 103, 209); b.ForeColor = Color.White; b.FlatAppearance.BorderColor = b.BackColor; }
-        else if (style == "danger") { b.ForeColor = Color.Firebrick; b.FlatAppearance.BorderColor = Color.FromArgb(220, 150, 145); }
-        else { b.BackColor = Color.White; b.FlatAppearance.BorderColor = Color.FromArgb(205, 210, 218); }
+        BridgeUi.Button(b, style);
         return b;
     }
 
     private static Control Step(string number, string title, string detail)
     {
-        var table = new TableLayoutPanel { Width = 880, AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Margin = new Padding(8), Padding = new Padding(10), BorderStyle = BorderStyle.FixedSingle };
+        var table = new TableLayoutPanel { Width = 720, AutoSize = true, ColumnCount = 2, RightToLeft = RightToLeft.Yes, Margin = new Padding(8), Padding = new Padding(10), BorderStyle = BorderStyle.FixedSingle };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64)); table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var n = new Label { Text = number, AutoSize = false, Width = 42, Height = 42, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Tahoma", 13f, FontStyle.Bold), BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(6) };
+        var n = new Label { Text = number, AutoSize = false, Width = 42, Height = 42, TextAlign = ContentAlignment.MiddleCenter, Font = BridgeUi.Font(13f, FontStyle.Bold), BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(6) };
         var text = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(6) };
-        text.Controls.Add(new Label { Text = title, AutoSize = true, Font = new Font("Tahoma", 10.5f, FontStyle.Bold) });
-        text.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(750, 0), ForeColor = Color.DimGray, Margin = new Padding(0, 6, 0, 0) });
+        text.Controls.Add(new Label { Text = title, AutoSize = true, Font = BridgeUi.Font(10.5f, FontStyle.Bold) });
+        text.Controls.Add(new Label { Text = detail, AutoSize = true, MaximumSize = new Size(625, 0), ForeColor = BridgeUi.Muted, Margin = new Padding(0, 6, 0, 0) });
         table.Controls.Add(n, 0, 0); table.Controls.Add(text, 1, 0); return table;
     }}

@@ -14,14 +14,18 @@ internal sealed class CredentialDialog : Form
     {
         Text = string.IsNullOrWhiteSpace(id) ? "افزودن Credential" : "ویرایش Credential";
         Width = 560;
-        Height = 320;
-        MinimumSize = new Size(500, 300);
+        Height = 370;
+        MinimumSize = new Size(510, 360);
         StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Tahoma", 10f);
-        RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = true;
+        BridgeUi.Prepare(this);
+        MaximizeBox = false;
 
-        var table = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 2, RowCount = 5 };
+        var table = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 2, RowCount = 5, BackColor = BridgeUi.Canvas };
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+        table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
@@ -40,13 +44,14 @@ internal sealed class CredentialDialog : Form
         var note = new Label
         {
             Text = "Secret فقط در Windows DPAPI کاربر فعلی ذخیره می‌شود و به ChatGPT نمایش داده نمی‌شود.",
-            AutoSize = true, MaximumSize = new Size(360, 0), ForeColor = Color.DimGray, Margin = new Padding(8)
+            AutoSize = true, MaximumSize = new Size(360, 0), ForeColor = BridgeUi.Muted, Margin = new Padding(8)
         };
         table.Controls.Add(note, 1, 3);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(8) };
         var save = new Button { Text = "ذخیره", AutoSize = true, DialogResult = DialogResult.OK, Padding = new Padding(12, 6, 12, 6) };
         var cancel = new Button { Text = "انصراف", AutoSize = true, DialogResult = DialogResult.Cancel, Padding = new Padding(12, 6, 12, 6) };
+        BridgeUi.Button(save, "primary"); BridgeUi.Button(cancel);
         buttons.Controls.Add(save); buttons.Controls.Add(cancel); table.Controls.Add(buttons, 1, 4);
         AcceptButton = save; CancelButton = cancel;
 
@@ -65,5 +70,6 @@ internal sealed class CredentialDialog : Form
         };
 
         Controls.Add(table);
+        BridgeUi.Fields(table);
     }
 }

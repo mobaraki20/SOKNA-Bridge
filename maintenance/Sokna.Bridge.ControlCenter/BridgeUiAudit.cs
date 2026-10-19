@@ -1,0 +1,109 @@
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Windows.Forms;
+
+namespace Sokna.Bridge.ControlCenter;
+
+internal static class BridgeUiAudit
+{
+    // Runs real production WinForms entrypoint with mocked-only visual state:
+    // no automatic environment refresh, no dangerous lifecycle or credential actions.
+    internal static int Run(string output)
+    {
+        try
+        {
+            Directory.CreateDirectory(output);
+            var problems = new List<string>();
+            if (BridgeUi.Contrast(BridgeUi.Brand, Color.White) < 4.5 ||
+                BridgeUi.Contrast(BridgeUi.Text, BridgeUi.Surface) < 4.5 ||
+                BridgeUi.Contrast(BridgeUi.Danger, BridgeUi.DangerSoft) < 4.5)
+                problems.Add("palette-contrast-below-4.5");
+            foreach (var size in new[] { new Size(960, 600), new Size(1100, 660), new Size(1280, 720) })
+            {
+                using var form = new MainForm(layoutTestMode: true)
+                {
+                    StartPosition = FormStartPosition.Manual,
+                    Location = new Point(15, 15),
+                    ClientSize = size
+                };
+                form.Show();
+                Application.DoEvents();
+                var tabs = form.Controls.OfType<TabControl>().Single();
+                for (var i = 0; i < tabs.TabPages.Count; i++)
+                {
+                    tabs.SelectedIndex = i;
+                    form.PerformLayout();
+                    Application.DoEvents();
+                    var page = tabs.TabPages[i];
+                    var title = $"{size.Width}x{size.Height}-tab{i + 1}";
+                    // A scrollable page is intentional at 960x600; horizontal
+                    // overflow and action/control clipping are never intentional.
+                    var issues = Check(page).ToArray();
+                    File.WriteAllLines(Path.Combine(output, title + ".txt"),
+                        issues.Length == 0 ? ["PASS"] : issues);
+                    problems.AddRange(issues.Select(issue => title + ":" + issue));
+                    using var bitmap = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb);
+                    form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, size));
+                    bitmap.Save(Path.Combine(output, title + ".png"), ImageFormat.Png);
+                    var step = Math.Max(1, Math.Min(size.Width, size.Height) / 180);
+                    var nonCanvas = 0;
+                    for (var y = 0; y < size.Height; y += step)
+                    for (var x = 0; x < size.Width; x += step)
+                    {
+                        var c = bitmap.GetPixel(x, y);
+                        if (Math.Abs(c.R - BridgeUi.Canvas.R) > 10 ||
+                            Math.Abs(c.G - BridgeUi.Canvas.G) > 10 ||
+                            Math.Abs(c.B - BridgeUi.Canvas.B) > 10)
+                            nonCanvas++;
+                    }
+                    if (nonCanvas < 250) problems.Add(title + ":empty-painted-bitmap");
+                }
+                form.Hide();
+            }
+            File.WriteAllLines(Path.Combine(output, "layout-audit.txt"),
+                problems.Count == 0 ? ["PASS"] : problems);
+            if (problems.Count != 0)
+            {
+                foreach (var problem in problems) Console.Error.WriteLine("BRIDGE_UI_AUDIT: " + problem);
+                return 1;
+            }
+            Console.WriteLine("BRIDGE_CONTROL_CENTER_REAL_PAINTED_UI_18_SCREENSHOTS_PASS");
+            Console.WriteLine("BRIDGE_UI_CONTRAST_BIDI_LAYOUT_STATIC_GATES_PASS");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            try { File.WriteAllText(Path.Combine(output, "layout-audit-error.txt"), ex.ToString()); } catch { }
+            Console.Error.WriteLine(ex);
+            return 1;
+        }
+    }
+
+    private static IEnumerable<string> Check(Control root)
+    {
+        foreach (var control in Descendants(root))
+        {
+            if (!control.Visible) continue;
+            if (control.Width <= 0 || control.Height <= 0) yield return "zero-size:" + control.Name;
+            if (control is Button button && button.ClientSize.Width + 4 < button.PreferredSize.Width)
+                yield return "button-clipped:" + button.Text;
+            if (control is Button shortButton && shortButton.ClientSize.Height + 4 < shortButton.PreferredSize.Height)
+                yield return "button-height-clipped:" + shortButton.Text;
+            if (control is Label label && !label.AutoSize && !label.AutoEllipsis &&
+                label.PreferredSize.Height > label.ClientSize.Height + 5)
+                yield return "label-height-clipped:" + label.Text;
+            if (control is FlowLayoutPanel flow && flow.FlowDirection == FlowDirection.TopDown &&
+                flow.AutoScroll && flow.HorizontalScroll.Visible)
+                yield return "unexpected-horizontal-scroll";
+        }
+    }
+
+    private static IEnumerable<Control> Descendants(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (var nested in Descendants(child)) yield return nested;
+        }
+    }
+}

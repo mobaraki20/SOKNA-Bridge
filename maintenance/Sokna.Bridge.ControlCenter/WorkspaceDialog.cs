@@ -16,16 +16,17 @@ internal sealed class WorkspaceDialog : Form
     {
         Text = "افزودن Workspace";
         Width = 650;
-        Height = 350;
+        Height = 410;
+        MinimumSize = new Size(610, 390);
         StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Segoe UI", 10f);
-        RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = true;
+        BridgeUi.Prepare(this);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
 
-        var table = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 3, RowCount = 5 };
+        var table = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 3, RowCount = 5, BackColor = BridgeUi.Canvas };
+        for (var row = 0; row < 4; row++) table.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
+        table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
@@ -34,6 +35,7 @@ internal sealed class WorkspaceDialog : Form
         _path.Dock = DockStyle.Fill;
         table.Controls.Add(_path, 1, 0);
         var browse = new Button { Text = "انتخاب…" };
+        BridgeUi.Button(browse);
         browse.Click += (_, _) => ChooseFolder();
         table.Controls.Add(browse, 2, 0);
 
@@ -59,11 +61,13 @@ internal sealed class WorkspaceDialog : Form
         var ok = new Button { Text = "افزودن", DialogResult = DialogResult.None, AutoSize = true };
         var cancel = new Button { Text = "انصراف", DialogResult = DialogResult.Cancel, AutoSize = true };
         ok.Click += (_, _) => ValidateAndClose();
+        BridgeUi.Button(ok, "primary"); BridgeUi.Button(cancel);
         buttons.Controls.Add(ok); buttons.Controls.Add(cancel);
         table.Controls.Add(buttons, 0, 4);
         table.SetColumnSpan(buttons, 3);
 
         Controls.Add(table);
+        BridgeUi.Fields(table);
         CancelButton = cancel;
     }
 
