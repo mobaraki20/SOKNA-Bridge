@@ -1,0 +1,18 @@
+{
+  "schema": "sokna-browser-capture-map-entries-v1",
+  "description": "Optional, read-only example for an unrelated test site. Approve its origin; replace URLs with pages you own before testing.",
+  "entries": [
+    {
+      "id": "landing",
+      "title": "Landing page",
+      "url": "https://example.org/",
+      "action": "Capture read-only landing page"
+    },
+    {
+      "id": "about",
+      "title": "About page",
+      "url": "https://example.org/about",
+      "action": "Capture read-only info page; a missing page must not count as QA success"
+    }
+  ]
+}
