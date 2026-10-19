@@ -544,10 +544,11 @@ const extensionOwnedLedgerActions=new Set([
   "instagram.media.download","instagram.media.attach","instagram.research.plan","instagram.candidates.get","instagram.candidates.attach",
   "instagram.selection.confirm","instagram.selection.reject","instagram.export"
 ]);
-async function extensionLedgerMessage(type,command,result=null,error=""){
+async function extensionLedgerMessage(type,command,result=null,error="",completionToken=""){
   const msg={type,request_id:uid(),command};
   if(result!==null)msg.result=result;
   if(error)msg.error=String(error);
+  if(completionToken)msg.completion_token=String(completionToken);
   const r=await nativeMessage(msg);if(!r?.ok)throw new Error(r?.error||"EXTENSION_LEDGER_FAILED");
   return r?.result||{};
 }
@@ -1324,12 +1325,17 @@ async function handleCommandInner(tabId,command,meta={}){
   await setStatus(tabId,{etaMs:null,etaConfidence:"unknown"});
   await appendTrace(tabId,"agent.forward_started",{command_id:command.id,action:command.action});
   await queueStatusEvent(tabId,a.registered.conversationKey,"accepted:"+command.id,command.id,{kind:"command-accepted",status:"accepted",commandId:command.id,correlationId:command.correlationId||command.id,action:command.action,accepted_at:acceptedAt});
-  let result,extensionLedgerCommand=null,extensionLedgerActive=false;
+  let result,extensionLedgerCommand=null,extensionLedgerActive=false,extensionCompletionToken="";
   if(extensionOwnedLedgerActions.has(command.action)){
     extensionLedgerCommand={...command,conversationKey:a.registered.conversationKey};
     try{
       const begun=await extensionLedgerMessage("ledger.external.begin",extensionLedgerCommand);
       if(begun?.duplicate){
+        const priorState=String(begun?.state||"");
+        if(priorState==="accepted"||priorState==="running"){
+          await appendTrace(tabId,"ledger.external_still_pending",{command_id:command.id,state:priorState});
+          return {ok:true,duplicate:true,pending:true,state:priorState,executed:false};
+        }
         result=recoveredLedgerResult(begun);
         seen=await seenAll();seen[commandKey]={...(seen[commandKey]||{}),state:"done",commandId:command.id,completedAt:now(),result,posted:false};await saveSeen(seen);
         await appendTrace(tabId,"result.recovered",{command_id:command.id,action:command.action,state:String(begun?.state||"")});
@@ -1337,6 +1343,8 @@ async function handleCommandInner(tabId,command,meta={}){
         const delivery=await postPending(tabId,commandKey,seen[commandKey]);
         return {ok:true,executed:false,recovered:true,result_ok:result?.ok!==false,delivery};
       }
+      extensionCompletionToken=String(begun?.completion_token||"");
+      if(!/^[a-f0-9]{32}$/i.test(extensionCompletionToken))throw new Error("EXTENSION_LEDGER_COMPLETION_TOKEN_REQUIRED");
       extensionLedgerActive=true;
     }catch(e){
       result={ok:false,error:"COMMAND_LEDGER_BEGIN_FAILED: "+String(e)};
@@ -1373,11 +1381,11 @@ async function handleCommandInner(tabId,command,meta={}){
     await appendTrace(tabId,"agent.accepted",{command_id:command.id,action:command.action,ok:result?.ok!==false});
   }catch(e){
     result={ok:false,error:String(e)};
-    if(extensionLedgerActive){try{await extensionLedgerMessage("ledger.external.fail",extensionLedgerCommand,null,String(e))}catch(le){await appendTrace(tabId,"ledger.external_fail_write_failed",{command_id:command.id,error:String(le)})}}
+    if(extensionLedgerActive){try{await extensionLedgerMessage("ledger.external.fail",extensionLedgerCommand,null,String(e),extensionCompletionToken)}catch(le){await appendTrace(tabId,"ledger.external_fail_write_failed",{command_id:command.id,error:String(le)})}}
     extensionLedgerActive=false;
     await appendTrace(tabId,"agent.forward_failed",{command_id:command.id,action:command.action,error:String(e)})
   }
-  if(extensionLedgerActive){try{await extensionLedgerMessage("ledger.external.complete",extensionLedgerCommand,result)}catch(e){result={ok:false,error:"COMMAND_LEDGER_COMMIT_FAILED: "+String(e)};await appendTrace(tabId,"ledger.external_complete_failed",{command_id:command.id,error:String(e)})}}
+  if(extensionLedgerActive){try{await extensionLedgerMessage("ledger.external.complete",extensionLedgerCommand,result,"",extensionCompletionToken)}catch(e){result={ok:false,error:"COMMAND_LEDGER_COMMIT_FAILED: "+String(e)};await appendTrace(tabId,"ledger.external_complete_failed",{command_id:command.id,error:String(e)})}}
   for(const submitted of JOBCORE.findSubmittedJobs(command.action,result)){try{await registerJobWatch(tabId,command.id,submitted,a.registered.conversationKey)}catch{}}
   seen=await seenAll();seen[commandKey]={...(seen[commandKey]||{}),state:"done",commandId:command.id,completedAt:now(),result,posted:false};await saveSeen(seen);
   await appendTrace(tabId,"result.received",{command_id:command.id,action:command.action,ok:result?.ok!==false});
