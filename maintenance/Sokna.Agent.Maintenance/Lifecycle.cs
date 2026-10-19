@@ -253,14 +253,25 @@ internal sealed class Lifecycle
 
     private async Task<HealthResult> StartAndWaitForHealth(string expectedVersion, CancellationToken ct)
     {
-        await EnsureLauncherStarted(ct);
+        // Health may involve several sequential WAN/LAN probes. Bound the full
+        // startup transaction, not just each individual HttpClient request.
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
         HealthResult health = new(false, "", false, false, false, "not started");
-        for (var i = 0; i < 20; i++)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            await Task.Delay(500, ct);
-            health = await HealthDiagnostics.HealthAsync(_installRoot, expectedVersion, ct);
-            if (health.Ok) return health;
+            await EnsureLauncherStarted(linked.Token);
+            for (var i = 0; i < 20; i++)
+            {
+                linked.Token.ThrowIfCancellationRequested();
+                await Task.Delay(500, linked.Token);
+                health = await HealthDiagnostics.HealthAsync(_installRoot, expectedVersion, linked.Token);
+                if (health.Ok) return health;
+            }
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            throw new InvalidOperationException($"AGENT_START_HEALTH_TIMEOUT: 90s deadline; version={expectedVersion}; last_error={health.Error}");
         }
         throw new InvalidOperationException($"Agent health failed for expected version {expectedVersion}: {health.Error}");
     }
