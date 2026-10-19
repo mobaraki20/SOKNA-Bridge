@@ -312,6 +312,10 @@ internal sealed class MainForm : Form
         _workspaces.Dock = DockStyle.Fill;
         _workspaces.Visible = false; // The empty-state label owns the surface until real rows arrive.
         _workspaces.View = View.Details;
+        _workspaces.RightToLeft = RightToLeft.Yes;
+        _workspaces.RightToLeftLayout = true;
+        _workspaces.GridLines = false;
+        _workspaces.HeaderStyle = ColumnHeaderStyle.Nonclickable;
         _workspaces.FullRowSelect = true;
         _workspaces.MultiSelect = false;
         _workspaces.Columns.Add("نام", 150);
@@ -336,9 +340,18 @@ internal sealed class MainForm : Form
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, RightToLeft = RightToLeft.No, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
         top.Controls.Add(Style(ActionButton("افزودن فضای کاری", AddWorkspaceAsync), "primary"));
-        top.Controls.Add(ActionButton("حذف دسترسی", RemoveWorkspaceAsync));
+        var removeWorkspace = ActionButton("حذف دسترسی", RemoveWorkspaceAsync);
+        var inspectWorkspace = ActionButton("بررسی انتخاب‌شده", InspectWorkspaceAsync);
+        removeWorkspace.Enabled = false;
+        inspectWorkspace.Enabled = false;
+        _workspaces.SelectedIndexChanged += (_, _) =>
+        {
+            removeWorkspace.Enabled = _workspaces.SelectedItems.Count == 1;
+            inspectWorkspace.Enabled = _workspaces.SelectedItems.Count == 1;
+        };
+        top.Controls.Add(inspectWorkspace);
+        top.Controls.Add(removeWorkspace);
         top.Controls.Add(ActionButton("تازه‌سازی", async () => await RefreshWorkspacesAsync()));
-        top.Controls.Add(ActionButton("بررسی انتخاب‌شده", InspectWorkspaceAsync));
         panel.Controls.Add(top);
 
         var note = new Label
@@ -365,6 +378,10 @@ internal sealed class MainForm : Form
         _credentials.Dock = DockStyle.Fill;
         _credentials.Visible = false;
         _credentials.View = View.Details;
+        _credentials.RightToLeft = RightToLeft.Yes;
+        _credentials.RightToLeftLayout = true;
+        _credentials.GridLines = false;
+        _credentials.HeaderStyle = ColumnHeaderStyle.Nonclickable;
         _credentials.FullRowSelect = true;
         _credentials.MultiSelect = false;
         _credentials.Columns.Add("شناسه", 200);
@@ -387,8 +404,17 @@ internal sealed class MainForm : Form
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, RightToLeft = RightToLeft.No, WrapContents = true, Padding = new Padding(0, 4, 0, 8) };
         top.Controls.Add(Style(ActionButton("افزودن", AddCredentialAsync), "primary"));
-        top.Controls.Add(ActionButton("ویرایش", EditCredentialAsync));
-        top.Controls.Add(ActionButton("حذف", DeleteCredentialAsync));
+        var editCredential = ActionButton("ویرایش", EditCredentialAsync);
+        var deleteCredential = ActionButton("حذف", DeleteCredentialAsync);
+        editCredential.Enabled = false;
+        deleteCredential.Enabled = false;
+        _credentials.SelectedIndexChanged += (_, _) =>
+        {
+            editCredential.Enabled = _credentials.SelectedItems.Count == 1;
+            deleteCredential.Enabled = _credentials.SelectedItems.Count == 1;
+        };
+        top.Controls.Add(editCredential);
+        top.Controls.Add(deleteCredential);
         top.Controls.Add(ActionButton("تازه‌سازی", RefreshCredentialsAsync));
         panel.Controls.Add(top);
 
