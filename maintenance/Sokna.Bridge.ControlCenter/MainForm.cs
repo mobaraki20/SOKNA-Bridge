@@ -72,6 +72,7 @@ internal sealed class MainForm : Form
         root.Controls.Add(new Label { Text = "وضعیت Agent، مدیریت دسترسی‌ها و پشتیبانی — SOKNA Bridge", AutoSize = true, Font = BridgeUi.Font(10.6f), ForeColor = BridgeUi.Muted, Margin = new Padding(8, 0, 8, 16) });
 
         var health = Card("وضعیت Agent و اطلاعات نصب");
+        health.Name = "BridgeAgentHealthCard";
         _status.AutoSize = true; _status.Font = BridgeUi.Font(14f, FontStyle.Bold); _status.Text = "در حال بررسی…"; _status.Margin = new Padding(8, 8, 8, 12);
         health.Controls.Add(_status);
         _statusGuidance.Text = "آخرین وضعیت هنوز بررسی نشده است. برای بررسی «تازه‌سازی» را بزن.";

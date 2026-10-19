@@ -57,10 +57,13 @@ internal static class BridgeUiAudit
                     if (i == 0)
                     {
                         var statusCard = Descendants(page).OfType<TableLayoutPanel>()
-                            .FirstOrDefault(table => table.Controls.OfType<Label>()
-                                .Any(label => label.Text == "وضعیت Agent و اطلاعات نصب"));
-                        if (statusCard is null || statusCard.Width < page.ClientSize.Width * 0.72)
-                            problems.Add(title + ":dashboard-card-does-not-fill-available-width");
+                            .FirstOrDefault(table => table.Name == "BridgeAgentHealthCard");
+                        var measuredWidth = statusCard?.Width ?? 0;
+                        File.WriteAllText(Path.Combine(output, title + "-card-metrics.txt"),
+                            $"Page: {page.ClientSize.Width}x{page.ClientSize.Height}; Card: {measuredWidth}; " +
+                            $"ratio={(page.ClientSize.Width == 0 ? 0 : (double)measuredWidth / page.ClientSize.Width):F3}\n");
+                        if (statusCard is null || measuredWidth < page.ClientSize.Width * 0.72)
+                            problems.Add(title + $":dashboard-card-does-not-fill-available-width (card={measuredWidth},page={page.ClientSize.Width})");
                     }
                     if (i is 1 or 2 or 4)
                     {
