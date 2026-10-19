@@ -213,6 +213,7 @@ internal sealed class MainForm : Form
         _saveSettings.AutoSize = true;
         _saveSettings.Padding = new Padding(14, 8, 14, 8);
         _saveSettings.Margin = new Padding(8, 18, 8, 8);
+        BridgeUi.Button(_saveSettings, "primary");
         _saveSettings.Click += async (_, _) => await SaveSettingsAsync();
         root.Controls.Add(_saveSettings);
 
@@ -814,6 +815,7 @@ internal sealed class MainForm : Form
     {
         AutoSize = true,
         FlowDirection = FlowDirection.RightToLeft,
+        RightToLeft = RightToLeft.No,
         WrapContents = true,
         Margin = new Padding(8, 4, 8, 8)
     };
@@ -878,9 +880,10 @@ internal sealed class MainForm : Form
         card.ControlAdded += (_, e) => { e.Control.Dock = DockStyle.Top; };
         card.Controls.Add(new Label
         {
-            Text = title, AutoSize = true,
+            Text = title, AutoSize = false, Height = 32,
             Font = BridgeUi.Font(11f, FontStyle.Bold),
             ForeColor = BridgeUi.BrandDark,
+            RightToLeft = RightToLeft.Yes,
             TextAlign = ContentAlignment.MiddleRight,
             Margin = new Padding(5, 2, 5, 12)
         });

@@ -57,7 +57,7 @@ internal sealed class WorkspaceDialog : Form
         table.Controls.Add(_access, 1, 3);
         table.SetColumnSpan(_access, 2);
 
-        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill };
+        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, RightToLeft = RightToLeft.No, AutoSize = true, Dock = DockStyle.Fill };
         var ok = new Button { Text = "افزودن", DialogResult = DialogResult.None, AutoSize = true };
         var cancel = new Button { Text = "انصراف", DialogResult = DialogResult.Cancel, AutoSize = true };
         ok.Click += (_, _) => ValidateAndClose();

@@ -48,7 +48,7 @@ internal sealed class CredentialDialog : Form
         };
         table.Controls.Add(note, 1, 3);
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(8) };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, RightToLeft = RightToLeft.No, Margin = new Padding(8) };
         var save = new Button { Text = "ذخیره", AutoSize = true, DialogResult = DialogResult.OK, Padding = new Padding(12, 6, 12, 6) };
         var cancel = new Button { Text = "انصراف", AutoSize = true, DialogResult = DialogResult.Cancel, Padding = new Padding(12, 6, 12, 6) };
         BridgeUi.Button(save, "primary"); BridgeUi.Button(cancel);
