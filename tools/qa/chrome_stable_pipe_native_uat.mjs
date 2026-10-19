@@ -64,7 +64,11 @@ function startBrowser(){
     });
   };
   const close=async()=>{
+    // Browser.close acknowledges before Chrome has flushed profile Preferences.
+    // Wait for actual process termination; forcibly killing it immediately
+    // can make an otherwise persistent unpacked extension disappear on restart.
     try{await Promise.race([command('Browser.close'),sleep(3000)])}catch{}
+    for(let i=0;i<40&&p.exitCode===null;i++)await sleep(200);
     if(p.exitCode===null){try{p.kill()}catch{}}
     rejectAll();
   };
@@ -136,6 +140,8 @@ async function main(){
     reply=await extCtx.native({type:'host.ping',request_id:'stable-reconnected-4'});
     assert.equal(reply.error,null);assert.equal(reply.response?.ok,true);
     mark('STABLE_CHROME_NATIVE_RECONNECTED');
+    // Allow Chrome to persist the extension/profile metadata before clean quit.
+    await sleep(2000);
     await b.close();
     await sleep(800);
     b=startBrowser();
