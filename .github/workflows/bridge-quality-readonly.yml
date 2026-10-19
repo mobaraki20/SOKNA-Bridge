@@ -78,6 +78,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Go tests on Windows
         shell: pwsh
         run: |
@@ -87,6 +90,20 @@ jobs:
             try { go test ./...; if($LASTEXITCODE -ne 0) { throw "GO_WINDOWS_TEST_FAILED $m" } }
             finally { Pop-Location }
           }
+      - name: Native Messaging frame round-trip with the actual Windows Host binary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $binary=Join-Path $env:RUNNER_TEMP 'bridge-native-message-protocol.exe'
+          Push-Location 'native/host'
+          try {
+            go build -trimpath -o $binary .
+            if($LASTEXITCODE -ne 0){throw 'HOST_WINDOWS_BINARY_BUILD_FAILED'}
+          } finally { Pop-Location }
+          python ./tools/qa/native_messaging_protocol_smoke.py --host $binary
+          if($LASTEXITCODE -ne 0){throw 'HOST_NATIVE_MESSAGING_PROTOCOL_FAILED'}
+          Write-Host 'BROWSER_EXTENSION_LOAD_NOT_TESTED'
+
       - name: Build Windows .NET projects without installation
         shell: pwsh
         run: |
