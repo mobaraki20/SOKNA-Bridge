@@ -36,8 +36,8 @@ internal sealed class MainForm : Form
     private readonly Button _saveSettings = new();
     private bool _busy;
     private BridgeNavigationShell? _navigation;
-    internal IReadOnlyList<TabPage> AuditPages => _navigation?.Pages ?? [];
-    internal TabPage ActiveAuditPage => _navigation?.CurrentPage ??
+    internal IReadOnlyList<Panel> AuditPages => _navigation?.Pages ?? [];
+    internal Panel ActiveAuditPage => _navigation?.CurrentPage ??
         throw new InvalidOperationException("Navigation shell is not initialized.");
     internal void SelectAuditPage(int index) => _navigation?.SelectPage(index);
 
@@ -69,7 +69,7 @@ internal sealed class MainForm : Form
         if (!layoutTestMode) Shown += async (_, _) => await RefreshAllAsync();
     }
 
-    private TabPage BuildHomeTab()
+    private Panel BuildHomeTab()
     {
         var page = NewPage("وضعیت");
         var root = Stack();
@@ -200,7 +200,7 @@ internal sealed class MainForm : Form
         return page;
     }
 
-    private TabPage BuildDiagnosticsTab()
+    private Panel BuildDiagnosticsTab()
     {
         var page = NewPage("عیب‌یابی");
         var root = Stack();
@@ -232,7 +232,7 @@ internal sealed class MainForm : Form
         page.Controls.Add(root); return page;
     }
 
-    private TabPage BuildSettingsTab()
+    private Panel BuildSettingsTab()
     {
         var page = NewPage("تنظیمات");
         var root = Stack();
@@ -304,7 +304,7 @@ internal sealed class MainForm : Form
         return page;
     }
 
-    private TabPage BuildWorkspaceTab()
+    private Panel BuildWorkspaceTab()
     {
         var page = NewPage("فضاهای کاری");
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(15), BackColor = BridgeUi.Canvas };
@@ -357,7 +357,7 @@ internal sealed class MainForm : Form
         return page;
     }
 
-    private TabPage BuildCredentialsTab()
+    private Panel BuildCredentialsTab()
     {
         var page = NewPage("اعتبارنامه‌ها");
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16), BackColor = BridgeUi.Surface };
@@ -511,7 +511,7 @@ internal sealed class MainForm : Form
         catch (Exception ex) { ShowError(ex); }
     }
 
-    private TabPage BuildGettingStartedTab()
+    private Panel BuildGettingStartedTab()
     {
         var page = NewPage("راهنمای شروع");
         var root = Stack();
@@ -917,7 +917,7 @@ internal sealed class MainForm : Form
             scroll.ScrollControlIntoView(_errorPanel);
     }
 
-    private static TabPage NewPage(string title) => new(title) { Padding = new Padding(6), BackColor = BridgeUi.Canvas };
+    private static Panel NewPage(string title) => new() { Text = title, Padding = new Padding(6), BackColor = BridgeUi.Canvas };
 
     // A single-column TableLayoutPanel fills available horizontal space.
     // The former nested FlowLayoutPanels collapsed cards toward the right
