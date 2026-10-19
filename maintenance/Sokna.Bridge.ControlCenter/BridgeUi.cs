@@ -153,21 +153,21 @@ internal static class BridgeUi
             // on native WinForms labels/buttons without falling back to Segoe UI.
             if (item is Label label)
             {
-                label.UseCompatibleTextRendering = true;
+                label.UseCompatibleTextRendering = false;
                 if (!label.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
                     label.Font = Font(label.Font.SizeInPoints,
                         label.Font.Bold ? FontStyle.Bold : FontStyle.Regular);
             }
             else if (item is Button action)
             {
-                action.UseCompatibleTextRendering = true;
+                action.UseCompatibleTextRendering = false;
                 if (!action.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
                     action.Font = Font(action.Font.SizeInPoints,
                         action.Font.Bold ? FontStyle.Bold : FontStyle.Regular);
             }
             else if (item is CheckBox option)
             {
-                option.UseCompatibleTextRendering = true;
+                option.UseCompatibleTextRendering = false;
                 option.Font = Font(option.Font.SizeInPoints);
             }
             if (item is TextBox text)
