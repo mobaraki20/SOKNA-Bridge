@@ -91,6 +91,8 @@ internal static class BridgeUiAudit
                             problems.Add(title + ":primary-operator-actions-outside-visible-viewport");
                         if (actionCard is null || detailsCard is null)
                             problems.Add(title + ":missing-dashboard-action-or-details-card");
+                        if (actionCard is { Height: > 180 })
+                            problems.Add(title + $":oversized-empty-action-card:{actionCard.Height}px");
                     }
                     var issues = Check(page).ToArray();
                     File.WriteAllLines(Path.Combine(output, title + ".txt"),

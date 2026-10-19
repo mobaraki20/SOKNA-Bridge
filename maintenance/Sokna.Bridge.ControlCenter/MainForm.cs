@@ -100,6 +100,15 @@ internal sealed class MainForm : Form
         }, "secondary"));
         actions.Controls.Add(StyledButton("توقف Agent", async () => await LifecycleAsync("stop"), "danger"));
         primary.Controls.Add(actions);
+        // Keep everyday controls visible without scrolling in a 960x600 window.
+        // Auto-sized WinForms TableLayoutPanel can otherwise take the rest of
+        // the viewport and leave several hundred pixels of empty space.
+        primary.AutoSize = false;
+        primary.Height = 148;
+        primary.RowCount = 2;
+        primary.RowStyles.Clear();
+        primary.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        primary.RowStyles.Add(new RowStyle(SizeType.Absolute, 69));
         root.Controls.Add(primary);
 
         var details = Card("اطلاعات نصب و اتصال");
