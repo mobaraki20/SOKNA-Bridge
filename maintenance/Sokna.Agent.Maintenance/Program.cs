@@ -107,11 +107,26 @@ internal static class Program
         if (!File.Exists(launcher)) throw new FileNotFoundException("Stable launcher missing", launcher);
         using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(launcher) { UseShellExecute = false, CreateNoWindow = true, ArgumentList = { "start", "--install-root", root } })
             ?? throw new InvalidOperationException("Unable to invoke launcher");
-        await p.WaitForExitAsync(); if (p.ExitCode != 0) throw new InvalidOperationException("Launcher start failed: " + p.ExitCode);
+        // A failed runtime must never keep a silent installer blocked indefinitely.
+        // Only the launcher spawned by this call may be stopped on timeout.
+        using var startupDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(75));
+        try
+        {
+            await p.WaitForExitAsync(startupDeadline.Token);
+            if (p.ExitCode != 0) throw new InvalidOperationException("Launcher start failed: " + p.ExitCode);
+        }
+        catch (OperationCanceledException) when (startupDeadline.IsCancellationRequested)
+        {
+            try { if (!p.HasExited) p.Kill(entireProcessTree: false); } catch (InvalidOperationException) { }
+            throw new InvalidOperationException("AGENT_LAUNCHER_START_TIMEOUT: launcher did not exit within 75 seconds.");
+        }
         HealthResult health = new(false, "", false, false, false, "not started");
+        try
+        {
         for (var i = 0; i < 20; i++)
         {
-            await Task.Delay(500); health = await HealthDiagnostics.HealthAsync(root, expectedVersion, CancellationToken.None);
+            await Task.Delay(500, startupDeadline.Token);
+            health = await HealthDiagnostics.HealthAsync(root, expectedVersion, startupDeadline.Token);
             if (health.Ok)
             {
                 var statePath = Path.Combine(root, "state", "runtime-ownership.json");
@@ -125,6 +140,11 @@ internal static class Program
             }
         }
         throw new InvalidOperationException("Agent failed health after start: " + health.Error);
+        }
+        catch (OperationCanceledException) when (startupDeadline.IsCancellationRequested)
+        {
+            throw new InvalidOperationException("AGENT_START_HEALTH_TIMEOUT: runtime did not become healthy within 75 seconds; last error: " + health.Error);
+        }
     }
 
     private static async Task<object> Stop(string root)
