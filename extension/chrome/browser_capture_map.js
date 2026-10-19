@@ -31,7 +31,8 @@ function safeReadOnlyUrl(url){
     if(!["http:","https:"].includes(u.protocol)||u.username||u.password)return false;
     let decoded=u.pathname+u.search;
     for(let i=0;i<4;i++){const next=decodeURIComponent(decoded);if(next===decoded)break;decoded=next}
-    if(/(?:^|[/\\?&=._-])(logout|log-out|signout|sign-out|delete|destroy|reset-session|remove-account)(?:$|[/\\?&=._-])/i.test(decoded))return false;
+    const blocked=new RegExp("(^|/|[?&=._-])(logout|log-out|signout|sign-out|delete|destroy|reset-session|remove-account)(/|$|[?&=._-])","i");
+    if(decoded.includes("\\")||blocked.test(decoded))return false;
     const site=globalThis.__SOKNA_BROWSER_SITE_CAPTURE_CORE_V1__;
     if(typeof site?.isSessionMutatingUrl==="function"&&site.isSessionMutatingUrl(url))return false;
     return true;
