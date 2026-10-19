@@ -40,25 +40,23 @@ jobs:
           $compiler=$candidates|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -First 1
           if(-not $compiler){throw 'UPGRADE_INNO_COMPILER_UNAVAILABLE'}
           "BRIDGE_ISCC=$compiler" >> $env:GITHUB_ENV
-      - name: Compile pinned genuine older released 2.7.0
+      - name: Acquire SHA256-locked published 2.7.0 release installer
         shell: pwsh
-        timeout-minutes: 17
+        timeout-minutes: 10
         run: |
           $ErrorActionPreference='Stop'
-          $sha='2fb7531c2564034a861042514844b689273917f6'
-          $oldRepo=Join-Path $env:RUNNER_TEMP 'bridge-270-frozen-source'
-          & git worktree add --detach $oldRepo $sha
-          if($LASTEXITCODE -ne 0){throw 'LEGACY_GIT_WORKTREE_FAILED'}
-          if((git -C $oldRepo rev-parse HEAD).Trim() -ne $sha){throw 'LEGACY_RELEASE_COMMIT_MISMATCH'}
-          & (Join-Path $oldRepo 'tools/installer/Build-P1Installer.ps1') -RepoRoot $oldRepo -ExpectedSourceCommit $sha -InnoCompiler $env:BRIDGE_ISCC | Out-Host
-          if($LASTEXITCODE -ne 0 -or -not $?){throw 'LEGACY_REAL_INSTALLER_BUILD_FAILED'}
-          $setup=Join-Path $oldRepo 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.0-x64.exe'
-          if(-not(Test-Path -LiteralPath $setup -PathType Leaf)){throw 'LEGACY_SETUP_MISSING'}
-          $legacyCopy=Join-Path $env:RUNNER_TEMP 'SOKNA-Bridge-Setup-2.7.0-frozen.exe'
-          Copy-Item -LiteralPath $setup -Destination $legacyCopy -Force
-          $sha256=(Get-FileHash -LiteralPath $legacyCopy -Algorithm SHA256).Hash.ToLowerInvariant()
-          "BRIDGE_OLD_SETUP=$legacyCopy" >> $env:GITHUB_ENV
-          Write-Host "LEGACY_270_RELEASE_INSTALLER_BUILT_PASS sha256=$sha256 source_commit=$sha"
+          $expectedSha='1239c1fefec6e0dc9fe9c0ffe4321a107fe11e8670efa357b8124074870a3837'
+          $expectedBytes=98456705
+          $uri='https://github.com/mobaraki20/SOKNA-Bridge/releases/download/sokna-agent-2.7.0/SOKNA-Bridge-Setup-2.7.0-x64.exe'
+          $legacy=Join-Path $env:RUNNER_TEMP 'SOKNA-Bridge-Setup-2.7.0-released.exe'
+          Invoke-WebRequest -Uri $uri -OutFile $legacy -TimeoutSec 420 -MaximumRedirection 5
+          $file=Get-Item -LiteralPath $legacy -ErrorAction Stop
+          if($file.Length -ne $expectedBytes){throw 'LEGACY_RELEASE_SIZE_MISMATCH'}
+          $actualSha=(Get-FileHash -LiteralPath $legacy -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($actualSha -ne $expectedSha){throw 'LEGACY_RELEASE_SHA256_MISMATCH'}
+          'BRIDGE_OLD_SETUP='+$legacy >> $env:GITHUB_ENV
+          Write-Host 'OFFICIAL_IMMUTABLE_270_RELEASE_INSTALLER_SHA256_PASS'
+          Write-Host ('OLDER_RELEASE_SOURCE_COMMIT=2fb7531c2564034a861042514844b689273917f6')
       - name: Compile exact-commit current candidate 2.7.1
         shell: pwsh
         timeout-minutes: 18
