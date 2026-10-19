@@ -10,14 +10,14 @@ namespace Sokna.Bridge.ControlCenter;
 // Neither build nor runtime depends on SOKNA Cafe or a font installed on Windows.
 internal static class BridgeUi
 {
-    internal static readonly Color Canvas = Color.FromArgb(247, 246, 243);
+    internal static readonly Color Canvas = Color.FromArgb(248, 249, 247);
     internal static readonly Color Surface = Color.White;
     internal static readonly Color Brand = Color.FromArgb(20, 91, 84);
     internal static readonly Color BrandDark = Color.FromArgb(12, 67, 62);
     internal static readonly Color BrandSoft = Color.FromArgb(234, 245, 242);
     internal static readonly Color Text = Color.FromArgb(33, 42, 41);
     internal static readonly Color Muted = Color.FromArgb(91, 101, 99);
-    internal static readonly Color Border = Color.FromArgb(216, 222, 220);
+    internal static readonly Color Border = Color.FromArgb(226, 231, 228);
     internal static readonly Color Good = Color.FromArgb(35, 116, 77);
     internal static readonly Color Warning = Color.FromArgb(140, 84, 9);
     internal static readonly Color Danger = Color.FromArgb(164, 53, 53);
@@ -87,7 +87,9 @@ internal static class BridgeUi
         form.Font = Font(11f);
         form.AutoScaleMode = AutoScaleMode.Dpi;
         form.RightToLeft = RightToLeft.Yes;
-        form.RightToLeftLayout = true;
+        // Mirroring the top-level HWND relocates close/minimize/maximize to the
+        // LEFT on Windows. Keep standard window chrome; mirror page content only.
+        form.RightToLeftLayout = false;
     }
 
     internal static void Button(Button button, string kind = "secondary")
@@ -147,6 +149,27 @@ internal static class BridgeUi
     {
         foreach (Control item in root.Controls)
         {
+            // GDI+ is required to paint the private embedded family reliably
+            // on native WinForms labels/buttons without falling back to Segoe UI.
+            if (item is Label label)
+            {
+                label.UseCompatibleTextRendering = true;
+                if (!label.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
+                    label.Font = Font(label.Font.SizeInPoints,
+                        label.Font.Bold ? FontStyle.Bold : FontStyle.Regular);
+            }
+            else if (item is Button action)
+            {
+                action.UseCompatibleTextRendering = true;
+                if (!action.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
+                    action.Font = Font(action.Font.SizeInPoints,
+                        action.Font.Bold ? FontStyle.Bold : FontStyle.Regular);
+            }
+            else if (item is CheckBox option)
+            {
+                option.UseCompatibleTextRendering = true;
+                option.Font = Font(option.Font.SizeInPoints);
+            }
             if (item is TextBox text)
             {
                 text.BorderStyle = BorderStyle.FixedSingle;
