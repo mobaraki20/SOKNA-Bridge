@@ -54,7 +54,7 @@ jobs:
           $hash=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
           Write-Host "RECOVERY_BUILD_PASS sha256=$hash commit=$sha"
       - name: Actual isolated install repair rollback and uninstall
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           & ./tools/qa/Test-WindowsRepairRollback.ps1 -SetupPath 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe' -PayloadRoot 'artifacts/windows/installer-payload'
