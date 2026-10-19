@@ -1331,6 +1331,11 @@ async function handleCommandInner(tabId,command,meta={}){
     try{
       const begun=await extensionLedgerMessage("ledger.external.begin",extensionLedgerCommand);
       if(begun?.duplicate){
+        const priorState=String(begun?.state||"");
+        if(priorState==="accepted"||priorState==="running"){
+          await appendTrace(tabId,"ledger.external_still_pending",{command_id:command.id,state:priorState});
+          return {ok:true,duplicate:true,pending:true,state:priorState,executed:false};
+        }
         result=recoveredLedgerResult(begun);
         seen=await seenAll();seen[commandKey]={...(seen[commandKey]||{}),state:"done",commandId:command.id,completedAt:now(),result,posted:false};await saveSeen(seen);
         await appendTrace(tabId,"result.recovered",{command_id:command.id,action:command.action,state:String(begun?.state||"")});
