@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - work/bridge-control-center-ui-20261019
+      - work/bridge-control-center-redesign-20261020
   workflow_dispatch:
 permissions:
   contents: read
