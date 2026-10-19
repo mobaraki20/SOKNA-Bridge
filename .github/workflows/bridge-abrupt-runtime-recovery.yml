@@ -1,0 +1,74 @@
+name: Bridge Abrupt Runtime Crash Recovery (disposable Windows)
+on:
+  pull_request:
+    branches:
+      - release/r14-final
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  abrupt-owned-runtime-recovery:
+    name: Kill actual owned Agent process and recover through Maintenance
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Preflight PowerShell 5.1 crash harness
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $path=Join-Path $PWD 'tools/qa/Test-WindowsAbruptAgentRecovery.ps1'
+          $tokens=$null;$errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+          if($errors.Count -gt 0){throw 'ABRUPT_RECOVERY_POWERSHELL51_PARSE_FAILED'}
+          $s=Get-Content -LiteralPath $path -Raw
+          if($s -match '\$host\b' -or $s -match '(?i)\[string\[\]\]\$args\b'){throw 'ABRUPT_RECOVERY_RESERVED_PS_VARIABLE'}
+          Write-Host 'ABRUPT_RECOVERY_SCRIPT_SOURCE_PASS'
+      - name: Build exact-commit setup
+        shell: pwsh
+        timeout-minutes: 17
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidates=@()
+          $cmd=Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if($cmd){$candidates+=$cmd.Source}
+          $x86=[Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+          if($x86){$candidates+=(Join-Path $x86 'Inno Setup 6/ISCC.exe')}
+          if($env:ProgramFiles){$candidates+=(Join-Path $env:ProgramFiles 'Inno Setup 7/ISCC.exe')}
+          $compiler=$candidates|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -First 1
+          if(-not $compiler){throw 'ABRUPT_RECOVERY_INNO_COMPILER_MISSING'}
+          $sha=(git rev-parse HEAD).Trim()
+          & ./tools/installer/Build-P1Installer.ps1 -ExpectedSourceCommit $sha -InnoCompiler $compiler|Out-Host
+          if($LASTEXITCODE -ne 0 -or -not $?){throw 'ABRUPT_RECOVERY_INSTALLER_BUILD_FAILED'}
+          $setup='artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          if(-not(Test-Path -LiteralPath $setup -PathType Leaf)){throw 'ABRUPT_RECOVERY_SETUP_NOT_FOUND'}
+          Write-Host "ABRUPT_RECOVERY_SETUP_BUILT_PASS source=$sha"
+      - name: Real forced termination and successful restart, health, owned PID and data preservation
+        shell: powershell
+        timeout-minutes: 13
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tools/qa/Test-WindowsAbruptAgentRecovery.ps1 -SetupPath 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          if(-not $?){throw 'ABRUPT_RECOVERY_E2E_FAILED'}
+      - name: Upload scrubbed crash simulation evidence on success only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-abrupt-agent-recovery-evidence
+          path: ${{ runner.temp }}/bridge-abrupt-agent-recovery-evidence.json
+          retention-days: 14
+          if-no-files-found: error
+      - name: Qualification boundary
+        if: success()
+        shell: pwsh
+        run: |
+          Write-Host 'ABRUPT_OWNED_RUNTIME_KILL_RESTART_AUTOMATED_PASS'
+          Write-Host 'NOT_QUALIFIED: physical power outage, Windows 10 client, operator Chrome profile, release'
