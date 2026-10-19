@@ -44,8 +44,19 @@ function Clip([string]$s,[int]$n=18000) {
   return $s.Substring(0,$n)+"`n...[TRUNCATED "+($s.Length-$n)+" chars]"
 }
 function Sha256File([string]$p) {
-  if(-not(Test-Path $p -PathType Leaf)){return $null}
-  return (Get-FileHash -Algorithm SHA256 $p).Hash.ToLowerInvariant()
+  if(-not(Test-Path -LiteralPath $p -PathType Leaf)){return $null}
+  # Powershell module autoload may not expose Get-FileHash in a restarted
+  # noninteractive runtime. Use a deterministic built-in .NET implementation.
+  $sha=[Security.Cryptography.SHA256]::Create()
+  $stream=$null
+  try {
+    $stream=[IO.File]::OpenRead([IO.Path]::GetFullPath($p))
+    $hash=$sha.ComputeHash($stream)
+    return ([BitConverter]::ToString($hash)).Replace("-","").ToLowerInvariant()
+  } finally {
+    if($null-ne$stream){$stream.Dispose()}
+    $sha.Dispose()
+  }
 }
 function Quote-Arg([string]$arg) {
   if($null-eq$arg -or $arg.Length-eq0){return '""'}
