@@ -174,6 +174,7 @@ internal sealed class MainForm : Form
         _diagnosticsBox.Multiline = true; _diagnosticsBox.ReadOnly = true; _diagnosticsBox.ScrollBars = ScrollBars.Both; _diagnosticsBox.WordWrap = false; _diagnosticsBox.RightToLeft = RightToLeft.No; _diagnosticsBox.Font = new Font("Consolas", 9f); _diagnosticsBox.Width = 720; _diagnosticsBox.Height = 335; _diagnosticsBox.Margin = new Padding(8);
         var diagHost = new Panel { Name = "DiagnosticsContent", Dock = DockStyle.Top, Height = 335, BackColor = BridgeUi.Surface, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(8) };
         _diagnosticsBox.Dock = DockStyle.Fill;
+        _diagnosticsBox.Visible = false;
         _diagnosticsBox.Margin = Padding.Empty;
         diagHost.Controls.Add(_diagnosticsBox);
         _diagnosticsEmpty.Dock = DockStyle.Fill;
@@ -266,6 +267,7 @@ internal sealed class MainForm : Form
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16), BackColor = BridgeUi.Surface };
 
         _workspaces.Dock = DockStyle.Fill;
+        _workspaces.Visible = false; // The empty-state label owns the surface until real rows arrive.
         _workspaces.View = View.Details;
         _workspaces.FullRowSelect = true;
         _workspaces.MultiSelect = false;
@@ -299,6 +301,8 @@ internal sealed class MainForm : Form
             Height = 54,
             Text = "حذف دسترسی یک فضای کاری، هیچ فایل یا پوشه‌ای را از رایانه پاک نمی‌کند.",
             AutoEllipsis = true,
+            ForeColor = BridgeUi.Muted,
+            Font = BridgeUi.Font(10.2f),
             Padding = new Padding(8)
         };
         panel.Controls.Add(note);
@@ -313,6 +317,7 @@ internal sealed class MainForm : Form
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16), BackColor = BridgeUi.Surface };
 
         _credentials.Dock = DockStyle.Fill;
+        _credentials.Visible = false;
         _credentials.View = View.Details;
         _credentials.FullRowSelect = true;
         _credentials.MultiSelect = false;
@@ -342,8 +347,10 @@ internal sealed class MainForm : Form
         {
             Dock = DockStyle.Bottom,
             Height = 70,
-            Text = "رمزها با Windows DPAPI برای کاربر فعلی ذخیره می‌شوند. مقدار رمز در گزارش‌ها و خروجی پشتیبانی نمایش داده نمی‌شود.",
+            Text = "رمزها به‌صورت رمزگذاری‌شده برای کاربر فعلی ویندوز نگهداری می‌شوند. مقدار رمز در گزارش‌ها نمایش داده نمی‌شود.",
             AutoEllipsis = true,
+            ForeColor = BridgeUi.Muted,
+            Font = BridgeUi.Font(10.2f),
             Padding = new Padding(8)
         };
         panel.Controls.Add(note);
@@ -407,9 +414,10 @@ internal sealed class MainForm : Form
                     _credentials.Items.Add(row);
                 }
             }
-            _credentialsEmpty.Visible = _credentials.Items.Count == 0;
+            _credentials.Visible = _credentials.Items.Count > 0;
+            _credentialsEmpty.Visible = !_credentials.Visible;
         }
-        catch (Exception ex) { ShowError(ex); }
+        catch (Exception ex) { _credentials.Visible = false; _credentialsEmpty.Visible = true; ShowError(ex); }
     }
 
     private async Task AddCredentialAsync()
@@ -573,13 +581,15 @@ internal sealed class MainForm : Form
                 }
             }
             _workspaceCount.Text = _workspaces.Items.Count.ToString();
-            _workspacesEmpty.Visible = _workspaces.Items.Count == 0;
+            _workspaces.Visible = _workspaces.Items.Count > 0;
+            _workspacesEmpty.Visible = !_workspaces.Visible;
         }
         catch (Exception ex)
         {
             _workspaceCount.Text = "—";
             _workspacesEmpty.Text = "فهرست فضاهای کاری در دسترس نیست. اتصال Agent را بررسی کن.";
             _workspacesEmpty.Visible = true;
+            _workspaces.Visible = false;
             if (!silent) ShowError(ex);
         }
     }
@@ -628,6 +638,7 @@ internal sealed class MainForm : Form
             var r = await AgentCallAsync("workspace.inspect", new { workspace = id });
             _diagnosticsBox.Text = r.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
             _diagnosticsEmpty.Visible = false;
+            _diagnosticsBox.Visible = true;
             _diagnosticsStatus.Text = "جزئیات Workspace «" + id + "» در تب Diagnostics آماده است.";
         }
         catch (Exception ex) { ShowError(ex); }
@@ -641,6 +652,7 @@ internal sealed class MainForm : Form
             await RunMaintenanceAsync("diagnostics", "--output", output);
             _diagnosticsBox.Text = File.Exists(output) ? File.ReadAllText(output, Encoding.UTF8) : "{}";
             _diagnosticsEmpty.Visible = false;
+            _diagnosticsBox.Visible = true;
             _diagnosticsStatus.Text = "Diagnostic در " + DateTime.Now.ToString("HH:mm:ss") + " به‌روز شد.";
         }
         catch (Exception ex)
@@ -666,6 +678,7 @@ internal sealed class MainForm : Form
         try { var ping = await AgentCallAsync("ping", new { }); minimal["agent_ping"] = ping.DeepClone(); } catch (Exception ex) { minimal["agent_error"] = ex.Message; }
         _diagnosticsBox.Text = minimal.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         _diagnosticsEmpty.Visible = false;
+            _diagnosticsBox.Visible = true;
         _diagnosticsStatus.Text = "Minimal Diagnostics آماده است.";
     }
 

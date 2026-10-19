@@ -55,7 +55,7 @@ internal sealed class CredentialDialog : Form
         _secret.TextAlign = HorizontalAlignment.Left;
         root.Controls.Add(Field("رمز محرمانه", _secret), 0, 3);
 
-        var note = BridgeUi.Caption("رمز با Windows DPAPI برای کاربر فعلی رمزگذاری می‌شود و به ChatGPT نمایش داده نمی‌شود. هنگام ویرایش، رمز جدید لازم است.");
+        var note = BridgeUi.Caption("رمز برای کاربر فعلی ویندوز، با روش امن DPAPI ذخیره می‌شود و در گزارش‌ها نمایش داده نمی‌شود. برای ویرایش نیز باید رمز جدید وارد کنی.");
         note.MaximumSize = new Size(520, 0);
         root.Controls.Add(note, 0, 4);
 

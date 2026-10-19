@@ -58,9 +58,17 @@ internal static class BridgeUiAudit
                     {
                         var statusCard = Descendants(page).OfType<TableLayoutPanel>()
                             .FirstOrDefault(table => table.Controls.OfType<Label>()
-                                .Any(label => label.Text == "سلامت Agent"));
+                                .Any(label => label.Text == "وضعیت Agent و اطلاعات نصب"));
                         if (statusCard is null || statusCard.Width < page.ClientSize.Width * 0.72)
                             problems.Add(title + ":dashboard-card-does-not-fill-available-width");
+                    }
+                    if (i is 1 or 2 or 4)
+                    {
+                        var hasVisibleEmptyState = Descendants(page).OfType<Label>()
+                            .Any(label => label.Visible &&
+                                label.Text.Contains("هنوز", StringComparison.Ordinal));
+                        if (!hasVisibleEmptyState)
+                            problems.Add(title + ":empty-state-invisible");
                     }
                     var issues = Check(page).ToArray();
                     File.WriteAllLines(Path.Combine(output, title + ".txt"),
