@@ -86,8 +86,14 @@ internal sealed class MainForm : Form
             LineAlignment = StringAlignment.Center,
             FormatFlags = StringFormatFlags.DirectionRightToLeft
         };
+        // RightToLeftLayout mirrors the underlying Win32 HDC. Without a
+        // counter-transform, native owner-drawn Persian glyphs are reversed.
+        var state = e.Graphics.Save();
+        e.Graphics.TranslateTransform(bounds.Left + bounds.Right, 0);
+        e.Graphics.ScaleTransform(-1f, 1f);
         e.Graphics.DrawString(nav.TabPages[e.Index].Text, font, ink,
             new RectangleF(bounds.X + 4, bounds.Y + 2, bounds.Width - 8, bounds.Height - 6), format);
+        e.Graphics.Restore(state);
         if (selected)
         {
             using var accent = new SolidBrush(BridgeUi.Brand);
