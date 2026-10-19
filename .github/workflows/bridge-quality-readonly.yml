@@ -8,7 +8,7 @@ permissions:
   contents: read
 concurrency:
   group: bridge-candidate-qualification-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   source-tests:
     name: Source contracts and race
