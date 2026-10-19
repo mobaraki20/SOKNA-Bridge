@@ -17,6 +17,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_PROMPT_DISABLED: "1"
       EXPECTED_SHA: 494a6360812788c5cb70b77b174c5d477c07fb2a
+      CI_MERGE_SHA: 2f5a667614bf9a7c0633313bcde37c5714a3d362
+      EXPECTED_BASE_SHA: 7eecf3f1864531803beabab8f336226f36c4b4b7
       ARTIFACT_ID: "12196107108"
       ARTIFACT_DIGEST: sha256:e51f982301818fbf144bdd958bd41f291d831b3249ac9efc6305a15fffdcbcf5
       PREVIEW_TAG: sokna-agent-2.7.1-security-preview-20261019
@@ -32,6 +34,18 @@ jobs:
             '.name=="bridge-win10-chrome-operator-candidate" and .expired==false and .workflow_run.head_sha==$sha and .digest==$digest' \
             /tmp/art.json >/dev/null
           echo "IMMUTABLE_WINDOWS_CANDIDATE_SOURCE_AND_DIGEST_PASS"
+      - name: Validate GitHub PR merge provenance and identical source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/git/commits/$CI_MERGE_SHA" > /tmp/ci-merge.json
+          gh api "repos/$GITHUB_REPOSITORY/git/commits/$EXPECTED_SHA" > /tmp/source-head.json
+          jq -e --arg sha "$CI_MERGE_SHA" --arg first "$EXPECTED_BASE_SHA" --arg second "$EXPECTED_SHA" \
+            '.sha==$sha and .parents[0].sha==$first and .parents[1].sha==$second' \
+            /tmp/ci-merge.json >/dev/null
+          jq -e -n --slurpfile merge /tmp/ci-merge.json --slurpfile head /tmp/source-head.json \
+            '$merge[0].tree.sha == $head[0].tree.sha' >/dev/null
+          echo "GITHUB_SYNTHETIC_PR_MERGE_IDENTICAL_TO_TRUSTED_HEAD_TREE_PASS"
       - name: Download previously tested Windows candidate
         shell: bash
         run: |
@@ -52,7 +66,7 @@ jobs:
           if len(found)!=1 or len(installers)!=1: raise SystemExit("CANDIDATE_FILESET_MISMATCH")
           m=json.loads(found[0].read_text(encoding="utf-8-sig"));exe=installers[0]
           with exe.open("rb") as f: digest=hashlib.file_digest(f,"sha256").hexdigest()
-          if m.get("source_commit")!=os.environ["EXPECTED_SHA"]: raise SystemExit("SOURCE_COMMIT_MISMATCH")
+          if m.get("source_commit")!=os.environ["CI_MERGE_SHA"]: raise SystemExit("SOURCE_COMMIT_MISMATCH")
           if m.get("release_status")!="DRAFT_TEST_ONLY": raise SystemExit("CANDIDATE_STATUS_UNEXPECTED")
           if m.get("chrome_for_testing_windows_server_ci")!="PASS": raise SystemExit("WINDOWS_QA_EVIDENCE_MISSING")
           if digest!=m.get("installer_sha256"): raise SystemExit("INSTALLER_SHA256_MISMATCH")
@@ -63,6 +77,8 @@ jobs:
           provenance={
             "schema":"sokna-bridge-preview-v1",
             "source_commit":os.environ["EXPECTED_SHA"],
+            "actual_ci_build_commit":os.environ["CI_MERGE_SHA"],
+            "source_tree_identical_to_reviewed_head":True,
             "source_artifact_id":int(os.environ["ARTIFACT_ID"]),
             "installer_sha256":digest,
             "agent_version":"2.7.1","chrome_extension_version":"3.14.2",
