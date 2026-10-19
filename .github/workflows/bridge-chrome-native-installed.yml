@@ -69,6 +69,50 @@ jobs:
           path: ${{ runner.temp }}/SOKNA-Bridge-Chrome-Installed-UAT/chrome-native-evidence.json
           if-no-files-found: error
           retention-days: 14
+      - name: Build Win10 manual Chrome candidate after successful Chrome for Testing
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'SOKNA-Bridge-Win10-Operator-Candidate'
+          New-Item -ItemType Directory -Path $out -Force|Out-Null
+          $sha=(git rev-parse HEAD).Trim()
+          $exe=Join-Path $PWD 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          $mf=Join-Path $PWD 'artifacts/windows/installer-payload/manifests/installed-manifest.json'
+          $ev=Join-Path $env:RUNNER_TEMP 'SOKNA-Bridge-Chrome-Installed-UAT/chrome-native-evidence.json'
+          foreach($file in @($exe,$mf,$ev)){
+            if(-not(Test-Path -LiteralPath $file -PathType Leaf)){throw 'WIN10_CANDIDATE_INPUT_MISSING'}
+          }
+          $manifest=Get-Content -LiteralPath $mf -Raw -Encoding UTF8|ConvertFrom-Json
+          $evidence=Get-Content -LiteralPath $ev -Raw -Encoding UTF8|ConvertFrom-Json
+          if([string]$manifest.source_commit -ne $sha -or [string]$manifest.product_version -ne '2.7.1'){throw 'WIN10_CANDIDATE_SOURCE_MISMATCH'}
+          if([string]$evidence.status -ne 'PASS' -or [string]$evidence.kind -ne 'DISPOSABLE_WINDOWS_CHROME_FOR_TESTING_INSTALLED_HOST'){throw 'WIN10_CHROME_CFT_EVIDENCE_NOT_PASS'}
+          $hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Copy-Item -LiteralPath $exe -Destination $out
+          Copy-Item -LiteralPath 'tools/qa/Invoke-Win10ChromeOperatorCheck.ps1' -Destination $out
+          Copy-Item -LiteralPath 'docs/qa/WIN10_CHROME_OPERATOR_UAT_FA.md' -Destination $out
+          $meta=[ordered]@{
+            schema='sokna-bridge-win10-chrome-operator-candidate-v1'
+            release_status='DRAFT_TEST_ONLY'
+            target='Windows 10 x64 + Google Chrome Stable manual UAT'
+            source_commit=$sha
+            installer_sha256=$hash
+            installer_bytes=(Get-Item -LiteralPath $exe).Length
+            windows_10_client_ci='NOT_RUN'
+            chrome_for_testing_windows_server_ci='PASS'
+            manual_chrome_stable='NOT_RUN'
+            release_ready=$false
+          }
+          [IO.File]::WriteAllText((Join-Path $out 'candidate-provenance.json'),($meta|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
+          Write-Host "WIN10_TEST_CANDIDATE_PROVENANCE_PASS sha256=$hash source=$sha"
+      - name: Upload Win10 operator candidate as temporary workflow artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-win10-chrome-operator-candidate
+          path: ${{ runner.temp }}/SOKNA-Bridge-Win10-Operator-Candidate/
+          retention-days: 7
+          if-no-files-found: error
       - name: Evidence limits
         if: success()
         shell: pwsh
