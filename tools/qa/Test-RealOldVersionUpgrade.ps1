@@ -8,7 +8,9 @@ Set-StrictMode -Version Latest
 if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows' -or [string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)){
   throw 'REAL_UPGRADE_QA_DISPOSABLE_WINDOWS_ONLY'
 }
-$runRoot=Join-Path $env:RUNNER_TEMP 'SOKNA-Bridge-RealUpgrade-UAT'
+$runRoot=Join-Path $env:TEMP ('sokna-real-upgrade-'+[guid]::NewGuid().ToString('N'))
+$evidenceRoot=Join-Path $env:RUNNER_TEMP 'SOKNA-Bridge-RealUpgrade-UAT'
+if(-not $env:TEMP){throw 'WINDOWS_USER_TEMP_MISSING'}
 $install=Join-Path $runRoot 'Installed Bridge App'
 $artifacts=Join-Path $runRoot 'External Operator Artifacts'
 $logs=Join-Path $runRoot 'logs'
@@ -17,7 +19,7 @@ $candidate=[IO.Path]::GetFullPath($CandidateSetupPath)
 foreach($exe in @($legacy,$candidate)){if(-not(Test-Path -LiteralPath $exe -PathType Leaf)){throw 'UPGRADE_SETUP_MISSING'}}
 if($legacy -eq $candidate){throw 'UPGRADE_TWO_DISTINCT_SETUP_REQUIRED'}
 if(Test-Path -LiteralPath $install){throw 'UPGRADE_EXISTING_INSTALL_REFUSING_MUTATION'}
-New-Item -ItemType Directory -Force -Path $runRoot,$artifacts,$logs|Out-Null
+New-Item -ItemType Directory -Force -Path $runRoot,$artifacts,$logs,$evidenceRoot|Out-Null
 $installed=$false
 $stage='prepare'
 $markers=New-Object 'System.Collections.Generic.List[string]'
@@ -74,7 +76,7 @@ function RequireVersion([string]$version,[string]$commit=''){
 }
 function Hash([string]$p){return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
 function RunInno([string]$exe,[string]$label,[bool]$setRoot) {
-  $arguments=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/NOICONS',('/DIR="'+$install+'"'),
+  $arguments=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/SP-','/NOICONS','/TASKS=""',('/DIR="'+$install+'"'),
     ('/LOG="'+(Join-Path $logs ($label+'.log'))+'"'))
   if($setRoot){$arguments+=('/ArtifactRoot="'+$artifacts+'"')}
   Launch $exe $arguments $label
@@ -141,7 +143,7 @@ try{
   $required=@('REAL_270_INSTALL_BASELINE','REAL_INNO_270_TO_271_UPGRADE','REAL_UPGRADE_SETTINGS_AND_DATA_PRESERVED',
     'REAL_UPGRADE_OWNED_FILE_HASHES','REAL_UPGRADE_RUNTIME_CHANGED','REAL_UPGRADE_CHROME_HOST_REGISTRATION','REAL_UPGRADE_UNINSTALL_PRESERVED_DATA')
   if(@(Compare-Object -ReferenceObject $required -DifferenceObject @($markers)).Count -gt 0){throw 'UPGRADE_REQUIRED_EVIDENCE_INCOMPLETE'}
-  $report=Join-Path $runRoot 'upgrade-evidence.json'
+  $report=Join-Path $evidenceRoot 'upgrade-evidence.json'
   [ordered]@{
     schema='sokna-bridge-real-installed-upgrade-v1'
     evidence_kind='disposable_windows_actual_270_to_271_inno'
