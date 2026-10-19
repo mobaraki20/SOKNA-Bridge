@@ -917,6 +917,40 @@ internal sealed class MainForm : Form
             scroll.ScrollControlIntoView(_errorPanel);
     }
 
+    // Visual-only fixtures: never called during normal startup and never written
+    // to the user's workspace or credential storage.
+    internal void ApplyVisualAuditFixtures()
+    {
+        _status.Text = "● ایجنت در حال اجرا";
+        _status.ForeColor = BridgeUi.Good;
+        _statusGuidance.Text = "ارتباط محلی برقرار است؛ آخرین بررسی موفق بود.";
+        _version.Text = "۲٫۷٫۱";
+        _shellVersion.Text = "۲٫۷٫۱";
+        _port.Text = "۸۷۶۶";
+        _workspaceCount.Text = "۲";
+        _artifact.Text = @"C:\BridgeData\Artifacts";
+        _workspaces.Items.Clear();
+        var first = new ListViewItem("پروژهٔ نمونه");
+        first.SubItems.Add(@"C:\Projects\Demo"); first.SubItems.Add("خواندن");
+        first.SubItems.Add("مرورگر"); first.SubItems.Add("ثبت‌شده");
+        var second = new ListViewItem("فایل‌های تست");
+        second.SubItems.Add(@"D:\TestData"); second.SubItems.Add("خواندن");
+        second.SubItems.Add("ابزارها"); second.SubItems.Add("ثبت‌شده");
+        _workspaces.Items.AddRange([first, second]);
+        _workspacesEmpty.Visible = false;
+        _workspaces.Visible = true;
+        _credentials.Items.Clear();
+        var credential = new ListViewItem("نمونه-آزمایشی");
+        credential.SubItems.Add("sample-user"); credential.SubItems.Add("رمزگذاری‌شده");
+        _credentials.Items.Add(credential);
+        _credentialsEmpty.Visible = false;
+        _credentials.Visible = true;
+        _diagnosticsStatus.Text = "بررسی آزمایشی تکمیل شد؛ مورد مهمی پیدا نشد.";
+        _diagnosticsEmpty.Visible = false;
+        _diagnosticsBox.Text = "{\\\"status\\\": \\\"ok\\\", \\\"source\\\": \\\"visual fixture\\\"}";
+        _diagnosticsBox.Visible = true;
+    }
+
     private static Panel NewPage(string title) => new() { Text = title, Padding = new Padding(6), BackColor = BridgeUi.Canvas };
 
     // A single-column TableLayoutPanel fills available horizontal space.
