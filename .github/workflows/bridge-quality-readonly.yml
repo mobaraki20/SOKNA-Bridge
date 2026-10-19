@@ -373,7 +373,24 @@ jobs:
           [IO.File]::WriteAllText($runtimeFile,'{"corrupted_by_disposable_runner_test":true}')
           if((Get-FileHash -LiteralPath $runtimeFile -Algorithm SHA256).Hash -eq $knownGoodHash){throw 'REPAIR_FIXTURE_NOT_CORRUPTED'}
           & $maintenance repair --install-root $install --manifest $manifestInput --payload-root $payload | Out-Host
-          if($LASTEXITCODE -ne 0){throw 'MAINTENANCE_REPAIR_FAILED'}
+          if($LASTEXITCODE -ne 0){
+            Write-Host 'MAINTENANCE_REPAIR_FAILURE_DIAGNOSTICS'
+            $runLogs=Join-Path $install 'logs/runtime'
+            if(Test-Path -LiteralPath $runLogs -PathType Container){
+              Get-ChildItem -LiteralPath $runLogs -File | Sort-Object LastWriteTime -Descending | Select-Object -First 6 | ForEach-Object {
+                Write-Host "RUNTIME_LOG_FILE: $($_.Name) bytes=$($_.Length)"
+                Get-Content -LiteralPath $_.FullName -Tail 45 -ErrorAction SilentlyContinue |
+                  Where-Object { $_ -match 'error|fail|exception|launch|port|bind|listen|missing|exit|denied|not found|line ' } |
+                  ForEach-Object { Write-Host "RUNTIME_ERROR_CONTEXT: $($_.Substring(0,[Math]::Min($_.Length,300)))" }
+              }
+            }else{Write-Host 'RUNTIME_LOG_DIRECTORY_MISSING'}
+            Get-ChildItem -LiteralPath (Join-Path $install 'state') -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match 'ownership|launcher' } |
+              ForEach-Object { Write-Host "STATE_FILE_PRESENT: $($_.Name) bytes=$($_.Length)" }
+            $tcp=Get-NetTCPConnection -LocalPort 8766 -State Listen -ErrorAction SilentlyContinue
+            Write-Host "RUNTIME_LISTENERS_ON_PORT_8766: $(@($tcp).Count)"
+            throw 'MAINTENANCE_REPAIR_FAILED'
+          }
           if((Get-FileHash -LiteralPath $runtimeFile -Algorithm SHA256).Hash -ne $knownGoodHash){throw 'MAINTENANCE_REPAIR_NOT_RESTORED'}
           if(-not(Test-Path -LiteralPath $marker -PathType Leaf)){throw 'MAINTENANCE_REPAIR_LOST_EXTERNAL_DATA'}
           Write-Host 'WINDOWS_MAINTENANCE_REPAIR_E2E_PASS'
