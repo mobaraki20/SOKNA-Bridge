@@ -38,6 +38,14 @@ internal static class BridgeUiAudit
                     var title = $"{size.Width}x{size.Height}-tab{i + 1}";
                     // A scrollable page is intentional at 960x600; horizontal
                     // overflow and action/control clipping are never intentional.
+                    if (i == 0)
+                    {
+                        var statusCard = Descendants(page).OfType<TableLayoutPanel>()
+                            .FirstOrDefault(table => table.Controls.OfType<Label>()
+                                .Any(label => label.Text == "سلامت Agent"));
+                        if (statusCard is null || statusCard.Width < page.ClientSize.Width * 0.72)
+                            problems.Add(title + ":dashboard-card-does-not-fill-available-width");
+                    }
                     var issues = Check(page).ToArray();
                     File.WriteAllLines(Path.Combine(output, title + ".txt"),
                         issues.Length == 0 ? ["PASS"] : issues);

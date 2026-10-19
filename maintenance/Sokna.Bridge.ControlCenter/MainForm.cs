@@ -788,36 +788,26 @@ internal sealed class MainForm : Form
 
     private static TabPage NewPage(string title) => new(title) { Padding = new Padding(8), BackColor = BridgeUi.Canvas };
 
-    private static FlowLayoutPanel Stack()
+    // A single-column TableLayoutPanel fills available horizontal space.
+    // The former nested FlowLayoutPanels collapsed cards toward the right
+    // despite geometry tests passing; this also removes hard-coded card widths.
+    private static TableLayoutPanel Stack()
     {
-        var flow = new FlowLayoutPanel
+        var stack = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, AutoScroll = true,
-            FlowDirection = FlowDirection.TopDown, WrapContents = false,
-            Padding = new Padding(15, 12, 15, 14),
-            BackColor = BridgeUi.Canvas
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            ColumnCount = 1,
+            GrowStyle = TableLayoutPanelGrowStyle.AddRows,
+            BackColor = BridgeUi.Canvas,
+            Padding = new Padding(18, 13, 18, 14)
         };
-        var resizing = false;
-        void UpdateWidths()
+        stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        stack.ControlAdded += (_, e) =>
         {
-            if (resizing || flow.IsDisposed) return;
-            resizing = true;
-            try
-            {
-                var available = Math.Max(200, flow.ClientSize.Width -
-                    flow.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth - 18);
-                foreach (Control child in flow.Controls)
-                {
-                    if (child is Label { AutoSize: true }) continue;
-                    var width = Math.Max(150, available - child.Margin.Horizontal);
-                    if (child.Width != width) child.Width = width;
-                }
-            }
-            finally { resizing = false; }
-        }
-        flow.SizeChanged += (_, _) => UpdateWidths();
-        flow.ControlAdded += (_, _) => UpdateWidths();
-        return flow;
+            e.Control.Dock = DockStyle.Top;
+        };
+        return stack;
     }
 
     private static FlowLayoutPanel ButtonRow() => new()
@@ -869,37 +859,31 @@ internal sealed class MainForm : Form
         Margin = new Padding(8, 22, 8, 10)
     };
 
-    private static FlowLayoutPanel Card(string title)
+    private static TableLayoutPanel Card(string title)
     {
-        var card = new FlowLayoutPanel
+        var card = new TableLayoutPanel
         {
-            AutoSize = true, Width = 720,
-            FlowDirection = FlowDirection.TopDown, WrapContents = false,
-            Padding = new Padding(12), Margin = new Padding(8),
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Top,
+            ColumnCount = 1,
+            GrowStyle = TableLayoutPanelGrowStyle.AddRows,
+            Padding = new Padding(14, 12, 14, 14),
+            Margin = new Padding(7, 5, 7, 9),
             BorderStyle = BorderStyle.FixedSingle,
-            RightToLeft = RightToLeft.Yes, BackColor = BridgeUi.Surface
+            RightToLeft = RightToLeft.Yes,
+            BackColor = BridgeUi.Surface
         };
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        card.ControlAdded += (_, e) => { e.Control.Dock = DockStyle.Top; };
         card.Controls.Add(new Label
         {
-            Text = title, AutoSize = true, Font = BridgeUi.Font(11f, FontStyle.Bold),
-            ForeColor = BridgeUi.BrandDark, Margin = new Padding(8, 4, 8, 10)
+            Text = title, AutoSize = true,
+            Font = BridgeUi.Font(11f, FontStyle.Bold),
+            ForeColor = BridgeUi.BrandDark,
+            TextAlign = ContentAlignment.MiddleRight,
+            Margin = new Padding(5, 2, 5, 12)
         });
-        bool adjusting = false;
-        card.SizeChanged += (_, _) =>
-        {
-            if (adjusting || card.IsDisposed) return;
-            adjusting = true;
-            try
-            {
-                var available = Math.Max(160, card.ClientSize.Width - card.Padding.Horizontal - 22);
-                foreach (Control child in card.Controls)
-                {
-                    if (child is Label { AutoSize: true }) continue;
-                    if (child.Width != available) child.Width = available;
-                }
-            }
-            finally { adjusting = false; }
-        };
         return card;
     }
 
