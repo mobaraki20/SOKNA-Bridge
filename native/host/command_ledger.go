@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,11 +14,27 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const commandLedgerSchema = "sokna-command-ledger-v1"
 const systemConversationKey = "bridge:system"
+
+// Serialize in-process ledger decisions; immutable files arbitrate across processes.
+var ledgerMu sync.Mutex
+var ledgerIncarnation = newLedgerIncarnation()
+
+func newLedgerIncarnation() string {
+    b := make([]byte,16)
+    if _,err:=rand.Read(b);err!=nil {panic("secure ledger identity unavailable: "+err.Error())}
+    return hex.EncodeToString(b)
+}
+func externalTokenHash(token string) string {
+    if token=="" {return ""}
+    s:=sha256.Sum256([]byte(token))
+    return hex.EncodeToString(s[:])
+}
 
 type commandLedgerRecord struct {
 	Schema          string          `json:"schema"`
@@ -26,6 +44,8 @@ type commandLedgerRecord struct {
 	ParamsSHA256    string          `json:"params_sha256"`
 	State           string          `json:"state"`
 	Sequence        int64           `json:"sequence"`
+    HostIncarnation string          `json:"host_incarnation,omitempty"`
+    ExternalTokenSHA256 string      `json:"external_token_sha256,omitempty"`
 	AcceptedAt      int64           `json:"accepted_at"`
 	CompletedAt     int64           `json:"completed_at,omitempty"`
 	Result          json.RawMessage `json:"result,omitempty"`
@@ -96,31 +116,28 @@ func phasePath(scope, id, phase string) (string, error) {
 }
 
 func writeImmutableCommandPhase(rec commandLedgerRecord, phase string) error {
-	p, err := phasePath(rec.ConversationKey, rec.ID, phase)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		return err
-	}
-	if _, err := os.Stat(p); err == nil {
-		return os.ErrExist
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	b, err := json.MarshalIndent(rec, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := p + fmt.Sprintf(".tmp-%d", time.Now().UnixNano())
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, p); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+    p, err := phasePath(rec.ConversationKey, rec.ID, phase)
+    if err != nil { return err }
+    if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil { return err }
+    b, err := json.MarshalIndent(rec, "", "  ")
+    if err != nil { return err }
+    // Rename can overwrite an existing record. Hard-link the fully-synced
+    // temp file to atomically claim an immutable phase on local NTFS/ext4.
+    tmp, err := os.CreateTemp(filepath.Dir(p), ".phase-*")
+    if err != nil { return err }
+    name := tmp.Name()
+    defer os.Remove(name)
+    if err := tmp.Chmod(0o600); err != nil { tmp.Close(); return err }
+    _, writeErr := tmp.Write(b)
+    if writeErr == nil { writeErr = tmp.Sync() }
+    closeErr := tmp.Close()
+    if writeErr != nil { return writeErr }
+    if closeErr != nil { return closeErr }
+    if err := os.Link(name, p); err != nil {
+        if _, statErr := os.Stat(p); statErr == nil { return os.ErrExist }
+        return fmt.Errorf("immutable ledger creation requires local hard-link capable storage: %w", err)
+    }
+    return nil
 }
 
 func readCommandPhase(scope, id, phase string) (commandLedgerRecord, error) {
@@ -168,40 +185,45 @@ func shouldLedgerCommand(c CommandEnvelope) bool {
 }
 
 func beginCommandRecord(c CommandEnvelope) (commandLedgerRecord, bool, error) {
-	scope := commandScope(c)
-	existing, err := readCommandRecord(scope, c.ID)
-	if err == nil {
-		if existing.Action != c.Action || existing.ParamsSHA256 != commandParamsHash(c) {
-			return existing, true, errors.New("COMMAND_ID_CONFLICT: existing command id has different action or params")
-		}
-		if existing.State == "accepted" || existing.State == "running" {
-			unknown := existing
-			unknown.State = "outcome_unknown"
-			unknown.CompletedAt = time.Now().UTC().UnixMilli()
-			unknown.Error = "COMMAND_OUTCOME_UNKNOWN: command was previously accepted without a durable terminal result"
-			if werr := writeImmutableCommandPhase(unknown, "terminal"); werr != nil && !errors.Is(werr, os.ErrExist) {
-				return existing, true, werr
-			}
-			latest, rerr := readCommandRecord(scope, c.ID)
-			return latest, true, rerr
-		}
-		return existing, true, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return commandLedgerRecord{}, false, err
-	}
-	now := time.Now().UTC()
-	rec := commandLedgerRecord{
-		Schema: commandLedgerSchema, ConversationKey: scope, ID: c.ID, Action: c.Action, ParamsSHA256: commandParamsHash(c),
-		State: "accepted", Sequence: now.UnixNano(), AcceptedAt: now.UnixMilli(),
-	}
-	if err := writeImmutableCommandPhase(rec, "accepted"); err != nil {
-		return commandLedgerRecord{}, false, err
-	}
-	return rec, false, nil
+    return beginCommandRecordWithToken(c,"")
+}
+func beginCommandRecordWithToken(c CommandEnvelope, token string) (commandLedgerRecord, bool, error) {
+    ledgerMu.Lock()
+    defer ledgerMu.Unlock()
+    scope := commandScope(c)
+    existing, err := readCommandRecord(scope, c.ID)
+    if err == nil {
+        if existing.Action != c.Action || existing.ParamsSHA256 != commandParamsHash(c) {
+            return existing, true, errors.New("COMMAND_ID_CONFLICT: existing command id has different action or params")
+        }
+        // A second Native Host can receive the same command while the first
+        // is still running. Do not convert it to outcome_unknown or execute twice.
+        return existing, true, nil
+    }
+    if !errors.Is(err, os.ErrNotExist) { return commandLedgerRecord{}, false, err }
+    now := time.Now().UTC()
+    rec := commandLedgerRecord{Schema: commandLedgerSchema,
+        ConversationKey: scope, ID: c.ID, Action: c.Action,
+        ParamsSHA256: commandParamsHash(c), State: "accepted",
+        Sequence: now.UnixNano(), AcceptedAt: now.UnixMilli(),
+        HostIncarnation:ledgerIncarnation,ExternalTokenSHA256:externalTokenHash(token)}
+    if err := writeImmutableCommandPhase(rec, "accepted"); err != nil {
+        if errors.Is(err, os.ErrExist) {
+            existing, readErr := readCommandRecord(scope, c.ID)
+            if readErr != nil { return commandLedgerRecord{}, true, readErr }
+            if existing.Action != c.Action || existing.ParamsSHA256 != rec.ParamsSHA256 {
+                return existing, true, errors.New("COMMAND_ID_CONFLICT: competing command used different payload")
+            }
+            return existing, true, nil
+        }
+        return commandLedgerRecord{}, false, err
+    }
+    return rec, false, nil
 }
 
 func markCommandRunning(c CommandEnvelope) error {
+	ledgerMu.Lock()
+	defer ledgerMu.Unlock()
 	scope := commandScope(c)
 	rec, err := readCommandRecord(scope, c.ID)
 	if err != nil {
@@ -219,13 +241,22 @@ func markCommandRunning(c CommandEnvelope) error {
 }
 
 func completeCommandRecord(c CommandEnvelope, result json.RawMessage) error {
+    return completeCommandRecordAuthorized(c,result,"")
+}
+func completeCommandRecordAuthorized(c CommandEnvelope, result json.RawMessage, token string) error {
+    ledgerMu.Lock()
+	defer ledgerMu.Unlock()
+	if !json.Valid(result) { return errors.New("COMMAND_INVALID_RESULT_JSON") }
+	if len(result)>8*1024*1024 { return errors.New("COMMAND_RESULT_TOO_LARGE") }
 	scope := commandScope(c)
 	rec, err := readCommandRecord(scope, c.ID)
 	if err != nil {
 		return err
 	}
+	if err:=ensureLedgerOwnerAndCommand(c,rec,token);err!=nil {return err}
 	if rec.State == "succeeded" {
-		return nil
+		if bytes.Equal(rec.Result,result) { return nil }
+		return errors.New("COMMAND_TERMINAL_RESULT_CONFLICT")
 	}
 	if rec.State == "failed" || rec.State == "outcome_unknown" {
 		return errors.New("COMMAND_ALREADY_TERMINAL")
@@ -238,13 +269,20 @@ func completeCommandRecord(c CommandEnvelope, result json.RawMessage) error {
 }
 
 func failCommandRecord(c CommandEnvelope, cause error) error {
+    return failCommandRecordAuthorized(c,cause,"")
+}
+func failCommandRecordAuthorized(c CommandEnvelope, cause error, token string) error {
+    ledgerMu.Lock()
+	defer ledgerMu.Unlock()
 	scope := commandScope(c)
 	rec, err := readCommandRecord(scope, c.ID)
 	if err != nil {
 		return err
 	}
+	if err:=ensureLedgerOwnerAndCommand(c,rec,token);err!=nil {return err}
 	if rec.State == "failed" {
-		return nil
+		if rec.Error == trimError(cause) { return nil }
+		return errors.New("COMMAND_TERMINAL_RESULT_CONFLICT")
 	}
 	if rec.State == "succeeded" || rec.State == "outcome_unknown" {
 		return errors.New("COMMAND_ALREADY_TERMINAL")
@@ -256,12 +294,33 @@ func failCommandRecord(c CommandEnvelope, cause error) error {
 	return writeImmutableCommandPhase(rec, "terminal")
 }
 
+func ensureLedgerOwnerAndCommand(c CommandEnvelope, rec commandLedgerRecord, token string) error {
+    if rec.Action!=c.Action || rec.ParamsSHA256!=commandParamsHash(c) {
+        return errors.New("COMMAND_ID_CONFLICT: ledger command payload differs")
+    }
+    if rec.ExternalTokenSHA256!="" {
+        h:=externalTokenHash(token)
+        if len(h)!=64 || subtle.ConstantTimeCompare([]byte(h),[]byte(rec.ExternalTokenSHA256))!=1 {
+            return errors.New("COMMAND_EXTERNAL_COMPLETION_TOKEN_INVALID")
+        }
+        return nil
+    }
+    if token!="" {return errors.New("COMMAND_UNEXPECTED_EXTERNAL_TOKEN")}
+    if rec.HostIncarnation!=ledgerIncarnation {
+        return errors.New("COMMAND_OUTCOME_UNKNOWN: a different host incarnation owns this command")
+    }
+    return nil
+}
+
 func replayCommandRecord(rec commandLedgerRecord, requestID string) OutMsg {
 	switch rec.State {
 	case "succeeded":
 		return OutMsg{OK: true, Type: "agent.result", RequestID: requestID, Version: version, Result: rec.Result}
 	case "failed":
 		return OutMsg{OK: false, RequestID: requestID, Version: version, Error: "COMMAND_REPLAY_FAILED: " + rec.Error}
+	case "running", "accepted":
+		if rec.AcceptedAt>0 && time.Now().UTC().UnixMilli()-rec.AcceptedAt>int64((30*time.Minute)/time.Millisecond) { return OutMsg{OK:false,RequestID:requestID,Version:version,Error:"COMMAND_REQUIRES_RECONCILIATION: no terminal evidence; never replay automatically"} }
+		return OutMsg{OK:false,RequestID:requestID,Version:version,Error:"COMMAND_STILL_PENDING: original invocation may still be running; do not retry automatically"}
 	default:
 		errText := rec.Error
 		if errText == "" {
@@ -318,10 +377,14 @@ func listCommandRecords(scope string, since int64, limit int) ([]commandLedgerRe
 }
 
 func externalLedgerPayload(rec commandLedgerRecord, duplicate bool) json.RawMessage {
-	payload := map[string]any{
+    return externalLedgerPayloadWithToken(rec,duplicate,"")
+}
+func externalLedgerPayloadWithToken(rec commandLedgerRecord, duplicate bool, token string) json.RawMessage {
+    payload := map[string]any{
 		"ok": true, "schema": commandLedgerSchema, "duplicate": duplicate,
 		"id": rec.ID, "conversation_key": rec.ConversationKey, "state": rec.State,
 	}
+    if token!="" {payload["completion_token"]=token}
 	if len(rec.Result) > 0 {
 		payload["result"] = rec.Result
 	}
@@ -332,22 +395,34 @@ func externalLedgerPayload(rec commandLedgerRecord, duplicate bool) json.RawMess
 	return b
 }
 
+func markCommandRunningExternal(c CommandEnvelope, token string) error {
+    ledgerMu.Lock();defer ledgerMu.Unlock()
+    rec,err:=readCommandRecord(commandScope(c),c.ID)
+    if err!=nil {return err}
+    if err:=ensureLedgerOwnerAndCommand(c,rec,token);err!=nil{return err}
+    if rec.State!="accepted"&&rec.State!="running" {return errors.New("COMMAND_ALREADY_TERMINAL")}
+    rec.State="running"
+    err=writeImmutableCommandPhase(rec,"running")
+    if errors.Is(err,os.ErrExist) {return nil}
+    return err
+}
 func handleExternalLedgerBegin(m InMsg) OutMsg {
 	c, err := parseCommand(m.Command)
 	if err != nil {
 		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
 	}
-	rec, duplicate, err := beginCommandRecord(c)
+	completionToken:=newLedgerIncarnation()
+    rec, duplicate, err := beginCommandRecordWithToken(c,completionToken)
 	if err != nil {
 		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
 	}
 	if !duplicate {
-		if err := markCommandRunning(c); err != nil {
-			return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:"COMMAND_LEDGER_RUNNING_FAILED: "+err.Error()}
-		}
+		if err := markCommandRunningExternal(c,completionToken); err != nil {
+            return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:"COMMAND_LEDGER_RUNNING_FAILED: "+err.Error()}
+        }
 		rec, _ = readCommandRecord(commandScope(c), c.ID)
 	}
-	return OutMsg{OK:true,Type:"ledger.external",RequestID:m.RequestID,Version:version,Result:externalLedgerPayload(rec,duplicate)}
+	return OutMsg{OK:true,Type:"ledger.external",RequestID:m.RequestID,Version:version,Result:externalLedgerPayloadWithToken(rec,duplicate,func() string {if duplicate {return ""};return completionToken}())}
 }
 
 func handleExternalLedgerComplete(m InMsg) OutMsg {
@@ -355,10 +430,10 @@ func handleExternalLedgerComplete(m InMsg) OutMsg {
 	if err != nil {
 		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
 	}
-	if len(m.Result) == 0 {
-		m.Result = json.RawMessage(`{"ok":true}`)
-	}
-	if err := completeCommandRecord(c,m.Result); err != nil {
+	if len(m.Result)==0 {
+        return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:"COMMAND_EXTERNAL_RESULT_REQUIRED: no automatic success"}
+    }
+    if err := completeCommandRecordAuthorized(c,m.Result,m.CompletionToken); err != nil {
 		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
 	}
 	rec, err := readCommandRecord(commandScope(c),c.ID)
@@ -377,7 +452,7 @@ func handleExternalLedgerFail(m InMsg) OutMsg {
 	if strings.TrimSpace(m.Error)=="" {
 		cause = errors.New("extension action failed")
 	}
-	if err := failCommandRecord(c,cause); err != nil {
+	if err := failCommandRecordAuthorized(c,cause,m.CompletionToken); err != nil {
 		return OutMsg{OK:false,RequestID:m.RequestID,Version:version,Error:err.Error()}
 	}
 	rec, err := readCommandRecord(commandScope(c),c.ID)

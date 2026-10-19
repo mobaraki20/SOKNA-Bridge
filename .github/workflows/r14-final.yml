@@ -1,12 +1,10 @@
 name: R14 Final Release
 
 on:
-  push:
-    branches:
-      - release/r14-final
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: sokna-r14-final-${{ github.ref }}
@@ -14,6 +12,7 @@ concurrency:
 
 jobs:
   qualify-and-release:
+    if: ${{ false }}
     runs-on: windows-2025
     timeout-minutes: 60
     env:
@@ -23,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:

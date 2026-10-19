@@ -43,6 +43,7 @@ internal static class HealthDiagnostics
                 : ownershipError;
             return new HealthResult(pingOk && capsOk && pidOwned && versionOk && wholeProductOk, version, pingOk, capsOk, pidOwned, error, subsystemChecks);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex) { return new HealthResult(false, "", false, false, false, ex.Message, new Dictionary<string, bool>()); }
     }
 

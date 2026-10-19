@@ -80,6 +80,23 @@ begin
   ArtifactRootPage.Values[0] := ExpandConstant('{param:ArtifactRoot|{localappdata}\SOKNA\Bridge\artifacts}');
 end;
 
+// Preserve an existing user-configured data root unless explicitly overridden.
+function HasExistingConfig(): Boolean;
+begin
+  Result := FileExists(AddBackslash(WizardDirValue) + 'config.json');
+end;
+
+function ExplicitArtifactRootParam(): String;
+begin
+  Result := Trim(ExpandConstant('{param:ArtifactRoot|}'));
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = ArtifactRootPage.ID) and HasExistingConfig() and
+            (ExplicitArtifactRootParam() = '');
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   P: String;
@@ -121,7 +138,12 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
-    RunRequired('initialize', '--artifact-root "' + GetArtifactRoot('') + '"');
+    if HasExistingConfig() and (ExplicitArtifactRootParam() = '') then
+      RunRequired('initialize', '')
+    else if ExplicitArtifactRootParam() <> '' then
+      RunRequired('initialize', '--artifact-root "' + ExplicitArtifactRootParam() + '"')
+    else
+      RunRequired('initialize', '--artifact-root "' + GetArtifactRoot('') + '"');
     RunRequired('start', '--expected-version "2.7.1"');
   end;
   if CurStep = ssDone then

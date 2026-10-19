@@ -66,6 +66,7 @@ function Save($c){
 $c=Cfg;$root=[IO.Path]::GetFullPath([string]$c.workspace_root);$owner=[string]$c.default_github_owner
 switch($Action){
 "discover"{
+  if([string]::IsNullOrWhiteSpace($owner)){throw "GITHUB_OWNER_NOT_CONFIGURED"}
   $r=Run gh @("repo","list",$owner,"--limit","200","--json","name,nameWithOwner,visibility,defaultBranchRef")
   if($r.code-ne0){throw "GH_DISCOVER_FAILED: $($r.text)"};$repos=$r.text|ConvertFrom-Json
   $out=@()
@@ -117,7 +118,10 @@ switch($Action){
 "set-write"{
   if(!$Name){throw "NAME_REQUIRED"};$q=Prop $c $Name;if(!$q){throw "WORKSPACE_NOT_REGISTERED: $Name"}
   $r=[string]$q.Value.expected_repo;Allow $c $r;$p=Safe $root ([string]$q.Value.path);$null=Match $p $r
-  $enable=($WriteMode-eq"enable");if($enable -and (NM $r) -eq "mobaraki20/soknacafe"){throw "PROTECTED_WORKSPACE: SoknaCafe remains read-only during Bridge development."}
+  $enable=($WriteMode-eq"enable")
+  # A repository-neutral operator policy; default is read-only unless explicitly allowed.
+  $protected=@($c.protected_repositories|ForEach-Object{NM ([string]$_)})
+  if($enable -and $protected -contains (NM $r)){throw "PROTECTED_REPOSITORY: $r"}
   $q.Value.write_enabled=$enable;$b=Save $c
   J ([pscustomobject]@{ok=$true;action="set-write";name=$Name;repo=$r;write_enabled=$enable;backup=$b;restart_required=$true})
 }

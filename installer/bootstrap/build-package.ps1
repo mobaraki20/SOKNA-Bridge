@@ -1,4 +1,4 @@
-param([string]$OutDir="dist",[string]$AgentVersion="2.5.6")
+param([string]$OutDir="dist",[string]$AgentVersion="2.7.1")
 $ErrorActionPreference="Stop"
 $Repo=(Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $Stage=Join-Path $Repo "$OutDir/SOKNA-Bridge-Setup"
@@ -13,11 +13,13 @@ Copy-Item (Join-Path $PSScriptRoot "UNINSTALL.cmd") $Stage -Force
 $AgentRuntime=Join-Path $Repo ("native/runtime/v"+$AgentVersion)
 Copy-Item (Join-Path $AgentRuntime "agent.ps1") (Join-Path $Payload "agent.ps1") -Force
 Copy-Item (Join-Path $AgentRuntime "AGENT_CAPABILITIES.json") (Join-Path $Payload "AGENT_CAPABILITIES.json") -Force
+$actualAgentVersion=[string]((Get-Content -LiteralPath (Join-Path $Payload 'AGENT_CAPABILITIES.json') -Raw -Encoding UTF8|ConvertFrom-Json).agent)
+if($actualAgentVersion -ne $AgentVersion){throw "BRIDGE_BOOTSTRAP_AGENT_VERSION_MISMATCH: requested=$AgentVersion actual=$actualAgentVersion"}
 Copy-Item (Join-Path $Repo "extension/chrome") (Join-Path $Payload "extension") -Recurse -Force
 $hostOut=Join-Path $Payload "sokna-bridge-native-host.exe"
 Push-Location (Join-Path $Repo "native/host")
 try {
-  & go build -trimpath -o $hostOut main.go
+  & go build -trimpath -o $hostOut .
   if($LASTEXITCODE -ne 0){throw "Native host build failed"}
 } finally { Pop-Location }
 $zip=Join-Path $Repo "$OutDir/SOKNA-Bridge-Setup.zip"

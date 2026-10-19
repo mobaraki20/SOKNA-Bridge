@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -51,12 +53,18 @@ func TestCommandLedgerDoesNotReexecuteInterruptedCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec, dup, err := beginCommandRecord(c)
-	if err != nil || !dup || rec.State != "outcome_unknown" {
-		t.Fatalf("interrupted command not protected: rec=%+v dup=%v err=%v", rec, dup, err)
+	if err != nil || !dup || rec.State != "accepted" {
+		t.Fatalf("in-flight duplicate must remain pending: rec=%+v dup=%v err=%v", rec, dup, err)
 	}
 	onDisk, err := readCommandRecord(commandScope(c), c.ID)
-	if err != nil || onDisk.State != "outcome_unknown" {
-		t.Fatalf("unknown outcome not durable: %+v err=%v", onDisk, err)
+	if err != nil || onDisk.State != "accepted" {
+		t.Fatalf("in-flight duplicate poisoned durable record: %+v err=%v", onDisk, err)
+	}
+	if out := replayCommandRecord(rec, "req-dup"); out.OK || !strings.Contains(out.Error, "COMMAND_STILL_PENDING") {
+		t.Fatalf("pending duplicate misreported: %+v", out)
+	}
+	if err := completeCommandRecord(c, json.RawMessage(`{"ok":true}`)); err != nil {
+		t.Fatalf("the still-running original must be allowed to complete: %v", err)
 	}
 }
 
@@ -105,8 +113,14 @@ func TestExternalLedgerRoundTrip(t *testing.T) {
 	if json.Unmarshal(begin.Result,&bp) != nil || bp["duplicate"] != false || bp["state"] != "running" {
 		t.Fatalf("external begin payload invalid: %s", string(begin.Result))
 	}
-	result := json.RawMessage(`{"ok":true,"diagnostic":"done"}`)
-	done := handleExternalLedgerComplete(InMsg{Type:"ledger.external.complete", RequestID:"r2", Command:raw, Result:result})
+	token, _ := bp["completion_token"].(string)
+    if len(token)!=32 {t.Fatalf("begin did not return a completion capability: %s",string(begin.Result))}
+    result := json.RawMessage(`{"ok":true,"diagnostic":"done"}`)
+    unauth := handleExternalLedgerComplete(InMsg{Type:"ledger.external.complete",RequestID:"bad",Command:raw,Result:result})
+    if unauth.OK {t.Fatal("missing token was accepted")}
+    bad := handleExternalLedgerComplete(InMsg{Type:"ledger.external.complete",RequestID:"wrong",Command:raw,Result:result,CompletionToken:"00000000000000000000000000000000"})
+    if bad.OK {t.Fatal("incorrect completion token accepted")}
+    done := handleExternalLedgerComplete(InMsg{Type:"ledger.external.complete", RequestID:"r2", Command:raw, Result:result,CompletionToken:token})
 	if !done.OK {
 		t.Fatalf("external complete failed: %+v", done)
 	}
@@ -130,4 +144,28 @@ func TestChildCommandsAreNotLedgerAuthorities(t *testing.T) {
 	if shouldLedgerCommand(c) {
 		t.Fatal("child command must not become an authoritative top-level ledger entry")
 	}
+}
+
+func TestCommandLedgerConcurrentDuplicateAndImmutablePhase(t *testing.T) {
+	withLedgerTemp(t)
+	c := CommandEnvelope{ConversationKey:"chatgpt:c:concurrency",ID:"same-command",Action:"file.write",Params:json.RawMessage(`{"path":"x"}`)}
+	var wg sync.WaitGroup
+	type result struct {duplicate bool; err error}
+	out := make(chan result, 32)
+	for i:=0;i<32;i++ {
+		wg.Add(1)
+		go func(){defer wg.Done(); _,dup,err:=beginCommandRecord(c); out<-result{dup,err}}()
+	}
+	wg.Wait();close(out)
+	fresh:=0
+	for r:=range out {
+		if r.err!=nil {t.Fatalf("concurrent claim error: %v",r.err)}
+		if !r.duplicate {fresh++}
+	}
+	if fresh!=1 {t.Fatalf("exactly one invocation must own execution, fresh=%d",fresh)}
+	rec,err:=readCommandRecord(commandScope(c),c.ID)
+	if err!=nil||rec.State!="accepted" {t.Fatalf("ledger was overwritten or poisoned: %+v %v",rec,err)}
+	if err:=completeCommandRecord(c,json.RawMessage(`{"ok":true}`));err!=nil {t.Fatal(err)}
+	if err:=completeCommandRecord(c,json.RawMessage(`{"ok":false}`));err==nil {t.Fatal("conflicting terminal result accepted")}
+	if err:=completeCommandRecord(CommandEnvelope{ConversationKey:c.ConversationKey,ID:c.ID,Action:"file.write",Params:json.RawMessage(`{"path":"else"}`)},json.RawMessage(`{"ok":true}`));err==nil {t.Fatal("mismatched command completion accepted")}
 }

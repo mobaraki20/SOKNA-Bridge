@@ -1,24 +1,21 @@
 name: R14 Source Normalize
 
 on:
-  push:
-    branches:
-      - release/r14-final
-    paths:
-      - tools/release/R14_APPLY_SOURCE_PATCH.trigger
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   normalize:
+    if: ${{ false }}
     runs-on: windows-2025
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

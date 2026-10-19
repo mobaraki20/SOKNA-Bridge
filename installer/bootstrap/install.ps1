@@ -1,5 +1,5 @@
 param(
-  [string]$WorkspaceRoot = 'C:\SOKNA',
+  [string]$WorkspaceRoot = '',
   [switch]$SkipStart,
   [switch]$SkipOpenExtensions
 )
@@ -10,7 +10,19 @@ $AgentDir=Join-Path $env:LOCALAPPDATA 'SOKNA-Bridge-V2'
 $ExtDir=Join-Path $Root 'extension'
 $Payload=Join-Path $PSScriptRoot 'payload'
 $HostName='com.sokna.bridge.v3'
-$ExtId='gnclegfheoegfdnhndkpemnlheilnick'
+# Extension identity is derived from the signed public manifest key.
+function Get-ExtensionIdFromKey([string]$publicKey){
+  if([string]::IsNullOrWhiteSpace($publicKey)){throw 'BRIDGE_EXTENSION_PUBLIC_KEY_MISSING'}
+  try{$keyBytes=[Convert]::FromBase64String($publicKey)}catch{throw 'BRIDGE_EXTENSION_PUBLIC_KEY_INVALID'}
+  $sha=[Security.Cryptography.SHA256]::Create()
+  try{$hash=$sha.ComputeHash($keyBytes)}finally{$sha.Dispose()}
+  $alphabet='abcdefghijklmnop';$id=''
+  for($i=0;$i -lt 16;$i++){
+    $id+=$alphabet[[int]($hash[$i] -shr 4)]
+    $id+=$alphabet[[int]($hash[$i] -band 15)]
+  }
+  return $id
+}
 $Port=8766
 
 function Ensure-Dir([string]$p){if(-not(Test-Path $p)){New-Item -ItemType Directory -Path $p -Force|Out-Null}}
@@ -28,46 +40,71 @@ function Test-Agent([string]$token){
   }catch{return $false}
 }
 
-Ensure-Dir $Root
-Ensure-Dir $AgentDir
-Ensure-Dir $ExtDir
-
+# Preflight payload and existing configuration before changing installed state.
 $agentSrc=Join-Path $Payload 'agent.ps1'
 $capsSrc=Join-Path $Payload 'AGENT_CAPABILITIES.json'
-$caps=Get-Content $capsSrc -Raw -Encoding UTF8|ConvertFrom-Json
+if(-not(Test-Path -LiteralPath $capsSrc -PathType Leaf)){throw 'BRIDGE_CAPABILITIES_PAYLOAD_MISSING'}
+$caps=Get-Content -LiteralPath $capsSrc -Raw -Encoding UTF8|ConvertFrom-Json
 $AgentVersion=[string]$caps.agent
 $hostSrc=Join-Path $Payload 'sokna-bridge-native-host.exe'
 $extSrc=Join-Path $Payload 'extension'
-$ExtensionVersion=[string]((Get-Content (Join-Path $extSrc 'manifest.json') -Raw -Encoding UTF8|ConvertFrom-Json).version)
-if(-not(Test-Path $agentSrc)){throw "Missing payload: $agentSrc"}
-if(-not(Test-Path $capsSrc)){throw "Missing payload: $capsSrc"}
-if(-not(Test-Path $hostSrc)){throw "Missing payload: $hostSrc"}
-if(-not(Test-Path (Join-Path $extSrc 'manifest.json'))){throw "Missing extension payload"}
+$extensionManifestPath=Join-Path $extSrc 'manifest.json'
+if(-not(Test-Path -LiteralPath $extensionManifestPath -PathType Leaf)){throw 'BRIDGE_EXTENSION_PAYLOAD_MISSING'}
+$extensionManifest=Get-Content -LiteralPath $extensionManifestPath -Raw -Encoding UTF8|ConvertFrom-Json
+$ExtensionVersion=[string]$extensionManifest.version
+$ExtId=Get-ExtensionIdFromKey ([string]$extensionManifest.key)
+if(-not(Test-Path -LiteralPath $agentSrc -PathType Leaf)){throw 'BRIDGE_AGENT_PAYLOAD_MISSING'}
+if(-not(Test-Path -LiteralPath $hostSrc -PathType Leaf)){throw 'BRIDGE_NATIVE_HOST_PAYLOAD_MISSING'}
+if([string]::IsNullOrWhiteSpace($AgentVersion)){throw 'BRIDGE_AGENT_VERSION_MISSING'}
+if([string]::IsNullOrWhiteSpace($ExtensionVersion)){throw 'BRIDGE_EXTENSION_VERSION_MISSING'}
+if(-not(Test-Path -LiteralPath $extSrc -PathType Container)){throw 'BRIDGE_EXTENSION_DIR_MISSING'}
 
 $configPath=Join-Path $AgentDir 'config.json'
-$token=$null
-if(Test-Path $configPath){
-  try{$old=Get-Content $configPath -Raw|ConvertFrom-Json;$token=[string]$old.token}catch{}
+$oldCfg=$null
+if(Test-Path -LiteralPath $configPath -PathType Leaf){
+  try {
+    $oldCfg=Get-Content -LiteralPath $configPath -Raw -Encoding UTF8|ConvertFrom-Json -ErrorAction Stop
+    if($null-eq$oldCfg -or $null-eq$oldCfg.workspaces){throw 'Missing workspaces property'}
+    if($null-eq$oldCfg.allowed_github_owners){throw 'Missing allowed_github_owners property'}
+  }catch{throw "BRIDGE_CONFIG_INVALID_REFUSING_OVERWRITE: $($_.Exception.Message)"}
 }
-if([string]::IsNullOrWhiteSpace($token)){$token=New-Token}
-
-$bridgePath=Join-Path $WorkspaceRoot 'SOKNA-Bridge'
-$cafePath=Join-Path $WorkspaceRoot 'SoknaCafe'
-$workspaces=[ordered]@{}
-if(Test-Path $bridgePath -PathType Container){$workspaces['SOKNA-Bridge']=[ordered]@{path=$bridgePath;expected_repo='mobaraki20/SOKNA-Bridge';write_enabled=$true}}
-if(Test-Path $cafePath -PathType Container){$workspaces['SoknaCafe']=[ordered]@{path=$cafePath;expected_repo='mobaraki20/SoknaCafe';write_enabled=$false}}
-$default=''
-if($workspaces.Contains('SOKNA-Bridge')){$default='SOKNA-Bridge'}elseif($workspaces.Contains('SoknaCafe')){$default='SoknaCafe'}
-$config=[ordered]@{
-  port=$Port
-  token=$token
-  workspace_root=$WorkspaceRoot
-  default_workspace=$default
-  default_github_owner='mobaraki20'
-  allowed_github_owners=@('mobaraki20')
-  workspaces=$workspaces
+if($null-ne$oldCfg){
+  $config=$oldCfg
+  if(-not[string]::IsNullOrWhiteSpace($WorkspaceRoot)){$config.workspace_root=$WorkspaceRoot}
+  if([string]::IsNullOrWhiteSpace([string]$config.token)){$config.token=New-Token}
+  $config.port=$Port
+}else{
+  if([string]::IsNullOrWhiteSpace($WorkspaceRoot)){$WorkspaceRoot=Join-Path $env:USERPROFILE 'SOKNA-Bridge-Workspaces'}
+  $config=[ordered]@{
+    port=$Port
+    token=(New-Token)
+    workspace_root=$WorkspaceRoot
+    default_workspace=''
+    default_github_owner=''
+    allowed_github_owners=@()
+    protected_repositories=@()
+    workspaces=[ordered]@{}
+  }
 }
-Write-Utf8NoBom $configPath ($config|ConvertTo-Json -Depth 8)
+# Do not kill an arbitrary PID. Maintenance owns safe upgrades and rollback.
+$pidFile=Join-Path $AgentDir 'agent.pid'
+if(Test-Path -LiteralPath $pidFile -PathType Leaf){throw 'BRIDGE_BOOTSTRAP_AGENT_PID_PRESENT_USE_MAINTENANCE'}
+Ensure-Dir $Root
+Ensure-Dir $AgentDir
+Ensure-Dir $ExtDir
+$token=[string]$config.token
+if([string]::IsNullOrWhiteSpace($token)){throw 'BRIDGE_AGENT_TOKEN_MISSING'}
+if($null-ne$oldCfg){
+  $backup=Join-Path $AgentDir ('config.json.pre-bootstrap-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.bak')
+  Copy-Item -LiteralPath $configPath -Destination $backup -ErrorAction Stop
+}
+$configTmp=Join-Path $AgentDir ('config.json.new-'+[guid]::NewGuid().ToString('N'))
+try {
+  Write-Utf8NoBom $configTmp ($config|ConvertTo-Json -Depth 20)
+  Move-Item -LiteralPath $configTmp -Destination $configPath -Force -ErrorAction Stop
+}finally {
+  if(Test-Path -LiteralPath $configTmp){Remove-Item -LiteralPath $configTmp -Force -ErrorAction SilentlyContinue}
+}
 
 Copy-Item $agentSrc (Join-Path $AgentDir 'agent.ps1') -Force
 Copy-Item $capsSrc (Join-Path $AgentDir 'AGENT_CAPABILITIES.json') -Force
@@ -97,11 +134,6 @@ New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Force|Out-
 Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'SOKNA Bridge Agent' -Value $run
 
 if(-not $SkipStart){
-  $pidFile=Join-Path $AgentDir 'agent.pid'
-  if(Test-Path $pidFile){
-    try{$oldPid=[int](Get-Content $pidFile -Raw);Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue}catch{}
-    Start-Sleep -Milliseconds 400
-  }
   Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $AgentDir 'agent.ps1'))
   $ok=$false
   for($i=0;$i -lt 20;$i++){Start-Sleep -Milliseconds 500;if(Test-Agent $token){$ok=$true;break}}

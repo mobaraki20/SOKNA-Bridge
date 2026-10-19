@@ -1,0 +1,79 @@
+name: Bridge Google Chrome Stable Native E2E (isolated Windows)
+on:
+  pull_request:
+    branches:
+      - release/r14-final
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chrome-stable-installed:
+    name: Branded Chrome Stable CDP pipe, installed extension and Native Host
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse branded Chrome UAT scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tokens=$null;$errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'tools/qa/Invoke-ChromeStableNativeUAT.ps1'),[ref]$tokens,[ref]$errors)
+          if($errors.Count -gt 0){throw 'STABLE_PS51_HARNESS_PARSE_FAILURE'}
+          $scriptText=Get-Content -LiteralPath 'tools/qa/Invoke-ChromeStableNativeUAT.ps1' -Raw
+          if($scriptText -match '(?i)\[string\[\]\]\$args\b' -or $scriptText -match '\$host\b'){throw 'STABLE_RESERVED_PS_VARIABLE'}
+          node --check ./tools/qa/chrome_stable_pipe_native_uat.mjs
+          if($LASTEXITCODE -ne 0){throw 'STABLE_JS_HARNESS_PARSE_FAILURE'}
+          Write-Host 'BRANDED_CHROME_STABLE_SOURCE_SYNTAX_PASS'
+      - name: Build exact checkout Windows Inno candidate
+        shell: pwsh
+        timeout-minutes: 17
+        run: |
+          $ErrorActionPreference='Stop'
+          $possible=@()
+          $iscc=Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if($iscc){$possible+=$iscc.Source}
+          $x86=[Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+          if($x86){$possible+=(Join-Path $x86 'Inno Setup 6/ISCC.exe')}
+          if($env:ProgramFiles){$possible+=(Join-Path $env:ProgramFiles 'Inno Setup 7/ISCC.exe')}
+          $compiler=$possible|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -First 1
+          if(-not$compiler){throw 'STABLE_INNO_COMPILER_NOT_FOUND'}
+          $sha=(git rev-parse HEAD).Trim()
+          & ./tools/installer/Build-P1Installer.ps1 -ExpectedSourceCommit $sha -InnoCompiler $compiler | Out-Host
+          if($LASTEXITCODE -ne 0 -or -not $?){throw 'STABLE_CANDIDATE_BUILD_FAILED'}
+          $setup='artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          if(-not(Test-Path -LiteralPath $setup -PathType Leaf)){throw 'STABLE_INSTALLER_NOT_FOUND'}
+          Write-Host "BRANDED_CHROME_STABLE_EXACT_COMMIT_SETUP_PASS source=$sha sha256=$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant())"
+      - name: Real branded Chrome Stable extension and Native Host round trips
+        shell: powershell
+        timeout-minutes: 16
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tools/qa/Invoke-ChromeStableNativeUAT.ps1 -SetupPath 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          if(-not $?){throw 'STABLE_BRANDED_CHROME_WINDOWS_RUN_FAILED'}
+      - name: Upload non-sensitive real Chrome Stable evidence only on PASS
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-branded-chrome-stable-native-evidence
+          path: ${{ runner.temp }}/SOKNA-Bridge-Chrome-Stable-UAT/chrome-stable-evidence.json
+          retention-days: 14
+          if-no-files-found: error
+      - name: Qualification limits
+        if: success()
+        shell: pwsh
+        run: |
+          Write-Host 'BRANDED_CHROME_STABLE_NATIVE_AUTOMATION_PASS'
+          Write-Host 'NOT_QUALIFIED: Windows 10 desktop, physical operator UI/manual, production data, Windows power loss, release'
