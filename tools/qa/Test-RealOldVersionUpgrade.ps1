@@ -29,7 +29,13 @@ function Launch([string]$exe,[string[]]$args,[string]$purpose){
   $info.FileName=$exe
   $info.UseShellExecute=$false;$info.CreateNoWindow=$true
   $info.Arguments=[string]::Join(' ',$args)
-  $proc=[Diagnostics.Process]::Start($info)
+  if($purpose -in @('old-install','actual-upgrade')){
+    # Historical P1 Windows UAT for 2.7.0 used Start-Process -WindowStyle Hidden.
+    # Preserve exact invocation semantics; the old installer is never rebuilt or patched.
+    $proc=Start-Process -FilePath $exe -ArgumentList $args -PassThru -WindowStyle Hidden
+  }else{
+    $proc=[Diagnostics.Process]::Start($info)
+  }
   if($null-eq$proc){throw ('UPGRADE_PROCESS_START_FAILED_'+$purpose)}
   try{
     if(-not $proc.WaitForExit(180000)){
