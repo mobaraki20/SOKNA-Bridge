@@ -74,6 +74,23 @@ async function extensionContext(b){
   const t=await b.command('Target.createTarget',{url:'chrome-extension://'+expectedId+'/popup.html'});
   const a=await b.command('Target.attachToTarget',{targetId:t.targetId,flatten:true});
   await b.command('Runtime.enable',{},a.sessionId);
+  // Target.createTarget/attach completes before navigation or extension globals are ready.
+  // Do not treat a transient about:blank evaluation as a Chrome/Native Host failure.
+  let ready=false;
+  for(let i=0;i<40;i++){
+    try{
+      const check=await b.command('Runtime.evaluate',{
+        expression:'({href:location.href,id:globalThis.chrome?.runtime?.id||""})',
+        returnByValue:true
+      },a.sessionId);
+      const x=check.result?.value;
+      if(x?.id===expectedId&&String(x.href||'').startsWith('chrome-extension://'+expectedId+'/')){
+        ready=true;break;
+      }
+    }catch{}
+    await sleep(250);
+  }
+  if(!ready)fail('EXTENSION_POPUP_CONTEXT_NOT_READY');
   const evaluate=async expression=>{
     const r=await b.command('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true},a.sessionId);
     if(r.exceptionDetails||r.result?.subtype==='error')fail('EXTENSION_CONTEXT_EVAL_FAILED');
