@@ -77,10 +77,10 @@ async function captureEntry(tabId,e,cfg,folder,index){
     await chrome.tabs.update(tabId,{url:e.url});let t=await waitTab(tabId,cfg.timeout_ms);if(cfg.settle_ms)await sleep(cfg.settle_ms);t=await chrome.tabs.get(tabId);finalUrl=String(t.url||e.url);title=String(t.title||"");
     const expected=new URL(e.url),actual=new URL(finalUrl);
     const cleanPath=u=>u.pathname.replace(/\/+$/,"")||"/";
-    if(expected.origin!==actual.origin||cleanPath(expected)!==cleanPath(actual))status="unexpected-navigation";
+    if(expected.origin!==actual.origin||cleanPath(expected)!==cleanPath(actual)||expected.search!==actual.search)status="unexpected-navigation";
     const info=await pageInfo(tabId);if(info.title)title=info.title;if(info.url)finalUrl=info.url;httpStatus=Number(info.response_status||0);
     const current=new URL(finalUrl);
-    if(expected.origin!==current.origin||cleanPath(expected)!==cleanPath(current))status="unexpected-navigation";
+    if(expected.origin!==current.origin||cleanPath(expected)!==cleanPath(current)||expected.search!==current.search)status="unexpected-navigation";
     if(httpStatus>=400)status="http-error";
     state=await applyState(tabId,e);if(cfg.settle_ms)await sleep(Math.min(500,cfg.settle_ms));
     if(status==="ok"){if(!state.reached)status="state-unreached";else if(state.noData)status="no-data";}
@@ -181,7 +181,10 @@ async function runMap(command,conversationKey,p){
     const tailTab=tabs[0];for(const x of tail)records[x.i]=await captureEntry(tailTab,x.e,cfg,folder,x.i);
   }finally{await Promise.all(tabs.map(t=>chrome.tabs.remove(t).catch(()=>{})))}
   const items=records.filter(Boolean),captured=items.filter(x=>x.artifact_ref?.id).length,failed=items.filter(x=>x.status==="capture-error").length,stateUnreached=items.filter(x=>x.status==="state-unreached").length,noData=items.filter(x=>x.status==="no-data").length;
-  const manifest={schema:SCHEMA,version:1,kind:"capture-map",capture_id:id,map_preset:mapName,map_source:mapSource,map_artifact_ref:mapRef||undefined,command_id:String(command.id||""),conversation_key:String(conversationKey||""),claimed_origin:origin,created_at:Date.now(),started_at:started,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,workers:cfg.workers,full_page:cfg.full_page,items};
+  const assertionPassed=items.filter(x=>x.assertion_status==="PASS").length;
+  const assertionFailed=items.filter(x=>x.assertion_status==="FAIL").length;
+  const assertionNotRun=items.filter(x=>x.assertion_status==="NOT_RUN").length;
+  const manifest={schema:SCHEMA,version:1,kind:"capture-map",capture_id:id,map_preset:mapName,map_source:mapSource,map_artifact_ref:mapRef||undefined,command_id:String(command.id||""),conversation_key:String(conversationKey||""),claimed_origin:origin,created_at:Date.now(),started_at:started,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,assertion_passed:assertionPassed,assertion_failed:assertionFailed,assertion_not_run:assertionNotRun,workers:cfg.workers,full_page:cfg.full_page,items};
   const ing=await ingestExtensionArtifact(`browser-capture-map-${id}.json`,"application/json",utf8B64(JSON.stringify(manifest))),ref=ing?.artifact_ref||null;
   let md=null,sd=null;try{md=await saveText(JSON.stringify(manifest,null,2),"application/json",`${folder}/manifest.json`)}catch{};try{sd=await saveText(csv(manifest),"text/csv;charset=utf-8",`${folder}/summary.csv`)}catch{};
   const abs=(items.find(x=>x.human_file?.absolute_path)?.human_file?.absolute_path||md?.absolute_path||sd?.absolute_path||"").replace(/[\\/][^\\/]+$/,"");
@@ -189,7 +192,7 @@ async function runMap(command,conversationKey,p){
   if(ref?.id)VIEW_CACHE.set(String(ref.id).toLowerCase(),view);
   const passed=items.length===entries.length&&items.every(x=>x.ok&&x.state==="succeeded");
   const qaPass=passed&&items.every(x=>x.assertion_status==="PASS");
-  const result={ok:passed,qa_pass:qaPass,qualification:qaPass?"EXPLICIT_UI_QA_PASS":"CAPTURE_ONLY_OR_FAILED",schema:RESULT_SCHEMA,capture_id:id,map_preset:mapName,map_source:mapSource,map_artifact_ref:mapRef||undefined,resumed:false,origin,workers:cfg.workers,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,collection_ref:ref,job_view:view};
+  const result={ok:passed,qa_pass:qaPass,qualification:qaPass?"EXPLICIT_UI_QA_PASS":"CAPTURE_ONLY_OR_FAILED",schema:RESULT_SCHEMA,capture_id:id,map_preset:mapName,map_source:mapSource,map_artifact_ref:mapRef||undefined,resumed:false,origin,workers:cfg.workers,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,assertion_passed:assertionPassed,assertion_failed:assertionFailed,assertion_not_run:assertionNotRun,collection_ref:ref,job_view:view};
   runs[id]={state:"completed",result,updated_at:Date.now()};await chrome.storage.local.set({[STORE]:runs});return result;
 }
 const base=browserSemanticAction;
