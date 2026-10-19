@@ -113,16 +113,40 @@ internal sealed class MainForm : Form
         maintenance.Controls.Add(tools);
         root.Controls.Add(maintenance);
 
-        _errorPanel.AutoSize = true; _errorPanel.Width = 900; _errorPanel.Padding = new Padding(12); _errorPanel.Margin = new Padding(8); _errorPanel.BorderStyle = BorderStyle.FixedSingle; _errorPanel.Visible = false;
-        var errorTitle = new Label { Text = "آخرین عملیات ناموفق بود", AutoSize = true, Font = new Font(Font.FontFamily, 12f, FontStyle.Bold), ForeColor = BridgeUi.Danger, Top = 10, Left = 690 };
-        _lastError.AutoSize = false; _lastError.Width = 840; _lastError.Height = 46; _lastError.Top = 40; _lastError.Left = 20; _lastError.TextAlign = ContentAlignment.TopRight;
-        _errorDetails.Multiline = true; _errorDetails.ReadOnly = true; _errorDetails.ScrollBars = ScrollBars.Vertical; _errorDetails.Width = 840; _errorDetails.Height = 110; _errorDetails.Top = 92; _errorDetails.Left = 20; _errorDetails.RightToLeft = RightToLeft.No; _errorDetails.Font = new Font("Consolas", 9f);
-        var errButtons = new FlowLayoutPanel { Width = 840, Height = 48, Top = 208, Left = 20, FlowDirection = FlowDirection.RightToLeft };
+        _errorPanel.AutoSize = false;
+        _errorPanel.Height = 285;
+        _errorPanel.Padding = new Padding(10);
+        _errorPanel.Margin = new Padding(8);
+        _errorPanel.BackColor = BridgeUi.DangerSoft;
+        _errorPanel.BorderStyle = BorderStyle.FixedSingle;
+        _errorPanel.Visible = false;
+        var errorTable = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1,
+            RowCount = 4, BackColor = BridgeUi.DangerSoft };
+        errorTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        errorTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
+        errorTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        errorTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+        var errorTitle = new Label { Text = "آخرین عملیات کامل نشد",
+            Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight,
+            Font = BridgeUi.Font(11f, FontStyle.Bold), ForeColor = BridgeUi.Danger };
+        _lastError.AutoSize = false;
+        _lastError.Dock = DockStyle.Fill;
+        _lastError.TextAlign = ContentAlignment.MiddleRight;
+        _lastError.ForeColor = BridgeUi.Danger;
+        _errorDetails.Multiline = true; _errorDetails.ReadOnly = true;
+        _errorDetails.Dock = DockStyle.Fill; _errorDetails.ScrollBars = ScrollBars.Vertical;
+        _errorDetails.RightToLeft = RightToLeft.No;
+        _errorDetails.Font = new Font("Consolas", 9f);
+        var errButtons = ButtonRow();
         errButtons.Controls.Add(StyledButton("کپی جزئیات", () => Clipboard.SetText(_errorDetails.Text), "secondary"));
-        errButtons.Controls.Add(StyledButton("باز کردن Logها", () => OpenFolder(Path.Combine(_installRoot, "logs", "maintenance")), "secondary"));
-        errButtons.Controls.Add(StyledButton("Minimal Diagnostics", async () => await CreateMinimalDiagnosticsAsync(), "secondary"));
-        errButtons.Controls.Add(StyledButton("تلاش مجدد", RetryLastMaintenanceAsync, "primary"));
-        _errorPanel.Height = 272; _errorPanel.Controls.Add(errorTitle); _errorPanel.Controls.Add(_lastError); _errorPanel.Controls.Add(_errorDetails); _errorPanel.Controls.Add(errButtons);
+        errButtons.Controls.Add(StyledButton("باز کردن گزارش‌ها", () => OpenFolder(Path.Combine(_installRoot, "logs", "maintenance")), "secondary"));
+        errButtons.Controls.Add(StyledButton("عیب‌یابی مختصر", async () => await CreateMinimalDiagnosticsAsync(), "secondary"));
+        errButtons.Controls.Add(StyledButton("تلاش دوباره", RetryLastMaintenanceAsync, "primary"));
+        errorTable.Controls.Add(errorTitle, 0, 0);
+        errorTable.Controls.Add(_lastError, 0, 1);
+        errorTable.Controls.Add(_errorDetails, 0, 2);
+        errorTable.Controls.Add(errButtons, 0, 3);
+        _errorPanel.Controls.Add(errorTable);
         root.Controls.Add(_errorPanel);
 
         page.Controls.Add(root);
@@ -142,7 +166,7 @@ internal sealed class MainForm : Form
         actions.Controls.Add(StyledButton("بسته پشتیبانی", CreateSupportBundleAsync, "secondary"));
         actions.Controls.Add(StyledButton("گزارش‌ها", () => OpenFolder(Path.Combine(_installRoot, "logs")), "secondary"));
         root.Controls.Add(actions);
-        _diagnosticsStatus.AutoSize = true; _diagnosticsStatus.Margin = new Padding(8); root.Controls.Add(_diagnosticsStatus);
+        _diagnosticsStatus.AutoSize = true; _diagnosticsStatus.Text = "برای شروع، «تازه‌سازی عیب‌یابی» را بزن."; _diagnosticsStatus.ForeColor = BridgeUi.Muted; _diagnosticsStatus.Margin = new Padding(8); root.Controls.Add(_diagnosticsStatus);
         _diagnosticsBox.Multiline = true; _diagnosticsBox.ReadOnly = true; _diagnosticsBox.ScrollBars = ScrollBars.Both; _diagnosticsBox.WordWrap = false; _diagnosticsBox.RightToLeft = RightToLeft.No; _diagnosticsBox.Font = new Font("Consolas", 9f); _diagnosticsBox.Width = 720; _diagnosticsBox.Height = 400; _diagnosticsBox.Margin = new Padding(8);
         root.Controls.Add(_diagnosticsBox);
         page.Controls.Add(root); return page;
@@ -419,6 +443,13 @@ internal sealed class MainForm : Form
 
         page.Controls.Add(root);
         return page;
+    }
+
+    internal void ShowLayoutError()
+    {
+        _lastError.Text = "BR-AGENT-001 — Agent پاسخ نمی‌دهد؛ راهنمای عیب‌یابی را بررسی کن.";
+        _errorDetails.Text = "BR-AGENT-001: synthetic connection-unavailable UI test fixture";
+        _errorPanel.Visible = true;
     }
 
     private async Task RefreshAllAsync()

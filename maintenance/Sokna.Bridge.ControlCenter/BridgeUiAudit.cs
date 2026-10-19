@@ -58,7 +58,35 @@ internal static class BridgeUiAudit
                     }
                     if (nonCanvas < 250) problems.Add(title + ":empty-painted-bitmap");
                 }
+                form.ShowLayoutError();
+                tabs.SelectedIndex = 0;
+                form.PerformLayout();
+                Application.DoEvents();
+                problems.AddRange(Check(tabs.TabPages[0]).Select(issue =>
+                    $"{size.Width}x{size.Height}-error:" + issue));
+                using (var errorImage = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb))
+                {
+                    form.DrawToBitmap(errorImage, new Rectangle(Point.Empty, size));
+                    errorImage.Save(Path.Combine(output, $"{size.Width}x{size.Height}-error.png"), ImageFormat.Png);
+                }
                 form.Hide();
+            }
+            foreach (var fixture in new (string name, Func<Form> factory)[]
+            {
+                ("workspace-dialog", () => new WorkspaceDialog()),
+                ("credential-dialog", () => new CredentialDialog())
+            })
+            {
+                using var dialog = fixture.factory();
+                dialog.StartPosition = FormStartPosition.Manual;
+                dialog.Location = new Point(20, 20);
+                dialog.Show();
+                Application.DoEvents();
+                problems.AddRange(Check(dialog).Select(issue => fixture.name + ":" + issue));
+                using var image = new Bitmap(dialog.Width, dialog.Height, PixelFormat.Format32bppArgb);
+                dialog.DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));
+                image.Save(Path.Combine(output, fixture.name + ".png"), ImageFormat.Png);
+                dialog.Hide();
             }
             File.WriteAllLines(Path.Combine(output, "layout-audit.txt"),
                 problems.Count == 0 ? ["PASS"] : problems);
@@ -67,7 +95,7 @@ internal static class BridgeUiAudit
                 foreach (var problem in problems) Console.Error.WriteLine("BRIDGE_UI_AUDIT: " + problem);
                 return 1;
             }
-            Console.WriteLine("BRIDGE_CONTROL_CENTER_REAL_PAINTED_UI_18_SCREENSHOTS_PASS");
+            Console.WriteLine("BRIDGE_CONTROL_CENTER_REAL_PAINTED_UI_23_SCREENSHOTS_PASS");
             Console.WriteLine("BRIDGE_UI_CONTRAST_BIDI_LAYOUT_STATIC_GATES_PASS");
             return 0;
         }
