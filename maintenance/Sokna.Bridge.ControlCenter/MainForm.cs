@@ -1030,7 +1030,7 @@ internal sealed class MainForm : Form
 
     private static TableLayoutPanel Card(string title)
     {
-        var card = new TableLayoutPanel
+        var card = new BridgeSurfaceCard
         {
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -1042,12 +1042,6 @@ internal sealed class MainForm : Form
             BorderStyle = BorderStyle.None,
             RightToLeft = RightToLeft.Yes,
             BackColor = BridgeUi.Surface
-        };
-        card.Paint += (_, e) =>
-        {
-            using var stroke = new Pen(BridgeUi.Border);
-            e.Graphics.DrawRectangle(stroke, 0, 0, card.ClientSize.Width - 1,
-                card.ClientSize.Height - 1);
         };
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         card.ControlAdded += (_, e) =>
