@@ -543,11 +543,14 @@ function InvokeAction([string]$action,$p) {
       return @{ok=$true;workspace=$w.name;path=$rel;sha256=(Sha256File $path);sync_guard=$sync}
     }
     "process.run" {
-      $w=ResolveWorkspace $p;$exe=[string]$p.exe;$mutating=[bool]$p.mutating;$access=if($mutating){'write'}else{'read'}
-      $null=Assert-SoknaWorkspaceFullAccess -Workspace $w -Access $access;AssertWorkspaceTool $w $exe
-      $sync=$null;if($mutating){$sync=GetOptionalFreshnessGuard $w}
+      # Arbitrary executables cannot be proved read-only from caller-controlled metadata.
+      # Diagnostics use named, narrowly scoped read actions rather than arbitrary processes.
+      if(-not($p.mutating -is [bool] -and $p.mutating -eq $true)){throw 'PROCESS_RUN_REQUIRES_EXPLICIT_WRITE_GRANT'}
+      $w=ResolveWorkspace $p;$exe=[string]$p.exe
+      $null=Assert-SoknaWorkspaceFullAccess -Workspace $w -Access 'write';AssertWorkspaceTool $w $exe
+      $sync=GetOptionalFreshnessGuard $w
       $a=@();if($p.args){$a=@($p.args|ForEach-Object{[string]$_})}
-      $cwd=$w.path;if($p.cwd){$cwd=SafePath $w ([string]$p.cwd) $access}
+      $cwd=$w.path;if($p.cwd){$cwd=SafePath $w ([string]$p.cwd) 'write'}
       $timeout=if($p.timeout_sec){[Math]::Min([Math]::Max([int]$p.timeout_sec,1),1800)}else{180}
       $r=RunProcess $exe $a $cwd $timeout
       return @{ok=($r.code-eq0);workspace=$w.name;code=$r.code;stdout=$r.stdout;stderr=$r.stderr;sync_guard=$sync}
