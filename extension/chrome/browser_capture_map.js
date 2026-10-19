@@ -18,69 +18,12 @@ async function waitTab(tabId,timeout=30000){const end=Date.now()+timeout;let t=n
 async function shot(tabId,full=true){const target={tabId:Number(tabId)};let attached=false;try{await debugAttach(target);attached=true;await debugSend(target,"Page.enable",{});const m=await debugSend(target,"Page.getLayoutMetrics",{}),b=full?(m.cssContentSize||m.contentSize||{}):(m.cssVisualViewport||m.visualViewport||{}),width=Number(full?b.width:(b.clientWidth||b.width)),height=Number(full?b.height:(b.clientHeight||b.height)),x=full?0:Number(b.pageX)||0,y=full?0:Number(b.pageY)||0;if(!(width>0&&height>0))throw E("BROWSER_CAPTURE_GEOMETRY_INVALID","Empty screenshot geometry.");if(width>16384||height>16384||width*height>250000000)throw E("BROWSER_CAPTURE_TOO_LARGE","Screenshot exceeds safety limits.",{width,height});const r=await debugSend(target,"Page.captureScreenshot",{format:"png",clip:{x:Math.max(0,x),y:Math.max(0,y),width,height,scale:1},captureBeyondViewport:true});if(!r?.data)throw E("BROWSER_CAPTURE_EMPTY","Empty screenshot.");return {data_b64:String(r.data),width,height}}finally{if(attached)await debugDetach(target)}}
 async function synthetic(tabId,requested,errorText,full){const u=chrome.runtime.getURL("browser_capture_error.html")+"?url="+encodeURIComponent(requested)+"&error="+encodeURIComponent(errorText);await chrome.tabs.update(tabId,{url:u});await waitTab(tabId,10000);await sleep(100);return await shot(tabId,full)}
 async function pageInfo(tabId){try{const r=await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},func:()=>{const nav=performance.getEntriesByType?.("navigation")?.[0];return {title:document.title,url:location.href,response_status:Number(nav?.responseStatus||0),text:String(document.body?.innerText||"").slice(0,4000)};}});return r?.[0]?.result||{}}catch{return {}}}
-function norm(s){return String(s||"").replace(/\s+/g," ").trim().toLowerCase()}
-async function clickText(tabId,labels,{exact=false}={}){labels=(Array.isArray(labels)?labels:[labels]).map(norm).filter(Boolean);if(!labels.length)return {ok:false,reason:"no-label"};try{const r=await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},func:(labels,exact)=>{const visible=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.display!=="none"&&s.visibility!=="hidden"&&r.width>0&&r.height>0};const txt=e=>String(e.innerText||e.textContent||e.getAttribute?.("aria-label")||e.getAttribute?.("title")||"").replace(/\s+/g," ").trim().toLowerCase();const destructive=/حذف|پاک|delete|remove|تسویه نهایی|نهایی|ثبت نهایی|ارسال|send|ذخیره|save|برگشت هزینه|restore|repair|install|update now/i;const nodes=[...document.querySelectorAll('button,a,[role="button"],[role="tab"],summary,[data-action],label')].filter(visible);let best=null;for(const label of labels){for(const e of nodes){const t=txt(e);if(!t||destructive.test(t))continue;const ok=exact?t===label:(t===label||t.includes(label)||label.includes(t));if(ok){best=e;break}}if(best)break}if(!best)return {ok:false,reason:"label-not-found",labels};best.scrollIntoView?.({block:"center",inline:"center"});best.click();return {ok:true,text:txt(best),tag:best.tagName||""}},args:[labels,exact]});return r?.[0]?.result||{ok:false,reason:"script-no-result"}}catch(e){return {ok:false,reason:"script-error",error:String(e)}}}
-async function typeSearch(tabId,q){try{const r=await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},func:q=>{const vis=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.display!=="none"&&s.visibility!=="hidden"&&r.width>0&&r.height>0};const all=[...document.querySelectorAll('input[type="search"],input[placeholder*="جستجو"],input[aria-label*="جستجو"],input[placeholder*="search" i],input[aria-label*="search" i],[contenteditable="true"][role="textbox"]')].filter(vis);const e=all[0];if(!e)return {ok:false,reason:"search-input-not-found"};e.focus();if("value"in e){const p=Object.getPrototypeOf(e),set=Object.getOwnPropertyDescriptor(p,"value")?.set;set?set.call(e,q):(e.value=q)}else e.textContent=q;e.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:q}));e.dispatchEvent(new Event("change",{bubbles:true}));return {ok:true,tag:e.tagName||""}},args:[q]});return r?.[0]?.result||{ok:false}}catch(e){return {ok:false,error:String(e)}}}
-async function selectFirst(tabId,kind="row"){try{const r=await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},func:kind=>{const vis=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.display!=="none"&&s.visibility!=="hidden"&&r.width>10&&r.height>10};const bad=/حذف|delete|remove|خروج|logout|تسویه|پرداخت|ثبت|ذخیره|save|ارسال|send/i;let nodes=[];if(kind==="table")nodes=[...document.querySelectorAll('button,[role="button"],.table-card,.table-item,[data-table-id]')].filter(e=>vis(e)&&/میز/.test(e.innerText||e.textContent||"")&&!bad.test(e.innerText||e.textContent||""));else nodes=[...document.querySelectorAll('tbody tr,[role="row"],.list-group-item,.card,[data-row-id]')].filter(e=>vis(e)&&!bad.test(e.innerText||e.textContent||""));const e=nodes.find(x=>(x.innerText||x.textContent||"").trim().length>0);if(!e)return {ok:false,reason:"selectable-row-not-found"};e.scrollIntoView?.({block:"center"});e.click();return {ok:true,text:String(e.innerText||e.textContent||"").replace(/\s+/g," ").trim().slice(0,240)}} ,args:[kind]});return r?.[0]?.result||{ok:false}}catch(e){return {ok:false,error:String(e)}}}
-async function themeToggle(tabId){try{const r=await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},func:()=>{const vis=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.display!=="none"&&s.visibility!=="hidden"&&r.width>0&&r.height>0};const nodes=[...document.querySelectorAll('button,[role="button"],[data-theme],[aria-label],[title]')].filter(vis);const e=nodes.find(x=>/تم|پوسته|theme|dark|تاریک|روشن|light/i.test(`${x.innerText||""} ${x.getAttribute("aria-label")||""} ${x.getAttribute("title")||""} ${x.getAttribute("data-theme")||""}`));if(!e)return {ok:false,reason:"theme-control-not-found"};e.click();return {ok:true,text:String(e.innerText||e.getAttribute("aria-label")||e.title||"")}},args:[]});return r?.[0]?.result||{ok:false}}catch(e){return {ok:false,error:String(e)}}}
-const H={
-S01:[["searchOpen",["جستجو","search","neo"]],["type","میز"]],S02:[["click",["بیشتر"]]],S03:[["theme"]],
-H01:[["selectTable"]],H03:[["click",["جمع اقلام"]]],H04:[["click",["افزودن سفارش","افزودن"]]],H05:[["click",["تسویه"]]],H06:[["click",["تخفیف"]]],H07:[["click",["تسویه"]],["click",["حساب مشتری","مشتری"]]],H08:[["click",["تغییر میز"]]],H09:[["click",["افزودن سفارش","افزودن"]],["safetyUnreached","unsaved-change dialog requires a harmless draft mutation that is not safely generic"]],
-O01:[["selectTable"]],
-SC04:[["click",["طرح‌ها"]]],SC05:[["click",["قوانین"]]],SC06:[["click",["اختصاص‌ها"]]],SC07:[["click",["استثناها"]]],
-OP01:[["click",["کالای انبار جدید","کالای جدید"]]],OP02:[["selectRow"],["click",["اصلاح دستی موجودی","اصلاح دستی"]]],OP03:[["click",["شروع شمارش"]]],OP04:[["selectRow"]],OP07:[["click",["ثبت نیاز تأمین","ثبت نیاز"]]],OP08:[["click",["ثبت تحویل خرید","تحویل خرید"]]],OP10:[["click",["ثبت هزینه"]]],OP12:[["click",["برگشت هزینه"]]],
-F01:[["selectRow"]],F02:[["selectRow"],["click",["تسویه"]]],F03:[["selectRow"],["click",["تخفیف"]]],F04:[["selectRow"],["click",["تسویه"]],["click",["مشتری","مشترک"]]],F06:[["selectRow"]],
-CU01:[["selectRow"]],CU02:[["click",["مشتری جدید"]]],CU03:[["selectRow"],["click",["ثبت پرداخت"]]],
-R01:[["click",["امروز"]]],R02:[["click",["۷ روز","7 روز"]]],R03:[["click",["۳۰ روز","30 روز"]]],
-C01:[["click",["ویرایش"]]],C02:[["click",["آیتم جدید"]]],C03:[["click",["ویرایش"]],["click",["انتخاب تصویر","تصویر","رسانه"]]],C06:[["click",["دسته‌بندی جدید","دسته جدید","ویرایش دسته","ویرایش"]]],C09:[["click",["منوی جدید","منو جدید","ویرایش منو","ویرایش"]]],
-G04:[["click",["فعال"]]],G05:[["click",["استفاده‌شده","استفاده شده"]]],G06:[["click",["بدون استفاده"]]],G07:[["click",["آرشیو"]]],G08:[["click",["انتخاب تصویر"]]],G09:[["click",["افزودن تصویر"]]],
-IN01:[["selectRow"]],IN03:[["click",["پیش‌نمایش قالب چاپ","پیش نمایش قالب چاپ"]]],IN04:[["click",["تنظیم مقصد چاپ","مقصد چاپ"]]],
-A01:[["click",["حساب جدید","ویرایش"]]],A02:[["click",["حساب جدید","ویرایش"]]],A04:[["click",["پرسنل جدید","افزودن پرسنل","ویرایش"]]],A09:[["click",["میز جدید","افزودن میز","ویرایش"]]],A10:[["click",["ساخت گروهی میز"]]]
-};
-const CONDITIONAL=new Set(["H02","P01","OP08","OP12","F06","G08","IN01"]);
-function interactionRequiresHandler(e){
-  const a=norm(e?.action||"");
-  if(!a)return false;
-  return /(^|\b)(open|click|select|toggle|type|switch|expand|choose|pick|edit)\b/i.test(a)||/(\u0628\u0627\u0632 \u06a9\u0646|\u0628\u0627\u0632\u06a9\u0631\u062f\u0646|\u06a9\u0644\u06cc\u06a9|\u0627\u0646\u062a\u062e\u0627\u0628|\u0648\u06cc\u0631\u0627\u06cc\u0634|\u062a\u063a\u06cc\u06cc\u0631 \u062a\u0645|\u062c\u0633\u062a\u062c\u0648)/i.test(a);
-}
-async function stateFingerprint(tabId){
-  try{
-    const r=await chrome.scripting.executeScript({target:{tabId,frameIds:[0]},func:()=>{
-      const visible=e=>{const s=getComputedStyle(e),b=e.getBoundingClientRect();return s.display!=="none"&&s.visibility!=="hidden"&&b.width>0&&b.height>0};
-      const flags=[...document.querySelectorAll('[aria-expanded="true"],[aria-selected="true"],dialog[open],[role="dialog"],[aria-modal="true"]')].filter(visible).slice(0,50).map(e=>`${e.tagName}:${e.id||""}:${e.getAttribute("role")||""}:${String(e.innerText||e.textContent||"").replace(/\s+/g," ").trim().slice(0,240)}`);
-      const values=[...document.querySelectorAll("input,textarea,select")].filter(visible).slice(0,50).map(e=>`${e.tagName}:${e.type||""}:${e.value||""}:${e.getAttribute("aria-expanded")||""}:${e.getAttribute("aria-selected")||""}`);
-      const active=document.activeElement;
-      return {href:location.href,htmlClass:document.documentElement.className||"",bodyClass:document.body?.className||"",theme:document.documentElement.getAttribute("data-theme")||document.body?.getAttribute("data-theme")||"",active:active?`${active.tagName}:${active.id||""}:${active.getAttribute?.("aria-label")||""}`:"",flags,values,text:String(document.body?.innerText||"").replace(/\s+/g," ").trim().slice(0,12000)};
-    }});
-    return JSON.stringify(r?.[0]?.result||{});
-  }catch{return ""}
-}
+// Read-only capture deliberately has no application-specific state handlers.
 async function applyState(tabId,e){
-  const ops=H[e.id]||[],details=[];let reached=true,noData=false,revert=null;
-  if(!ops.length){
-    if(interactionRequiresHandler(e))return {reached:false,noData:CONDITIONAL.has(e.id),details:[{op:"state-contract",result:{ok:false,reason:"state-handler-missing"}}],revert:null};
-    return {reached:true,noData:false,details,revert:null};
-  }
-  for(const op of ops){
-    const before=op[0]==="safetyUnreached"?"":await stateFingerprint(tabId);
-    let r={ok:false};
-    if(op[0]==="click")r=await clickText(tabId,op[1]);
-    else if(op[0]==="searchOpen"){r=await clickText(tabId,op[1]);if(!r.ok)r={ok:true,reason:"search-opener-optional"}}
-    else if(op[0]==="type")r=await typeSearch(tabId,op[1]);
-    else if(op[0]==="selectRow")r=await selectFirst(tabId,"row");
-    else if(op[0]==="selectTable")r=await selectFirst(tabId,"table");
-    else if(op[0]==="theme"){r=await themeToggle(tabId);if(r.ok)revert=async()=>{await themeToggle(tabId);await sleep(150)}}
-    else if(op[0]==="safetyUnreached"){r={ok:false,reason:op[1],safety:true}}
-    if(r.ok&&op[0]!=="searchOpen"){
-      await sleep(450);
-      const after=await stateFingerprint(tabId);
-      if(before&&after&&before===after)r={...r,ok:false,reason:"state-unchanged"};
-    }
-    details.push({op:op[0],result:r});
-    if(!r.ok){reached=false;if(CONDITIONAL.has(e.id))noData=true;break}
-    await sleep(250);
-  }
-  return {reached,noData,details,revert};
+  const instruction=String(e?.action||"").trim();
+  const readOnly=!instruction||/^(capture|screenshot|inspect|observe|read|view|تصویر|ثبت تصویر|مشاهده|نمایش)/i.test(instruction);
+  if(!readOnly)return {reached:false,noData:false,details:[{op:"operator-recipe-required",result:{ok:false,reason:"interactive state requires separately approved browser action"}}],revert:null};
+  return {reached:true,noData:false,details:[],revert:null};
 }
 async function waitDownload(id,timeout=12000){const end=Date.now()+timeout;let row=null;while(Date.now()<end){try{const a=await chrome.downloads.search({id});row=a?.[0]||null;if(row?.state==="complete")break}catch{}await sleep(100)}return row||{}}
 async function saveDataUrl(dataUrl,filename){const id=await chrome.downloads.download({url:dataUrl,filename,saveAs:false,conflictAction:"overwrite"}),row=await waitDownload(id);return {download_id:id,filename,absolute_path:String(row.filename||""),state:String(row.state||"")}}
@@ -92,10 +35,15 @@ async function captureEntry(tabId,e,cfg,folder,index){
   const started=Date.now();
   try{
     await chrome.tabs.update(tabId,{url:e.url});let t=await waitTab(tabId,cfg.timeout_ms);if(cfg.settle_ms)await sleep(cfg.settle_ms);t=await chrome.tabs.get(tabId);finalUrl=String(t.url||e.url);title=String(t.title||"");
-    if(T.normalizeOrigin(finalUrl)!==T.normalizeOrigin(e.url)){status="redirected"}
+    const expected=new URL(e.url),actual=new URL(finalUrl);
+    const cleanPath=u=>u.pathname.replace(/\/+$/,"")||"/";
+    if(expected.origin!==actual.origin||cleanPath(expected)!==cleanPath(actual))status="unexpected-navigation";
     const info=await pageInfo(tabId);if(info.title)title=info.title;if(info.url)finalUrl=info.url;httpStatus=Number(info.response_status||0);
+    const current=new URL(finalUrl);
+    if(expected.origin!==current.origin||cleanPath(expected)!==cleanPath(current))status="unexpected-navigation";
+    if(httpStatus>=400)status="http-error";
     state=await applyState(tabId,e);if(cfg.settle_ms)await sleep(Math.min(500,cfg.settle_ms));
-    if(state.noData)status="no-data";else if(!state.reached)status="state-unreached";
+    if(!state.reached)status="state-unreached";else if(state.noData)status="no-data";
     s=await shot(tabId,cfg.full_page);
   }catch(ex){
     status="capture-error";error=String(ex?.message||ex);
@@ -108,7 +56,7 @@ async function captureEntry(tabId,e,cfg,folder,index){
     try{download=await saveB64(s.data_b64,"image/png",`${folder}/${name}`)}catch(ex){error+=(error?" | ":"")+"human-copy: "+String(ex?.message||ex)}
   }
   if(state.revert)try{await state.revert()}catch{}
-  return {index,id:e.id,title_requested:e.title,instruction:e.action,state:artifactRef?"succeeded":"failed",ok:status==="ok"||status==="redirected"||status==="no-data",status,state_reached:!!state.reached,no_data:!!state.noData,requested_url:e.url,url:finalUrl,final_url:finalUrl,title,http_status:httpStatus,capture:cfg.full_page?"full_page":"viewport",synthetic_error_page:syntheticPage,started_at:started,completed_at:Date.now(),error,state_details:state.details,artifact_ref:artifactRef||undefined,human_file:download||undefined};
+  return {index,id:e.id,title_requested:e.title,instruction:e.action,state:(artifactRef&&status==="ok"&&state.reached)?"succeeded":"failed",ok:!!artifactRef&&status==="ok"&&!!state.reached,status,state_reached:!!state.reached,no_data:!!state.noData,requested_url:e.url,url:finalUrl,final_url:finalUrl,title,http_status:httpStatus,capture:cfg.full_page?"full_page":"viewport",synthetic_error_page:syntheticPage,started_at:started,completed_at:Date.now(),error,state_details:state.details,artifact_ref:artifactRef||undefined,human_file:download||undefined};
 }
 async function readJsonArtifact(id){id=String(id||"").toLowerCase();const info=await agentExec(unifiedLocalCommand("artifact.out.info",{id})),bytes=Number(info?.artifact_ref?.bytes||0),chunks=[];let off=0,total=0;while(off<bytes){let part=null;for(let tries=0;tries<3;tries++){part=await agentExec(unifiedLocalCommand("artifact.out.get",{id,offset:off,limit:524288}));if(part?.data_b64&&Number(part?.next_offset)>off)break;await sleep(120*(tries+1))}if(!part?.data_b64||Number(part?.next_offset)<=off)throw E("ARTIFACT_READ_CHUNK_INVALID","Artifact chunk is invalid.");const bin=atob(part.data_b64),u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);chunks.push(u8);total+=u8.length;off=Number(part.next_offset)}const all=new Uint8Array(total);let pos=0;for(const c of chunks){all.set(c,pos);pos+=c.length}return JSON.parse(new TextDecoder().decode(all))}
 if(typeof artifactCollectionGet==="function"){
@@ -117,9 +65,9 @@ if(typeof artifactCollectionGet==="function"){
 }
 function patchContract(){
   const base=globalThis.__SOKNA_ACTION_CONTRACTS_V1__;if(!base)return;const old=base.describe?.(ACTION);if(!old)return;
-  const props={...(old.inputSchema?.properties||{}),map_preset:{type:"string",enum:["local18080-ui-audit-v1"]},map_artifact_ref:{type:"string",pattern:"^[a-fA-F0-9]{64}$"},map_workers:{type:"integer",minimum:1,maximum:5}};
-  const input={...(old.inputSchema||{}),properties:props,anyOf:[...(old.inputSchema?.anyOf||[]),{required:["map_preset"]},{required:["map_artifact_ref"]}]};
-  const contract=Object.freeze({...old,inputSchema:input,description:String(old.description||"")+" Map mode executes the bundled named UI audit capture map, preserving duplicate URLs as distinct requested UI states and recording state-unreached/no-data evidence without destructive mutations."});
+  const props={...(old.inputSchema?.properties||{}),map_preset:{type:"string",description:"Optional named profile; Bridge core ships no application-specific presets."},map_artifact_ref:{type:"string",pattern:"^[a-fA-F0-9]{64}$"},map_workers:{type:"integer",minimum:1,maximum:5}};
+  const input={...(old.inputSchema||{}),properties:props,required:["capture_id"],anyOf:[{required:["items"]},{required:["map_preset"]},{required:["map_artifact_ref"]}]};
+  const contract=Object.freeze({...old,inputSchema:input,description:String(old.description||"")+" Map mode uses explicitly imported, same-origin operator-approved read-only capture recipes; every screenshot, redirect, HTTP error and unreached state has separate evidence."});
   const contracts=Object.freeze({...base.contracts,[ACTION]:Object.freeze({...contract,name:undefined})});
   const describe=name=>String(name||"")===ACTION?contract:base.describe(name);
   globalThis.__SOKNA_ACTION_CONTRACTS_V1__=Object.freeze({...base,contracts,describe,tools(e=[]){return base.list(e).filter(x=>x.contracted).map(x=>describe(x.name))}});
@@ -143,7 +91,7 @@ async function runMap(command,conversationKey,p){
   const origin=T.normalizeOrigin(entries[0]?.url||"");const approved=await approvedBrowserOrigins(),pattern=T.originPattern(origin);if(!approved.includes(origin)||!await chrome.permissions.contains({origins:[pattern]}))throw E("BROWSER_SITE_ORIGIN_PERMISSION_REQUIRED","Approve the site origin from the Bridge popup before capture.",{origin});
   const oldStore=await chrome.storage.local.get([STORE]),runs=oldStore[STORE]||{},prior=runs[id];if(prior?.state==="completed"&&prior?.result)return {...prior.result,resumed:true};
   const cfg={workers:Math.max(1,Math.min(5,Number(p.map_workers||p.workers||5))),full_page:p.full_page!==false,settle_ms:Math.max(0,Math.min(10000,Number(p.settle_ms??600))),timeout_ms:Math.max(1000,Math.min(60000,Number(p.timeout_ms??30000)))},started=Date.now(),folder=jobFolder(id,started),records=new Array(entries.length);
-  const preIds=new Set(["S00","S01","S02","S03"]),lastIds=new Set(["Z90","Z91"]),allIndexed=entries.map((e,i)=>({e,i})),pre=allIndexed.filter(x=>preIds.has(x.e.id)),middle=allIndexed.filter(x=>!preIds.has(x.e.id)&&!lastIds.has(x.e.id)),tail=allIndexed.filter(x=>lastIds.has(x.e.id));
+  const preIds=new Set(),lastIds=new Set(),allIndexed=entries.map((e,i)=>({e,i})),pre=allIndexed.filter(x=>preIds.has(x.e.id)),middle=allIndexed.filter(x=>!preIds.has(x.e.id)&&!lastIds.has(x.e.id)),tail=allIndexed.filter(x=>lastIds.has(x.e.id));
   let cursor=0;const tabs=[];
   async function worker(tabId){for(;;){const n=cursor++;if(n>=middle.length)return;const x=middle[n];records[x.i]=await captureEntry(tabId,x.e,cfg,folder,x.i)}}
   try{
@@ -159,7 +107,8 @@ async function runMap(command,conversationKey,p){
   const abs=(items.find(x=>x.human_file?.absolute_path)?.human_file?.absolute_path||md?.absolute_path||sd?.absolute_path||"").replace(/[\\/][^\\/]+$/,"");
   const view={ok:true,schema:"sokna-browser-human-job-view-v1",job_id:id,folder,absolute_folder:abs,file_count:items.filter(x=>x.human_file).length,manifest:md,summary:sd};
   if(ref?.id)VIEW_CACHE.set(String(ref.id).toLowerCase(),view);
-  const result={ok:true,schema:RESULT_SCHEMA,capture_id:id,map_preset:mapName,map_source:mapSource,map_artifact_ref:mapRef||undefined,resumed:false,origin,workers:cfg.workers,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,collection_ref:ref,job_view:view};
+  const passed=items.length===entries.length&&items.every(x=>x.ok&&x.state==="succeeded");
+  const result={ok:passed,schema:RESULT_SCHEMA,capture_id:id,map_preset:mapName,map_source:mapSource,map_artifact_ref:mapRef||undefined,resumed:false,origin,workers:cfg.workers,requested:entries.length,attempted:items.length,captured,failed,state_unreached:stateUnreached,no_data:noData,collection_ref:ref,job_view:view};
   runs[id]={state:"completed",result,updated_at:Date.now()};await chrome.storage.local.set({[STORE]:runs});return result;
 }
 const base=browserSemanticAction;
