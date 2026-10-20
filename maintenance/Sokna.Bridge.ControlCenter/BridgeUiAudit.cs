@@ -32,27 +32,40 @@ internal static class BridgeUiAudit
                 BridgeUi.Contrast(BridgeUi.Text, BridgeUi.Surface) < 4.5 ||
                 BridgeUi.Contrast(BridgeUi.Danger, BridgeUi.DangerSoft) < 4.5)
                 problems.Add("palette-contrast-below-4.5");
-            foreach (var size in new[] { new Size(960, 600), new Size(1100, 660), new Size(1280, 720) })
+            foreach (var size in new[] { new Size(840, 560), new Size(960, 600), new Size(1100, 660), new Size(1280, 720) })
             {
                 using var form = new MainForm(layoutTestMode: true)
                 {
                     StartPosition = FormStartPosition.Manual,
                     Location = new Point(15, 15),
-                    ClientSize = size
+                    // An outer 960x600 window must be imaged as 960x600; using
+                    // ClientSize here used to crop the bottom 30px titlebar offset.
+                    Size = size
                 };
                 form.Show();
                 if (!form.Font.FontFamily.Name.Contains("Vazirmatn", StringComparison.OrdinalIgnoreCase))
                     problems.Add("actual-form-font-is-not-vazirmatn");
                 Application.DoEvents();
-                var tabs = form.Controls.OfType<TabControl>().Single();
-                if (tabs.DrawMode != TabDrawMode.OwnerDrawFixed || tabs.ItemSize.Height < 42)
-                    problems.Add("navigation-not-custom-painted-or-too-small");
-                for (var i = 0; i < tabs.TabPages.Count; i++)
+                var footer = Descendants(form).OfType<Label>()
+                    .FirstOrDefault(x => x.Text == "راهنمای شروع و اتصال");
+                var viewport = form.RectangleToScreen(form.ClientRectangle);
+                if (footer is null)
+                    problems.Add("missing-sidebar-footer");
+                else if (footer.RectangleToScreen(footer.ClientRectangle).Bottom > viewport.Bottom)
+                    problems.Add("sidebar-footer-cut-by-window-height");
+                // Ensure standard native caption placement, not the mirrored HWND
+                // which moves close/maximize/minimize to the left in Windows.
+                if (form.RightToLeftLayout || form.RightToLeft != RightToLeft.Yes)
+                    problems.Add("window-caption-native-rtl-mirroring-regression");
+                var navigation = Descendants(form).OfType<BridgeNavigationShell>().SingleOrDefault();
+                if (navigation is null || form.AuditPages.Count != 6)
+                    problems.Add("missing-custom-persian-navigation-shell");
+                for (var i = 0; i < form.AuditPages.Count; i++)
                 {
-                    tabs.SelectedIndex = i;
+                    form.SelectAuditPage(i);
                     form.PerformLayout();
                     Application.DoEvents();
-                    var page = tabs.TabPages[i];
+                    var page = form.ActiveAuditPage;
                     var title = $"{size.Width}x{size.Height}-tab{i + 1}";
                     // A scrollable page is intentional at 960x600; horizontal
                     // overflow and action/control clipping are never intentional.
@@ -78,12 +91,32 @@ internal static class BridgeUiAudit
                                  emptyState.Height > 170 || emptyState.BackColor != BridgeUi.BrandSoft))
                             problems.Add(title + ":empty-state-not-compact-actionable-card");
                     }
+                    if (i == 3)
+                    {
+                        if (size.Width == 840)
+                        {
+                            var save = Descendants(page).OfType<Button>().FirstOrDefault(x =>
+                                x.Text == "ذخیرهٔ تنظیمات و راه‌اندازی مجدد");
+                            var pageBounds = page.RectangleToScreen(page.ClientRectangle);
+                            if (save is null ||
+                                save.RectangleToScreen(save.ClientRectangle).Bottom > pageBounds.Bottom - 4)
+                                problems.Add(title + ":settings-save-hidden-on-minimum-window");
+                        }
+                        var portField = Descendants(page).FirstOrDefault(x => x.Name == "BridgePortField");
+                        var artifactField = Descendants(page).FirstOrDefault(x => x.Name == "BridgeArtifactField");
+                        if (portField is null || artifactField is null ||
+                            portField.Height < 60 || artifactField.Height < 65)
+                            problems.Add(title + ":inconsistent-settings-field-layout");
+                        else if (Math.Abs(portField.Left - artifactField.Left) > 12 ||
+                                 Math.Abs(portField.Width - artifactField.Width) > 20)
+                            problems.Add(title + ":settings-fields-have-different-horizontal-grid");
+                    }
                     if (i == 0)
                     {
                         var actionCard = Descendants(page).FirstOrDefault(c => c.Name == "BridgeAgentActionsCard");
                         var detailsCard = Descendants(page).FirstOrDefault(c => c.Name == "BridgeAgentDetailsCard");
                         var actionButton = Descendants(page).OfType<Button>()
-                            .FirstOrDefault(button => button.Text == "تازه‌سازی وضعیت");
+                            .FirstOrDefault(button => button.Text == "تازه‌سازی");
                         var pageBounds = page.RectangleToScreen(page.ClientRectangle);
                         var buttonBounds = actionButton is null ? Rectangle.Empty :
                             actionButton.RectangleToScreen(actionButton.ClientRectangle);
@@ -98,6 +131,40 @@ internal static class BridgeUiAudit
                             problems.Add(title + ":missing-dashboard-action-or-details-card");
                         if (actionCard is { Height: > 180 })
                             problems.Add(title + $":oversized-empty-action-card:{actionCard.Height}px");
+                        if (actionCard is not null)
+                        {
+                            var cardBounds = actionCard.RectangleToScreen(actionCard.ClientRectangle);
+                            foreach (var action in Descendants(actionCard).OfType<Button>())
+                            {
+                                var bounds = action.RectangleToScreen(action.ClientRectangle);
+                                if (!action.Visible || bounds.Left < cardBounds.Left + 3 ||
+                                    bounds.Right > cardBounds.Right - 3 ||
+                                    bounds.Top < cardBounds.Top ||
+                                    bounds.Bottom > cardBounds.Bottom - 3)
+                                    problems.Add(title + ":lifecycle-action-clipped:" + action.Text);
+                            }
+                        }
+                        var start = Descendants(page).OfType<Button>()
+                            .FirstOrDefault(x => x.Text == "شروع");
+                        var stop = Descendants(page).OfType<Button>()
+                            .FirstOrDefault(x => x.Text == "توقف");
+                        var restart = Descendants(page).OfType<Button>()
+                            .FirstOrDefault(x => x.Text == "راه‌اندازی مجدد");
+                        if (start is null || stop is null || restart is null)
+                            problems.Add(title + ":missing-lifecycle-controls");
+                        else
+                        {
+                            form.SetAuditAgentReachability(null);
+                            if (start.Enabled || stop.Enabled || restart.Enabled)
+                                problems.Add(title + ":unknown-agent-state-allows-actions");
+                            form.SetAuditAgentReachability(false);
+                            if (!start.Enabled || stop.Enabled || restart.Enabled)
+                                problems.Add(title + ":offline-agent-actions-incorrect");
+                            form.SetAuditAgentReachability(true);
+                            if (start.Enabled || !stop.Enabled || !restart.Enabled)
+                                problems.Add(title + ":online-agent-actions-incorrect");
+                            form.SetAuditAgentReachability(null);
+                        }
                     }
                     var issues = Check(page).ToArray();
                     File.WriteAllLines(Path.Combine(output, title + ".txt"),
@@ -119,11 +186,27 @@ internal static class BridgeUiAudit
                     }
                     if (nonCanvas < 250) problems.Add(title + ":empty-painted-bitmap");
                 }
+                if (size.Width == 960)
+                {
+                    form.ApplyVisualAuditFixtures();
+                    foreach (var index in new[] { 0, 1, 2, 4 })
+                    {
+                        form.SelectAuditPage(index);
+                        form.PerformLayout();
+                        Application.DoEvents();
+                        problems.AddRange(Check(form.ActiveAuditPage).Select(issue =>
+                            $"960x600-populated-tab{index + 1}:" + issue));
+                        using var populated = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb);
+                        form.DrawToBitmap(populated, new Rectangle(Point.Empty, size));
+                        populated.Save(Path.Combine(output,
+                            $"960x600-populated-tab{index + 1}.png"), ImageFormat.Png);
+                    }
+                }
                 form.ShowLayoutError();
-                tabs.SelectedIndex = 0;
+                form.SelectAuditPage(0);
                 form.PerformLayout();
                 Application.DoEvents();
-                problems.AddRange(Check(tabs.TabPages[0]).Select(issue =>
+                problems.AddRange(Check(form.ActiveAuditPage).Select(issue =>
                     $"{size.Width}x{size.Height}-error:" + issue));
                 using (var errorImage = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb))
                 {
@@ -143,6 +226,12 @@ internal static class BridgeUiAudit
                 dialog.Location = new Point(20, 20);
                 dialog.Show();
                 Application.DoEvents();
+                if (fixture.name == "workspace-dialog" && dialog.ClientSize.Height > 510)
+                    problems.Add("workspace-dialog-excessive-height");
+                if (fixture.name == "credential-dialog" && dialog.ClientSize.Height > 445)
+                    problems.Add("credential-dialog-excessive-height");
+                if (dialog.RightToLeftLayout)
+                    problems.Add(fixture.name + ":caption-buttons-mirrored-left");
                 problems.AddRange(Check(dialog).Select(issue => fixture.name + ":" + issue));
                 using var image = new Bitmap(dialog.Width, dialog.Height, PixelFormat.Format32bppArgb);
                 dialog.DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));
@@ -156,7 +245,7 @@ internal static class BridgeUiAudit
                 foreach (var problem in problems) Console.Error.WriteLine("BRIDGE_UI_AUDIT: " + problem);
                 return 1;
             }
-            Console.WriteLine("BRIDGE_CONTROL_CENTER_REAL_PAINTED_UI_23_SCREENSHOTS_PASS");
+            Console.WriteLine("BRIDGE_CONTROL_CENTER_SIDEBAR_GUI_34_SCREENSHOTS_PASS");
             Console.WriteLine("BRIDGE_UI_CONTRAST_BIDI_LAYOUT_STATIC_GATES_PASS");
             return 0;
         }

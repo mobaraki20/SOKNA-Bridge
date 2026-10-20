@@ -1,0 +1,194 @@
+name: Bridge UI R2 Test Preview Publish (unsigned)
+on:
+  push:
+    branches:
+      - work/bridge-control-center-redesign-20261020
+    paths:
+      - '.github/workflows/bridge-ui-r2-test-preview-publish.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: bridge-ui-r2-preview-publish-20261020
+  cancel-in-progress: false
+jobs:
+  build-test-publish:
+    runs-on: windows-2025
+    timeout-minutes: 55
+    env:
+      RELEASE_TAG: sokna-agent-2.7.1-ui-r2-test-preview-20261020
+      PREVIEW_EXE: SOKNA-Bridge-Setup-2.7.1-UI-R2-Preview-x64.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Guard source and keep production release unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:GITHUB_REF -ne 'refs/heads/work/bridge-control-center-redesign-20261020'){throw 'UNEXPECTED_RELEASE_BRANCH'}
+          $head=(git rev-parse HEAD).Trim()
+          if($head -notmatch '^[a-f0-9]{40}$'){throw 'INVALID_SOURCE_COMMIT'}
+          $status=@(git status --porcelain --untracked-files=all)
+          if($status.Count -ne 0){throw 'PREVIEW_CHECKOUT_DIRTY'}
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
+          if($LASTEXITCODE -eq 0){throw 'PREVIEW_TAG_ALREADY_PUBLISHED'}
+          Write-Host "PREVIEW_EXACT_SOURCE_CHECKOUT_PASS $head"
+          exit 0
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Run Chrome extension and security source regression tests
+        shell: pwsh
+        timeout-minutes: 6
+        run: |
+          $ErrorActionPreference='Stop'
+          node --check extension/chrome/background_bootstrap.js
+          if($LASTEXITCODE -ne 0){throw 'CHROME_BOOTSTRAP_PARSE_FAILED'}
+          node tools/tests/test_message_sender_boundary.mjs
+          if($LASTEXITCODE -ne 0){throw 'SENDER_BOUNDARY_FAILED'}
+          node tools/tests/test_capability_gate.mjs
+          if($LASTEXITCODE -ne 0){throw 'CAPABILITY_POLICY_FAILED'}
+          node tools/tests/test_browser_target_core.mjs
+          if($LASTEXITCODE -ne 0){throw 'CHROME_TARGET_POLICY_FAILED'}
+          python tools/tests/test_bridge_p0_security_releases.py
+          if($LASTEXITCODE -ne 0){throw 'BRIDGE_SECURITY_REGRESSION'}
+          Write-Host 'PREVIEW_SECURITY_SOURCE_GATES_PASS'
+      - name: Compile installer from exact immutable source
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          $ErrorActionPreference='Stop'
+          $sources=@()
+          $found=Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if($found){$sources+=$found.Source}
+          $x86=${env:ProgramFiles(x86)}
+          if($x86){$sources+=(Join-Path $x86 'Inno Setup 6/ISCC.exe')}
+          if($env:ProgramFiles){$sources+=(Join-Path $env:ProgramFiles 'Inno Setup 7/ISCC.exe')}
+          $compiler=$sources|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -First 1
+          if(-not $compiler){throw 'PREVIEW_INNO_MISSING'}
+          $sha=(git rev-parse HEAD).Trim()
+          & ./tools/installer/Build-P1Installer.ps1 -ExpectedSourceCommit $sha -InnoCompiler $compiler | Out-Host
+          if($LASTEXITCODE -ne 0 -or -not $?){throw 'PREVIEW_INNO_BUILD_FAILED'}
+          $setup='artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          $mf='artifacts/windows/installer-payload/manifests/installed-manifest.json'
+          $ui='artifacts/windows/installer-payload/Sokna.Bridge.ControlCenter.exe'
+          foreach($x in @($setup,$mf,$ui)){if(-not(Test-Path -LiteralPath $x -PathType Leaf)){throw 'PREVIEW_PAYLOAD_INCOMPLETE'}}
+          $manifest=Get-Content $mf -Raw -Encoding UTF8|ConvertFrom-Json
+          if([string]$manifest.source_commit -ne $sha -or [string]$manifest.product_version -ne '2.7.1'){throw 'PREVIEW_MANIFEST_COMMIT_MISMATCH'}
+          $ext=Get-Content 'artifacts/windows/installer-payload/extension/manifest.json' -Raw|ConvertFrom-Json
+          if([string]$ext.version -ne '3.14.2'){throw 'PREVIEW_EXTENSION_VERSION_MISMATCH'}
+          Write-Host "PREVIEW_INSTALLER_MANIFEST_SOURCE_PASS sha=$sha"
+      - name: Run actual painted Control Center from installer payload
+        shell: pwsh
+        timeout-minutes: 6
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path $PWD 'artifacts/windows/installer-payload/Sokna.Bridge.ControlCenter.exe'
+          $out=Join-Path $env:RUNNER_TEMP 'Bridge-UI-R2-Published-Source-Painted'
+          New-Item -ItemType Directory -Force -Path $out|Out-Null
+          $args=@('--layout-self-test','--output',('"'+$out+'"'))
+          $p=Start-Process -FilePath $exe -ArgumentList $args -PassThru
+          if(-not $p.WaitForExit(120000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'PREVIEW_UI_TIMEOUT'}
+          if($p.ExitCode -ne 0){
+            Get-ChildItem $out -Filter '*.txt'|ForEach-Object{Write-Host $_.Name;Get-Content $_.FullName}
+            throw 'PREVIEW_UI_PAINT_REGRESSION'
+          }
+          $screens=@(Get-ChildItem $out -Filter '*.png')
+          if($screens.Count -ne 34){throw "PREVIEW_UI_INCOMPLETE_SCREENSHOTS count=$($screens.Count)"}
+          $audit=(Get-Content (Join-Path $out 'layout-audit.txt') -Raw).Trim()
+          if($audit -ne 'PASS'){throw 'PREVIEW_UI_AUDIT_NOT_PASS'}
+          Write-Host 'PREVIEW_34_SCREENSHOT_GUI_EXACT_INSTALLER_PASS'
+      - name: Install same installer and verify Chrome-to-Native Messaging roundtrip
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./tools/qa/Invoke-ChromeNativeInstalledUAT.ps1 -SetupPath 'artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          if($LASTEXITCODE -ne 0 -or -not $?){throw 'PREVIEW_INSTALLED_CHROME_NATIVE_UAT_FAILED'}
+          $ev=Join-Path $env:RUNNER_TEMP 'SOKNA-Bridge-Chrome-Installed-UAT/chrome-native-evidence.json'
+          if(-not(Test-Path $ev)){throw 'PREVIEW_CHROME_EVIDENCE_MISSING'}
+          $evidence=Get-Content $ev -Raw|ConvertFrom-Json
+          if([string]$evidence.status -ne 'PASS' -or [string]$evidence.kind -ne 'DISPOSABLE_WINDOWS_CHROME_FOR_TESTING_INSTALLED_HOST'){throw 'PREVIEW_CHROME_EVIDENCE_FAIL'}
+          Write-Host 'PREVIEW_INSTALLED_CHROME_NATIVE_UAT_PASS'
+      - name: Assemble SHA256-verified unsigned test preview
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'SOKNA-Bridge-UI-R2-Preview'
+          New-Item -ItemType Directory -Force -Path $out|Out-Null
+          $source='artifacts/windows/setup/SOKNA-Bridge-Setup-2.7.1-x64.exe'
+          $exe=Join-Path $out $env:PREVIEW_EXE
+          Copy-Item -LiteralPath $source -Destination $exe
+          $sha=(git rev-parse HEAD).Trim()
+          $hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $bytes=(Get-Item -LiteralPath $exe).Length
+          $sig=[string](Get-AuthenticodeSignature -LiteralPath $exe).Status
+          $meta=[ordered]@{
+            schema='sokna-bridge-test-preview-v1'
+            source_commit=$sha
+            github_run_id=$env:GITHUB_RUN_ID
+            release_tag=$env:RELEASE_TAG
+            product_version='2.7.1'
+            preview_name='Control Center UI R2'
+            extension_version='3.14.2'
+            installer_file=$env:PREVIEW_EXE
+            installer_sha256=$hash
+            installer_bytes=$bytes
+            signing_status=$sig
+            unsigned_internal_test_only=$true
+            windows_server_2025_build='PASS'
+            control_center_real_painted_34_screenshots='PASS'
+            chrome_for_testing_installed_native_roundtrip='PASS'
+            manual_chrome_stable_load_unpacked='NOT_VERIFIED'
+            physical_operator_uat='NOT_VERIFIED'
+            public_production_release_ready=$false
+          }
+          [IO.File]::WriteAllText((Join-Path $out 'PREVIEW_PROVENANCE.json'),($meta|ConvertTo-Json -Depth 7),[Text.UTF8Encoding]::new($false))
+          $checks=@((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+$env:PREVIEW_EXE)
+          $checks+=((Get-FileHash -LiteralPath (Join-Path $out 'PREVIEW_PROVENANCE.json') -Algorithm SHA256).Hash.ToLowerInvariant()+'  PREVIEW_PROVENANCE.json')
+          [IO.File]::WriteAllLines((Join-Path $out 'SHA256SUMS.txt'),$checks,[Text.UTF8Encoding]::new($false))
+          Write-Host "PREVIEW_SOURCE=$sha INSTALLER_SHA256=$hash BYTES=$bytes SIGNING=$sig"
+          $out | Out-File -FilePath (Join-Path $env:RUNNER_TEMP 'preview-output-path.txt') -NoNewline -Encoding utf8
+      - name: Preserve exact-source preview artifact even if publishing is blocked
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOKNA-Bridge-UI-R2-Installer-Test-Preview
+          path: ${{ runner.temp }}/SOKNA-Bridge-UI-R2-Preview/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Publish distinct GitHub pre-release (NOT final)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'SOKNA-Bridge-UI-R2-Preview'
+          $source=(git rev-parse HEAD).Trim()
+          if(gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null){throw 'PREVIEW_RELEASE_ALREADY_EXISTS'}
+          $notes=@"
+          # SOKNA Bridge 2.7.1 — Control Center UI R2 (test preview)
+          Unsigned engineering pre-release for controlled Windows 10/11 Chrome Stable manual operator testing only.
+          Source commit: $source
+          This preview includes the rebuilt Persian Control Center and retains the Chrome extension 3.14.2 and Native Host.
+          Windows Server 2025: 34 real painted screenshot checks and installed Chrome-for-Testing Native Messaging round-trip passed.
+          **Not final/signed, not a public production release.** Real Chrome Stable manual Load unpacked persistence and physical user UAT have not been verified.
+          Install the EXE first. Open chrome://extensions in Chrome Stable, enable Developer mode, choose Load unpacked, and select the installed 'extension' folder (usually %LOCALAPPDATA%\Programs\SOKNA Agent\extension). Retain that folder and confirm Native Messaging after restarting Chrome.
+          SHA256 is supplied in SHA256SUMS.txt. The EXE product version remains 2.7.1; the tag + installed manifest source SHA distinguish this preview from the previous 2.7.1 preview.
+          "@
+          $notesFile=Join-Path $out 'RELEASE_NOTES.md'
+          [IO.File]::WriteAllText($notesFile,$notes,[Text.UTF8Encoding]::new($false))
+          gh release create $env:RELEASE_TAG (Join-Path $out $env:PREVIEW_EXE) (Join-Path $out 'PREVIEW_PROVENANCE.json') (Join-Path $out 'SHA256SUMS.txt') --repo $env:GITHUB_REPOSITORY --target $source --title 'SOKNA Bridge 2.7.1 — Control Center R2 Test Preview' --notes-file $notesFile --prerelease
+          if($LASTEXITCODE -ne 0){throw 'PREVIEW_GITHUB_RELEASE_CREATE_FAILED'}
+          $result=gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName,isDraft,isPrerelease,url,assets | ConvertFrom-Json
+          if($result.tagName -ne $env:RELEASE_TAG -or -not $result.isPrerelease -or $result.isDraft -or @($result.assets).Count -ne 3){throw 'PREVIEW_PUBLISHED_RELEASE_VERIFICATION_FAILED'}
+          Write-Host "BRIDGE_UI_R2_GITHUB_PRE_RELEASE_PUBLISHED_PASS $($result.url) sha=$source"

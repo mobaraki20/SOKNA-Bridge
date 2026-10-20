@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - work/bridge-control-center-ui-20261019
+      - work/bridge-control-center-redesign-20261020
   workflow_dispatch:
 permissions:
   contents: read
@@ -45,8 +46,8 @@ jobs:
             throw 'BRIDGE_UI_PAINT_REGRESSION'
           }
           $images = @(Get-ChildItem $out -Filter '*.png')
-          if ($images.Count -ne 23) { throw 'BRIDGE_UI_MISSING_PAINTED_IMAGES' }
-          Write-Host 'BRIDGE_REAL_PAINTED_UI_23_SCREENSHOTS_PASS'
+          if ($images.Count -ne 34) { throw 'BRIDGE_UI_MISSING_PAINTED_IMAGES' }
+          Write-Host 'BRIDGE_REAL_PAINTED_UI_34_SCREENSHOTS_PASS'
       - name: Preserve UI screenshots including failure cases
         if: always()
         uses: actions/upload-artifact@v4
