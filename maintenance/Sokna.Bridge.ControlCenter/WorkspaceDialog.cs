@@ -29,7 +29,7 @@ internal sealed class WorkspaceDialog : Form
             ColumnCount = 1, RowCount = 7, BackColor = BridgeUi.Canvas
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        foreach (var px in new[] { 43f, 70f, 66f, 66f, 70f, 77f })
+        foreach (var px in new[] { 43f, 80f, 66f, 66f, 70f, 67f })
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, px));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
