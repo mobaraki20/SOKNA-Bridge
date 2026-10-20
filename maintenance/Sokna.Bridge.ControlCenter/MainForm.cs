@@ -102,12 +102,22 @@ internal sealed class MainForm : Form
         primary.Name = "BridgeAgentActionsCard";
         var actions = ButtonRow();
         actions.Controls.Add(StyledButton("تازه‌سازی", async () => await RefreshAllAsync(), "primary"));
-        _startAgent = StyledButton("شروع ایجنت", async () => await LifecycleAsync("start"), "secondary");
+        _startAgent = StyledButton("شروع", async () => await LifecycleAsync("start"), "secondary");
         _restartAgent = StyledButton("راه‌اندازی مجدد", RestartAgentAsync, "secondary");
-        _stopAgent = StyledButton("توقف ایجنت", async () => await LifecycleAsync("stop"), "danger");
+        _stopAgent = StyledButton("توقف", async () => await LifecycleAsync("stop"), "danger");
         actions.Controls.Add(_startAgent);
         actions.Controls.Add(_restartAgent);
         actions.Controls.Add(_stopAgent);
+        // Single row, compact spacing. Never let a fourth lifecycle action
+        // wrap underneath the fixed-height action card.
+        actions.WrapContents = false;
+        actions.Margin = new Padding(2, 2, 2, 2);
+        foreach (Button button in actions.Controls.OfType<Button>())
+        {
+            button.Margin = new Padding(2, 2, 2, 2);
+            button.MinimumSize = new Size(82, 38);
+            button.Padding = new Padding(7, 4, 7, 4);
+        }
         UpdateAgentControls();
         primary.Controls.Add(actions);
         // Keep everyday controls visible without scrolling in a 960x600 window.
