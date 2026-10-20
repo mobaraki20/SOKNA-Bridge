@@ -282,7 +282,7 @@ internal sealed class MainForm : Form
 
         var artifactField = new TableLayoutPanel
         {
-            Name = "BridgeArtifactField", Dock = DockStyle.Top, Height = 77,
+            Name = "BridgeArtifactField", Dock = DockStyle.Top, Height = 87,
             ColumnCount = 1, RowCount = 2, RightToLeft = RightToLeft.Yes,
             BackColor = BridgeUi.Surface, Margin = new Padding(5, 0, 5, 6)
         };
@@ -303,6 +303,11 @@ internal sealed class MainForm : Form
         _artifactInput.TextAlign = HorizontalAlignment.Left;
         artifactArea.Controls.Add(_artifactInput, 0, 0);
         var browse = ActionButton("انتخاب پوشه", ChooseArtifactRoot);
+        // Native WinForms AutoSize+Dock can align button text below a short
+        // TableLayout row at the minimum viewport, despite a passing layout gate.
+        browse.AutoSize = false;
+        browse.MinimumSize = new Size(0, 43);
+        browse.Margin = new Padding(3, 2, 3, 2);
         browse.Dock = DockStyle.Fill;
         artifactArea.Controls.Add(browse, 1, 0);
         artifactField.Controls.Add(artifactArea, 0, 1);
