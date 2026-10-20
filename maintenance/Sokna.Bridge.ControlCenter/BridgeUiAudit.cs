@@ -91,6 +91,17 @@ internal static class BridgeUiAudit
                                  emptyState.Height > 170 || emptyState.BackColor != BridgeUi.BrandSoft))
                             problems.Add(title + ":empty-state-not-compact-actionable-card");
                     }
+                    if (i == 3)
+                    {
+                        var portField = Descendants(page).FirstOrDefault(x => x.Name == "BridgePortField");
+                        var artifactField = Descendants(page).FirstOrDefault(x => x.Name == "BridgeArtifactField");
+                        if (portField is null || artifactField is null ||
+                            portField.Height < 60 || artifactField.Height < 65)
+                            problems.Add(title + ":inconsistent-settings-field-layout");
+                        else if (Math.Abs(portField.Left - artifactField.Left) > 12 ||
+                                 Math.Abs(portField.Width - artifactField.Width) > 20)
+                            problems.Add(title + ":settings-fields-have-different-horizontal-grid");
+                    }
                     if (i == 0)
                     {
                         var actionCard = Descendants(page).FirstOrDefault(c => c.Name == "BridgeAgentActionsCard");
@@ -111,6 +122,27 @@ internal static class BridgeUiAudit
                             problems.Add(title + ":missing-dashboard-action-or-details-card");
                         if (actionCard is { Height: > 180 })
                             problems.Add(title + $":oversized-empty-action-card:{actionCard.Height}px");
+                        var start = Descendants(page).OfType<Button>()
+                            .FirstOrDefault(x => x.Text == "شروع ایجنت");
+                        var stop = Descendants(page).OfType<Button>()
+                            .FirstOrDefault(x => x.Text == "توقف ایجنت");
+                        var restart = Descendants(page).OfType<Button>()
+                            .FirstOrDefault(x => x.Text == "راه‌اندازی مجدد");
+                        if (start is null || stop is null || restart is null)
+                            problems.Add(title + ":missing-lifecycle-controls");
+                        else
+                        {
+                            form.SetAuditAgentReachability(null);
+                            if (start.Enabled || stop.Enabled || restart.Enabled)
+                                problems.Add(title + ":unknown-agent-state-allows-actions");
+                            form.SetAuditAgentReachability(false);
+                            if (!start.Enabled || stop.Enabled || restart.Enabled)
+                                problems.Add(title + ":offline-agent-actions-incorrect");
+                            form.SetAuditAgentReachability(true);
+                            if (start.Enabled || !stop.Enabled || !restart.Enabled)
+                                problems.Add(title + ":online-agent-actions-incorrect");
+                            form.SetAuditAgentReachability(null);
+                        }
                     }
                     var issues = Check(page).ToArray();
                     File.WriteAllLines(Path.Combine(output, title + ".txt"),
@@ -172,6 +204,10 @@ internal static class BridgeUiAudit
                 dialog.Location = new Point(20, 20);
                 dialog.Show();
                 Application.DoEvents();
+                if (fixture.name == "workspace-dialog" && dialog.ClientSize.Height > 510)
+                    problems.Add("workspace-dialog-excessive-height");
+                if (fixture.name == "credential-dialog" && dialog.ClientSize.Height > 445)
+                    problems.Add("credential-dialog-excessive-height");
                 if (dialog.RightToLeftLayout)
                     problems.Add(fixture.name + ":caption-buttons-mirrored-left");
                 problems.AddRange(Check(dialog).Select(issue => fixture.name + ":" + issue));
