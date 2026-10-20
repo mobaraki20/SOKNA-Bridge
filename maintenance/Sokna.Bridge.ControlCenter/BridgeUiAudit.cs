@@ -32,7 +32,7 @@ internal static class BridgeUiAudit
                 BridgeUi.Contrast(BridgeUi.Text, BridgeUi.Surface) < 4.5 ||
                 BridgeUi.Contrast(BridgeUi.Danger, BridgeUi.DangerSoft) < 4.5)
                 problems.Add("palette-contrast-below-4.5");
-            foreach (var size in new[] { new Size(960, 600), new Size(1100, 660), new Size(1280, 720) })
+            foreach (var size in new[] { new Size(840, 560), new Size(960, 600), new Size(1100, 660), new Size(1280, 720) })
             {
                 using var form = new MainForm(layoutTestMode: true)
                 {
@@ -223,7 +223,7 @@ internal static class BridgeUiAudit
                 foreach (var problem in problems) Console.Error.WriteLine("BRIDGE_UI_AUDIT: " + problem);
                 return 1;
             }
-            Console.WriteLine("BRIDGE_CONTROL_CENTER_SIDEBAR_GUI_27_SCREENSHOTS_PASS");
+            Console.WriteLine("BRIDGE_CONTROL_CENTER_SIDEBAR_GUI_34_SCREENSHOTS_PASS");
             Console.WriteLine("BRIDGE_UI_CONTRAST_BIDI_LAYOUT_STATIC_GATES_PASS");
             return 0;
         }
