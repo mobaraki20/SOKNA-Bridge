@@ -90,7 +90,7 @@ internal sealed class MainForm : Form
         _status.ForeColor = BridgeUi.Warning;
         _status.Margin = new Padding(7, 4, 7, 6);
         health.Controls.Add(_status);
-        _statusGuidance.Text = "برای بررسی اتصال، «تازه‌سازی وضعیت» را بزن.";
+        _statusGuidance.Text = "برای بررسی اتصال، «تازه‌سازی» را بزن.";
         _statusGuidance.ForeColor = BridgeUi.Muted;
         _statusGuidance.Font = BridgeUi.Font(10.7f);
         _statusGuidance.AutoSize = true;
@@ -101,7 +101,7 @@ internal sealed class MainForm : Form
         var primary = Card("عملیات ایجنت");
         primary.Name = "BridgeAgentActionsCard";
         var actions = ButtonRow();
-        actions.Controls.Add(StyledButton("تازه‌سازی وضعیت", async () => await RefreshAllAsync(), "primary"));
+        actions.Controls.Add(StyledButton("تازه‌سازی", async () => await RefreshAllAsync(), "primary"));
         _startAgent = StyledButton("شروع ایجنت", async () => await LifecycleAsync("start"), "secondary");
         _restartAgent = StyledButton("راه‌اندازی مجدد", RestartAgentAsync, "secondary");
         _stopAgent = StyledButton("توقف ایجنت", async () => await LifecycleAsync("stop"), "danger");
@@ -247,7 +247,7 @@ internal sealed class MainForm : Form
         // A consistent label-above-field rhythm across the entire settings form.
         var portArea = new TableLayoutPanel
         {
-            Name = "BridgePortField", Dock = DockStyle.Top, Height = 78,
+            Name = "BridgePortField", Dock = DockStyle.Top, Height = 68,
             ColumnCount = 1, RowCount = 2, RightToLeft = RightToLeft.Yes,
             Margin = new Padding(5, 4, 5, 5), BackColor = BridgeUi.Surface
         };
@@ -272,7 +272,7 @@ internal sealed class MainForm : Form
 
         var artifactField = new TableLayoutPanel
         {
-            Name = "BridgeArtifactField", Dock = DockStyle.Top, Height = 87,
+            Name = "BridgeArtifactField", Dock = DockStyle.Top, Height = 77,
             ColumnCount = 1, RowCount = 2, RightToLeft = RightToLeft.Yes,
             BackColor = BridgeUi.Surface, Margin = new Padding(5, 0, 5, 6)
         };
@@ -301,7 +301,7 @@ internal sealed class MainForm : Form
         _autostart.Text = "اجرای خودکار ایجنت هنگام ورود به ویندوز";
         _autostart.AutoSize = true;
         _autostart.Font = BridgeUi.Font(10.5f);
-        _autostart.Margin = new Padding(7, 12, 7, 8);
+        _autostart.Margin = new Padding(7, 5, 7, 5);
         settingsCard.Controls.Add(_autostart);
 
         settingsCard.Controls.Add(BridgeUi.Caption(
