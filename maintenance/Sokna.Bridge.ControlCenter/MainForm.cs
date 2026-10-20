@@ -208,7 +208,6 @@ internal sealed class MainForm : Form
     {
         var page = NewPage("عیب‌یابی");
         var root = Stack();
-        root.Controls.Add(SectionTitle("عیب‌یابی و گزارش پشتیبانی"));
         root.Controls.Add(new Label { Text = "ابتدا وضعیت بررسی را بخوان. فقط هنگام نیاز، گزارش فنی را برای پشتیبانی ذخیره کن. رمزها و توکن نباید در خروجی ظاهر شوند.", AutoSize = true, Font = BridgeUi.Font(10.5f), ForeColor = BridgeUi.Muted, Margin = new Padding(8) });
         var actions = ButtonRow();
         actions.Controls.Add(StyledButton("تازه‌سازی عیب‌یابی", RefreshDiagnosticsAsync, "primary"));
@@ -240,7 +239,6 @@ internal sealed class MainForm : Form
     {
         var page = NewPage("تنظیمات");
         var root = Stack();
-        root.Controls.Add(SectionTitle("تنظیمات ایجنت"));
 
         var settingsCard = Card("اتصال و مسیر ذخیره‌سازی");
         settingsCard.Controls.Add(BridgeUi.Caption(
@@ -567,7 +565,6 @@ internal sealed class MainForm : Form
         var page = NewPage("راهنمای شروع");
         var root = Stack();
 
-        root.Controls.Add(SectionTitle("راهنمای راه‌اندازی و اتصال بریج"));
 
         root.Controls.Add(Step("۱", "از وضعیت ایجنت مطمئن شو", "در بخش «وضعیت»، اتصال ایجنت را بررسی کن. اگر در دسترس نبود، آن را راه‌اندازی کن."));
         root.Controls.Add(Step("۲", "افزونهٔ کروم را نصب کن", "در مرورگر کروم صفحهٔ chrome://extensions را باز کن. حالت توسعه‌دهنده (Developer mode) را فعال کن، سپس «بارگذاری پوشهٔ افزونه» (Load unpacked) را بزن و پوشهٔ افزونهٔ نصب‌شده را انتخاب کن."));
