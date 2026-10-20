@@ -34,6 +34,11 @@ internal sealed class MainForm : Form
     private readonly Label _credentialsEmpty = new();
     private readonly Label _extensionInfo = new();
     private readonly Button _saveSettings = new();
+    private Button _startAgent = null!;
+    private Button _stopAgent = null!;
+    private Button _restartAgent = null!;
+    private bool? _agentReachable;
+    private bool _agentActionBusy;
     private bool _busy;
     private BridgeNavigationShell? _navigation;
     internal IReadOnlyList<Panel> AuditPages => _navigation?.Pages ?? [];
@@ -97,14 +102,13 @@ internal sealed class MainForm : Form
         primary.Name = "BridgeAgentActionsCard";
         var actions = ButtonRow();
         actions.Controls.Add(StyledButton("تازه‌سازی وضعیت", async () => await RefreshAllAsync(), "primary"));
-        actions.Controls.Add(StyledButton("شروع ایجنت", async () => await LifecycleAsync("start"), "secondary"));
-        actions.Controls.Add(StyledButton("راه‌اندازی مجدد", async () => {
-            if (MessageBox.Show(this, "ایجنت متوقف و دوباره راه‌اندازی شود؟", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            await RunMaintenanceAsync("stop");
-            await RunMaintenanceAsync("start", "--expected-version", ReadProductVersion());
-            await RefreshAllAsync();
-        }, "secondary"));
-        actions.Controls.Add(StyledButton("توقف ایجنت", async () => await LifecycleAsync("stop"), "danger"));
+        _startAgent = StyledButton("شروع ایجنت", async () => await LifecycleAsync("start"), "secondary");
+        _restartAgent = StyledButton("راه‌اندازی مجدد", RestartAgentAsync, "secondary");
+        _stopAgent = StyledButton("توقف ایجنت", async () => await LifecycleAsync("stop"), "danger");
+        actions.Controls.Add(_startAgent);
+        actions.Controls.Add(_restartAgent);
+        actions.Controls.Add(_stopAgent);
+        UpdateAgentControls();
         primary.Controls.Add(actions);
         // Keep everyday controls visible without scrolling in a 960x600 window.
         // Auto-sized WinForms TableLayoutPanel can otherwise take the rest of
@@ -637,6 +641,7 @@ internal sealed class MainForm : Form
                     ? "اتصال محلی تأیید شد."
                     : "BR-AGENT-002 — پاسخ ایجنت معتبر نیست؛ از بخش عیب‌یابی بررسی کن.";
                 _status.ForeColor = ok ? BridgeUi.Good : BridgeUi.Danger;
+                _agentReachable = ok;
             }
             catch (Exception ex)
             {
@@ -644,6 +649,7 @@ internal sealed class MainForm : Form
                 _statusGuidance.Text = "BR-AGENT-001 — ابتدا «شروع ایجنت» را بزن؛ اگر مشکل باقی ماند عیب‌یابی را باز کن.";
                 _status.ForeColor = BridgeUi.Danger;
                 _lastError.Text = ex.Message;
+                _agentReachable = false;
             }
 
             await RefreshWorkspacesAsync(silent: true);
@@ -651,12 +657,28 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            _agentReachable = null;
             _status.Text = "● بررسی ایجنت کامل نشد";
             _status.ForeColor = BridgeUi.Danger;
             _statusGuidance.Text = "BR-AGENT-003 — تنظیمات نصب خوانده نشد؛ جزئیات را در پنل خطا بررسی کن.";
             ShowError(ex);
         }
-        finally { _busy = false; }
+        finally { _busy = false; UpdateAgentControls(); }
+    }
+
+    private void UpdateAgentControls()
+    {
+        if (_startAgent is null || _stopAgent is null || _restartAgent is null) return;
+        var ready = !_busy && !_agentActionBusy;
+        _startAgent.Enabled = ready && _agentReachable == false;
+        _stopAgent.Enabled = ready && _agentReachable == true;
+        _restartAgent.Enabled = ready && _agentReachable == true;
+    }
+
+    internal void SetAuditAgentReachability(bool? reachable)
+    {
+        _agentReachable = reachable;
+        UpdateAgentControls();
     }
 
     private async Task RefreshWorkspacesAsync(bool silent = false)
@@ -801,18 +823,40 @@ internal sealed class MainForm : Form
         catch (Exception ex) { ShowError(ex); }
     }
 
-    private async Task LifecycleAsync(string action)
+    private async Task RestartAgentAsync()
     {
+        if (_agentActionBusy || _agentReachable != true) return;
+        if (MessageBox.Show(this, "ایجنت متوقف و دوباره راه‌اندازی شود؟",
+                Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        _agentActionBusy = true;
+        UpdateAgentControls();
         try
         {
-            if (action == "stop" && MessageBox.Show(this,
-                "Agent متوقف شود؟ تا شروع مجدد، درخواست‌های محلی پاسخ داده نمی‌شوند.",
-                "تأیید توقف ایجنت", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+            await RunMaintenanceAsync("stop");
+            await RunMaintenanceAsync("start", "--expected-version", ReadProductVersion());
+            await RefreshAllAsync();
+        }
+        catch (Exception ex) { ShowError(ex); }
+        finally { _agentActionBusy = false; UpdateAgentControls(); }
+    }
+
+    private async Task LifecycleAsync(string action)
+    {
+        if (_agentActionBusy || (action == "start" && _agentReachable != false) ||
+            (action == "stop" && _agentReachable != true)) return;
+        if (action == "stop" && MessageBox.Show(this,
+            "ایجنت متوقف شود؟ تا شروع مجدد، درخواست‌های محلی پاسخ داده نمی‌شوند.",
+            "تأیید توقف ایجنت", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+        _agentActionBusy = true;
+        UpdateAgentControls();
+        try
+        {
             if (action == "start") await RunMaintenanceAsync("start", "--expected-version", ReadProductVersion());
             else await RunMaintenanceAsync(action);
             await RefreshAllAsync();
         }
         catch (Exception ex) { ShowError(ex); }
+        finally { _agentActionBusy = false; UpdateAgentControls(); }
     }
 
     private async Task SaveSettingsAsync()
@@ -970,6 +1014,7 @@ internal sealed class MainForm : Form
     internal void ApplyVisualAuditFixtures()
     {
         _status.Text = "● ایجنت در حال اجرا";
+        SetAuditAgentReachability(true);
         _status.ForeColor = BridgeUi.Good;
         _statusGuidance.Text = "ارتباط محلی برقرار است؛ آخرین بررسی موفق بود.";
         _version.Text = "۲٫۷٫۱";
