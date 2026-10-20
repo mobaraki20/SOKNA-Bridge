@@ -41,8 +41,10 @@ jobs:
           if($head -notmatch '^[a-f0-9]{40}$'){throw 'INVALID_SOURCE_COMMIT'}
           $status=@(git status --porcelain --untracked-files=all)
           if($status.Count -ne 0){throw 'PREVIEW_CHECKOUT_DIRTY'}
-          if(gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null){throw 'PREVIEW_TAG_ALREADY_PUBLISHED'}
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
+          if($LASTEXITCODE -eq 0){throw 'PREVIEW_TAG_ALREADY_PUBLISHED'}
           Write-Host "PREVIEW_EXACT_SOURCE_CHECKOUT_PASS $head"
+          exit 0
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Run Chrome extension and security source regression tests
