@@ -15,8 +15,8 @@ internal sealed class WorkspaceDialog : Form
     internal WorkspaceDialog()
     {
         Text = "افزودن فضای کاری";
-        ClientSize = new Size(680, 540);
-        MinimumSize = new Size(600, 500);
+        ClientSize = new Size(680, 486);
+        MinimumSize = new Size(620, 505);
         StartPosition = FormStartPosition.CenterParent;
         BridgeUi.Prepare(this);
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -25,11 +25,11 @@ internal sealed class WorkspaceDialog : Form
 
         var root = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, Padding = new Padding(22),
+            Dock = DockStyle.Fill, Padding = new Padding(20),
             ColumnCount = 1, RowCount = 7, BackColor = BridgeUi.Canvas
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        foreach (var px in new[] { 49f, 85f, 75f, 75f, 82f, 66f })
+        foreach (var px in new[] { 43f, 70f, 66f, 66f, 70f, 77f })
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, px));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
