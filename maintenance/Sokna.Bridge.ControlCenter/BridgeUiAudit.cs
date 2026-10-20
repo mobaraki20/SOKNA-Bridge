@@ -93,6 +93,15 @@ internal static class BridgeUiAudit
                     }
                     if (i == 3)
                     {
+                        if (size.Width == 840)
+                        {
+                            var save = Descendants(page).OfType<Button>().FirstOrDefault(x =>
+                                x.Text == "ذخیرهٔ تنظیمات و راه‌اندازی مجدد");
+                            var pageBounds = page.RectangleToScreen(page.ClientRectangle);
+                            if (save is null ||
+                                save.RectangleToScreen(save.ClientRectangle).Bottom > pageBounds.Bottom - 4)
+                                problems.Add(title + ":settings-save-hidden-on-minimum-window");
+                        }
                         var portField = Descendants(page).FirstOrDefault(x => x.Name == "BridgePortField");
                         var artifactField = Descendants(page).FirstOrDefault(x => x.Name == "BridgeArtifactField");
                         if (portField is null || artifactField is null ||
@@ -107,7 +116,7 @@ internal static class BridgeUiAudit
                         var actionCard = Descendants(page).FirstOrDefault(c => c.Name == "BridgeAgentActionsCard");
                         var detailsCard = Descendants(page).FirstOrDefault(c => c.Name == "BridgeAgentDetailsCard");
                         var actionButton = Descendants(page).OfType<Button>()
-                            .FirstOrDefault(button => button.Text == "تازه‌سازی وضعیت");
+                            .FirstOrDefault(button => button.Text == "تازه‌سازی");
                         var pageBounds = page.RectangleToScreen(page.ClientRectangle);
                         var buttonBounds = actionButton is null ? Rectangle.Empty :
                             actionButton.RectangleToScreen(actionButton.ClientRectangle);
@@ -122,6 +131,19 @@ internal static class BridgeUiAudit
                             problems.Add(title + ":missing-dashboard-action-or-details-card");
                         if (actionCard is { Height: > 180 })
                             problems.Add(title + $":oversized-empty-action-card:{actionCard.Height}px");
+                        if (actionCard is not null)
+                        {
+                            var cardBounds = actionCard.RectangleToScreen(actionCard.ClientRectangle);
+                            foreach (var action in Descendants(actionCard).OfType<Button>())
+                            {
+                                var bounds = action.RectangleToScreen(action.ClientRectangle);
+                                if (!action.Visible || bounds.Left < cardBounds.Left + 3 ||
+                                    bounds.Right > cardBounds.Right - 3 ||
+                                    bounds.Top < cardBounds.Top ||
+                                    bounds.Bottom > cardBounds.Bottom - 3)
+                                    problems.Add(title + ":lifecycle-action-clipped:" + action.Text);
+                            }
+                        }
                         var start = Descendants(page).OfType<Button>()
                             .FirstOrDefault(x => x.Text == "شروع ایجنت");
                         var stop = Descendants(page).OfType<Button>()
