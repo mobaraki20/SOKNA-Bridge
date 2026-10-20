@@ -145,9 +145,9 @@ internal static class BridgeUiAudit
                             }
                         }
                         var start = Descendants(page).OfType<Button>()
-                            .FirstOrDefault(x => x.Text == "شروع ایجنت");
+                            .FirstOrDefault(x => x.Text == "شروع");
                         var stop = Descendants(page).OfType<Button>()
-                            .FirstOrDefault(x => x.Text == "توقف ایجنت");
+                            .FirstOrDefault(x => x.Text == "توقف");
                         var restart = Descendants(page).OfType<Button>()
                             .FirstOrDefault(x => x.Text == "راه‌اندازی مجدد");
                         if (start is null || stop is null || restart is null)
