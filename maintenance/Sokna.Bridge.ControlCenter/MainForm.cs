@@ -242,40 +242,59 @@ internal sealed class MainForm : Form
         settingsCard.Controls.Add(BridgeUi.Caption(
             "این تنظیمات فقط روی ایجنت همین رایانه اثر می‌گذارند."));
 
-        var portArea = new FlowLayoutPanel
+        // A consistent label-above-field rhythm across the entire settings form.
+        var portArea = new TableLayoutPanel
         {
-            Dock = DockStyle.Top, AutoSize = true,
-            FlowDirection = FlowDirection.RightToLeft,
-            RightToLeft = RightToLeft.No,
-            WrapContents = false, Margin = new Padding(5, 7, 5, 10)
+            Name = "BridgePortField", Dock = DockStyle.Top, Height = 78,
+            ColumnCount = 1, RowCount = 2, RightToLeft = RightToLeft.Yes,
+            Margin = new Padding(5, 4, 5, 5), BackColor = BridgeUi.Surface
         };
-        portArea.Controls.Add(BridgeUi.FieldLabel("پورت ارتباط محلی"));
+        portArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        portArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 29));
+        portArea.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        portArea.Controls.Add(BridgeUi.FieldLabel("پورت ارتباط محلی"), 0, 0);
+        var portValueRow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft,
+            RightToLeft = RightToLeft.No, WrapContents = false,
+            Margin = Padding.Empty, Padding = new Padding(0, 2, 0, 0)
+        };
         _portInput.Minimum = 1024;
         _portInput.Maximum = 65535;
         _portInput.Value = 8766;
-        _portInput.Width = 126;
+        _portInput.Width = 142;
         _portInput.RightToLeft = RightToLeft.No;
-        portArea.Controls.Add(_portInput);
+        portValueRow.Controls.Add(_portInput);
+        portArea.Controls.Add(portValueRow, 0, 1);
         settingsCard.Controls.Add(portArea);
 
-        settingsCard.Controls.Add(BridgeUi.FieldLabel("پوشهٔ نگهداری فایل‌ها"));
+        var artifactField = new TableLayoutPanel
+        {
+            Name = "BridgeArtifactField", Dock = DockStyle.Top, Height = 87,
+            ColumnCount = 1, RowCount = 2, RightToLeft = RightToLeft.Yes,
+            BackColor = BridgeUi.Surface, Margin = new Padding(5, 0, 5, 6)
+        };
+        artifactField.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        artifactField.RowStyles.Add(new RowStyle(SizeType.Absolute, 29));
+        artifactField.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        artifactField.Controls.Add(BridgeUi.FieldLabel("پوشهٔ نگهداری فایل‌ها"), 0, 0);
         var artifactArea = new TableLayoutPanel
         {
-            Dock = DockStyle.Top, Height = 48, ColumnCount = 2,
+            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
             RightToLeft = RightToLeft.Yes, BackColor = BridgeUi.Surface,
-            Margin = new Padding(5, 0, 5, 10)
+            Margin = new Padding(0, 1, 0, 3)
         };
         artifactArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         artifactArea.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-        _artifactInput.Dock = DockStyle.Top;
-        _artifactInput.Height = 34;
+        _artifactInput.Dock = DockStyle.Fill;
         _artifactInput.RightToLeft = RightToLeft.No;
         _artifactInput.TextAlign = HorizontalAlignment.Left;
         artifactArea.Controls.Add(_artifactInput, 0, 0);
         var browse = ActionButton("انتخاب پوشه", ChooseArtifactRoot);
         browse.Dock = DockStyle.Fill;
         artifactArea.Controls.Add(browse, 1, 0);
-        settingsCard.Controls.Add(artifactArea);
+        artifactField.Controls.Add(artifactArea, 0, 1);
+        settingsCard.Controls.Add(artifactField);
 
         _autostart.Text = "اجرای خودکار ایجنت هنگام ورود به ویندوز";
         _autostart.AutoSize = true;
