@@ -13,8 +13,8 @@ internal sealed class CredentialDialog : Form
     internal CredentialDialog(string? id = null, string? username = null)
     {
         Text = string.IsNullOrWhiteSpace(id) ? "افزودن اعتبارنامه" : "ویرایش اعتبارنامه";
-        ClientSize = new Size(590, 465);
-        MinimumSize = new Size(530, 430);
+        ClientSize = new Size(590, 422);
+        MinimumSize = new Size(550, 435);
         StartPosition = FormStartPosition.CenterParent;
         BridgeUi.Prepare(this);
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -23,11 +23,11 @@ internal sealed class CredentialDialog : Form
 
         var root = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, Padding = new Padding(22),
+            Dock = DockStyle.Fill, Padding = new Padding(20),
             ColumnCount = 1, RowCount = 6, BackColor = BridgeUi.Canvas
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        foreach (var height in new[] { 49f, 73f, 73f, 73f, 78f })
+        foreach (var height in new[] { 44f, 66f, 66f, 66f, 83f })
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
